@@ -1,0 +1,100 @@
+/* Android Native Look & Feel */
+
+:root {
+  --md-sys-color-primary: #6750A4;
+  --md-sys-color-on-primary: #FFFFFF;
+  --md-sys-color-primary-container: #EADDFF;
+  --md-sys-color-on-primary-container: #21005D;
+  --md-sys-color-secondary: #625B71;
+  --md-sys-color-on-secondary: #FFFFFF;
+  --md-sys-color-secondary-container: #E8DEF8;
+  --md-sys-color-on-secondary-container: #1D192B;
+  --md-sys-color-surface: #FEF7FF;
+  --md-sys-color-on-surface: #1D1B20;
+  --md-sys-color-surface-container: #F3EDF7;
+}
+
+/* Base resets for native feel */
+html, body {
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+input, textarea {
+  user-select: text;
+}
+
+/* Material 3 Typography */
+.text-display-large { font-size: 57px; line-height: 64px; letter-spacing: -0.25px; }
+.text-headline-large { font-size: 32px; line-height: 40px; }
+.text-title-large { font-size: 22px; line-height: 28px; }
+.text-body-large { font-size: 16px; line-height: 24px; letter-spacing: 0.5px; }
+.text-label-large { font-size: 14px; line-height: 20px; letter-spacing: 0.1px; font-weight: 500; }
+
+/* Android Ripple Effect */
+.android-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.android-ripple::after {
+  content: "";
+  display: block;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, currentColor 10%, transparent 10.01%);
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transform: scale(10, 10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
+}
+
+.android-ripple:active::after {
+  transform: scale(0, 0);
+  opacity: 0.1;
+  transition: 0s;
+}
+
+/* Material 3 Card Elevation */
+.m3-elevation-1 { box-shadow: 0px 1px 3px 1px rgba(0, 0, 0, 0.15), 0px 1px 2px 0px rgba(0, 0, 0, 0.30); }
+.m3-elevation-2 { box-shadow: 0px 2px 6px 2px rgba(0, 0, 0, 0.15), 0px 1px 2px 0px rgba(0, 0, 0, 0.30); }
+
+/* Custom Transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.page-exit {
+  opacity: 1;
+}
+.page-exit-active {
+  opacity: 0;
+  transition: opacity 200ms;
+}
+
+/* Bottom Navigation Active Indicator */
+.nav-active-indicator {
+  position: absolute;
+  top: 0;
+  height: 32px;
+  width: 64px;
+  background: hsl(var(--primary) / 0.15);
+  border-radius: 16px;
+  z-index: -1;
+}
+
+/* Status Bar Spacing */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 24px);
+}

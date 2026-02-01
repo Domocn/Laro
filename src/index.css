@@ -1,0 +1,163 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Roboto:wght@300;400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Laro Light Theme - Warm Cream background, Sage Green primary */
+    --background: 36 43% 97%;        /* #FAF7F2 - Warm Cream */
+    --foreground: 217 33% 17%;       /* #1F2937 - Soft Charcoal */
+    --card: 0 0% 100%;
+    --card-foreground: 217 33% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 217 33% 17%;
+    --primary: 150 46% 63%;          /* #7BC89C - Sage Green */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 257 85% 84%;        /* #C7B7F7 - Soft Lavender (AI) */
+    --secondary-foreground: 217 33% 17%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 150 46% 90%;           /* Light sage */
+    --accent-foreground: 217 33% 17%;
+    --destructive: 0 84% 60%;        /* #EF4444 - Alert Red */
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;           /* #E5E7EB - Light Grey */
+    --input: 220 14% 96%;
+    --ring: 150 46% 63%;             /* Sage Green */
+    --radius: 1rem;
+
+    /* Material 3 Surface Containers */
+    --surface-container-lowest: 0 0% 100%;
+    --surface-container-low: 36 33% 98%;
+    --surface-container: 36 30% 96%;
+    --surface-container-high: 36 25% 94%;
+    --surface-container-highest: 36 20% 92%;
+  }
+
+  .dark {
+    /* Laro Dark Theme - Charcoal background */
+    --background: 217 33% 17%;       /* #1F2937 - Charcoal */
+    --foreground: 210 40% 98%;       /* #F9FAFB - Near white */
+    --card: 217 28% 25%;             /* #374151 - Lighter charcoal */
+    --card-foreground: 210 40% 98%;
+    --popover: 217 28% 25%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 152 56% 72%;          /* #9EDAB8 - Light sage */
+    --primary-foreground: 160 84% 16%;
+    --secondary: 263 87% 88%;        /* #D8CCF9 - Light lavender */
+    --secondary-foreground: 263 70% 20%;
+    --muted: 217 24% 30%;
+    --muted-foreground: 215 16% 60%;
+    --accent: 152 40% 25%;           /* Dark sage */
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 74% 68%;        /* Light red */
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 19% 35%;           /* #4B5563 */
+    --input: 217 24% 30%;
+    --ring: 152 56% 72%;             /* Light sage */
+
+    --surface-container-lowest: 217 33% 12%;
+    --surface-container-low: 217 33% 17%;
+    --surface-container: 217 28% 20%;
+    --surface-container-high: 217 24% 25%;
+    --surface-container-highest: 217 20% 30%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  html, body {
+    @apply h-full overflow-x-hidden;
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Roboto', 'Inter', system-ui, -apple-system, sans-serif;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-blend-mode: overlay;
+    background-size: 150px;
+  }
+
+  .dark body {
+    background-image: none;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading tracking-tight;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-background/80 backdrop-blur-md;
+  }
+  
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .bg-surface-container {
+    background-color: hsl(var(--surface-container));
+  }
+}
+
+/* Android Native Ripple Simulation */
+.ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple::after {
+  content: "";
+  display: block;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, #fff 10%, transparent 10.01%);
+  background-repeat: no-repeat;
+  background-position: 50%;
+  transform: scale(10, 10);
+  opacity: 0;
+  transition: transform 0.5s, opacity 1s;
+}
+
+.ripple:active::after {
+  transform: scale(0, 0);
+  opacity: 0.3;
+  transition: 0s;
+}
+
+/* Material 3 Card Styles */
+.m3-card {
+  @apply rounded-3xl p-4 transition-all duration-200;
+  background-color: hsl(var(--surface-container-low));
+}
+
+.m3-card:hover {
+  background-color: hsl(var(--surface-container));
+  @apply shadow-md;
+}
+
+/* Hide scrollbars for cleaner native look */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

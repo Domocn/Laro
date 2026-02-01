@@ -1,0 +1,45 @@
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+.env.*
+!.env.example
+
+# Android
+android/local.properties
+android/app/google-services.json
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+*.keystore
+*.jks
+
+# Backend
+backend/.env
+backend/__pycache__/
+backend/venv/
+backend/.pytest_cache/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Secrets
+*.pem
+*.key
+secrets/

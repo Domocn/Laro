@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5"/>
+      <stop offset="100%" style="stop-color:#7C3AED"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="128" height="128" rx="25" fill="url(#grad)"/>
+
+  <!-- Pot body -->
+  <path d="M29 54 L29 80 Q29 93 42 93 L86 93 Q99 93 99 80 L99 54 Z"
+        fill="white"/>
+
+  <!-- Pot rim -->
+  <rect x="25" y="47" width="78" height="10" rx="5" fill="white"/>
+
+  <!-- Pot handles -->
+  <rect x="14" y="49" width="14" height="6" rx="3" fill="white"/>
+  <rect x="100" y="49" width="14" height="6" rx="3" fill="white"/>
+
+  <!-- Steam -->
+  <path d="M45 40 Q41 30 45 24 Q49 18 45 11"
+        stroke="white" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <path d="M64 37 Q60 27 64 21 Q68 15 64 8"
+        stroke="white" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.85"/>
+  <path d="M83 40 Q79 30 83 24 Q87 18 83 11"
+        stroke="white" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Ingredient dots -->
+  <circle cx="45" cy="67" r="6" fill="#FCD34D"/>
+  <circle cx="64" cy="64" r="7" fill="#F87171"/>
+  <circle cx="81" cy="70" r="5" fill="#4ADE80"/>
+  <circle cx="55" cy="80" r="4" fill="#FB923C"/>
+  <circle cx="74" cy="81" r="4" fill="#A78BFA"/>
+</svg>

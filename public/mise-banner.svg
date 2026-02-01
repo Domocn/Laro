@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 80">
+  <defs>
+    <linearGradient id="laro-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#9EDAB8"/>
+      <stop offset="50%" style="stop-color:#7BC89C"/>
+      <stop offset="100%" style="stop-color:#5BB080"/>
+    </linearGradient>
+    <linearGradient id="laro-bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7BC89C;stop-opacity:0.08"/>
+      <stop offset="100%" style="stop-color:#5BB080;stop-opacity:0.12"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background pill behind text -->
+  <rect x="75" y="8" width="260" height="64" rx="32" fill="url(#laro-bgGradient)"/>
+
+  <!-- Icon - Squircle with stylized L -->
+  <g transform="translate(5, 5)">
+    <!-- Squircle background -->
+    <rect width="70" height="70" rx="18" fill="url(#laro-gradient)"/>
+
+    <!-- Stylized white L with curved hook -->
+    <path d="M20 14 Q18 14 18 16 L18 54 Q18 56 20 56 L50 56 Q52 56 52 54 L52 48 Q52 46 50 46 L30 46 Q28 46 28 44 L28 16 Q28 14 26 14 Z"
+          fill="white"/>
+  </g>
+
+  <!-- Text - laro (lowercase) -->
+  <text x="95" y="50" font-family="Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="42" font-weight="500" fill="#5BB080" letter-spacing="-1">laro</text>
+
+  <!-- Tagline -->
+  <text x="97" y="68" font-family="Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="13" font-weight="400" fill="#6B7280">Friendly Cooking Companion</text>
+</svg>

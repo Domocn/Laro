@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate PWA Icons</title>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+        
+        sizes.forEach(size => {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // Background
+            ctx.fillStyle = '#4A6741';
+            ctx.fillRect(0, 0, size, size);
+            
+            // Chef hat icon
+            ctx.fillStyle = '#FFFFFF';
+            const scale = size / 100;
+            
+            // Hat top (dome)
+            ctx.beginPath();
+            ctx.arc(50 * scale, 40 * scale, 25 * scale, Math.PI, 0, false);
+            ctx.fill();
+            
+            // Hat band
+            ctx.fillRect(25 * scale, 40 * scale, 50 * scale, 8 * scale);
+            
+            // Hat body
+            ctx.fillRect(30 * scale, 48 * scale, 40 * scale, 25 * scale);
+            
+            // Puffs on top
+            ctx.beginPath();
+            ctx.arc(35 * scale, 30 * scale, 12 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(50 * scale, 25 * scale, 12 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(65 * scale, 30 * scale, 12 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            
+            console.log(`icon-${size}x${size}.png generated`);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <base href="/" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="theme-color" content="#4A6741" />
+        <meta name="description" content="Laro - Self-hostable recipe app for families. Organize recipes, plan meals, and share with your household." />
+        
+        <!-- PWA Meta Tags -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Laro" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="application-name" content="Laro" />
+        <meta name="msapplication-TileColor" content="#4A6741" />
+        <meta name="msapplication-tap-highlight" content="no" />
+
+        <!-- Favicon -->
+        <link rel="icon" type="image/png" href="%PUBLIC_URL%/favicon.png" />
+
+        <!-- Apple Touch Icons -->
+        <link rel="apple-touch-icon" href="%PUBLIC_URL%/icons/icon-192x192.png" />
+        <link rel="apple-touch-icon" sizes="152x152" href="%PUBLIC_URL%/icons/icon-152x152.png" />
+        <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/icons/icon-192x192.png" />
+        <link rel="apple-touch-icon" sizes="167x167" href="%PUBLIC_URL%/icons/icon-192x192.png" />
+        
+        <!-- Manifest -->
+        <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+        
+        <!-- Splash Screens for iOS -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        
+        <title>Laro - Recipe App</title>
+    </head>
+    <body>
+        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <div id="root"></div>
+        <!--
+      This HTML file is a template.
+      If you open it directly in the browser, you will see an empty page.
+
+      You can add webfonts, meta tags, or analytics to this file.
+      The build step will place the bundled scripts into the <body> tag.
+
+      To begin the development, run `npm start` or `yarn start`.
+      To create a production bundle, use `npm run build` or `yarn build`.
+    -->
+      <script>
+            // Using placeholder values that will be replaced at runtime or build time
+            const openPanelUrl = '__REACT_APP_OPENPANEL_URL__';
+            const openPanelClientId = '__REACT_APP_OPENPANEL_CLIENT_ID__';
+
+            // OpenPanel Initialization
+            if (openPanelUrl && openPanelUrl.startsWith('http') && openPanelClientId && !openPanelClientId.startsWith('__')) {
+                 window.op = window.op || function () {
+                    var n = [];
+                    return new Proxy(function () {
+                        arguments.length && n.push([].slice.call(arguments))
+                    }, {
+                        get: function (t, r) {
+                            return "q" === r ? n : function () {
+                                n.push([r].concat([].slice.call(arguments)))
+                            }
+                        },
+                        has: function (t, r) {
+                            return "q" === r
+                        }
+                    })
+                }();
+                window.op('init', {
+                    apiUrl: openPanelUrl,
+                    clientId: openPanelClientId,
+                    trackScreenViews: true,
+                    trackOutgoingLinks: true,
+                    trackAttributes: true,
+                });
+
+                // Load the script
+                var script = document.createElement('script');
+                script.src = 'https://openpanel.dev/op1.js';
+                script.defer = true;
+                script.async = true;
+                document.head.appendChild(script);
+            }
+        </script>
+    </body>
+</html>

@@ -1,0 +1,159 @@
+version: '3.8'
+
+# ============================================
+# Mise - Your Kitchen Sidekick
+# Simple deployment using pre-built images
+# ============================================
+# 
+# Usage:
+#   1. Replace domocn below with your GitHub username
+#   2. Run: docker-compose -f docker-compose.simple.yml up -d
+#   3. Access: http://localhost:3000
+#
+# To pull latest images:
+#   docker-compose -f docker-compose.simple.yml pull
+#   docker-compose -f docker-compose.simple.yml up -d
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: mise-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-mise}
+      - POSTGRES_USER=${POSTGRES_USER:-mise}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mise-password-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mise-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mise}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Pub/Sub (multi-instance WebSocket support)
+  redis:
+    image: redis:7-alpine
+    container_name: mise-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - mise-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    image: ghcr.io/domocn/mise-backend:latest
+    container_name: mise-backend
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-mise}:${POSTGRES_PASSWORD:-mise-password-change-me}@postgres:5432/${POSTGRES_DB:-mise}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-key}
+      - CORS_ORIGINS=*
+      # Redis Pub/Sub for multi-instance support
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PUBSUB_ENABLED=${REDIS_PUBSUB_ENABLED:-true}
+      # Debug/Logging Configuration - logs visible in Portainer
+      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LLM_PROVIDER=ollama
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mise-network
+
+  # Background Worker (for heavy AI tasks - Celery)
+  worker:
+    image: ghcr.io/domocn/mise-backend:latest
+    container_name: mise-worker
+    restart: unless-stopped
+    command: python -m celery -A workers.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=4
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-mise}:${POSTGRES_PASSWORD:-mise-password-change-me}@postgres:5432/${POSTGRES_DB:-mise}
+      - REDIS_URL=redis://redis:6379
+      # Debug/Logging Configuration - logs visible in Portainer
+      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LLM_PROVIDER=ollama
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mise-network
+
+  # Flower Dashboard (Celery monitoring)
+  flower:
+    image: ghcr.io/domocn/mise-backend:latest
+    container_name: mise-flower
+    restart: unless-stopped
+    command: python -m celery -A workers.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - worker
+    networks:
+      - mise-network
+
+  # Frontend
+  frontend:
+    image: ghcr.io/domocn/mise-frontend:latest
+    container_name: mise-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      # Change this to your server's public IP or domain
+      - REACT_APP_BACKEND_URL=http://localhost:8001
+    depends_on:
+      - backend
+    networks:
+      - mise-network
+
+  # Ollama Local LLM (for AI features without API keys)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mise-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - mise-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+  ollama_data:
+
+networks:
+  mise-network:
+    driver: bridge
