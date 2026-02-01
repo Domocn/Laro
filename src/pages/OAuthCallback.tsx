@@ -56,8 +56,10 @@ export const OAuthCallback = () => {
       updateUser(user);
 
       setStatus('success');
-      
+
       if (is_new) {
+        // Clear onboarding flag to ensure walkthrough shows for new user
+        localStorage.removeItem(`mise_onboarding_${user.id}`);
         toast.success('Account created successfully!');
       } else {
         toast.success('Welcome back!');

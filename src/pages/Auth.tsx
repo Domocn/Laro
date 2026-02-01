@@ -174,9 +174,13 @@ export const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
-      await register(name, email, password, null, inviteCode || null);
+      const result = await register(name, email, password, null, inviteCode || null);
+      // Clear any existing onboarding flag to ensure walkthrough shows for new user
+      if (result?.user?.id) {
+        localStorage.removeItem(`mise_onboarding_${result.user.id}`);
+      }
       toast.success('Account created successfully!');
       navigate('/dashboard');
     } catch (error) {
