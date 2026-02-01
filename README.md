@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp" alt="Laro Logo" width="120">
+  <img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" alt="Laro Logo" width="120">
 </p>
 
 <h1 align="center">Laro</h1>
@@ -32,7 +32,7 @@ Laro is a **self-hosted recipe manager** for home cooks. Import recipes from any
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/Laro.git
+git clone https://github.com/Domocn/Laro.git
 cd Laro
 
 # Copy and configure environment
