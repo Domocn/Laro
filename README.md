@@ -10,10 +10,10 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-features">Features</a> •
-  <a href="#-android-app">Android App</a> •
-  <a href="#%EF%B8%8F-configuration">Configuration</a>
+  <a href="#dont-want-to-self-host">Cloud Version</a> •
+  <a href="#quick-start">Self-Host</a> •
+  <a href="#features">Features</a> •
+  <a href="#android-app">Android App</a>
 </p>
 
 ---
@@ -23,6 +23,14 @@
 Laro is a **self-hosted recipe manager** for home cooks. Import recipes from any website with AI, track your pantry, plan weekly meals, generate shopping lists, and cook with step-by-step guidance.
 
 **Your data stays on your server.** No cloud required.
+
+---
+
+## Don't Want to Self-Host?
+
+Use our cloud version at **[laro.food](https://laro.food)** - no setup required! Download the Android app from the Play Store and start cooking.
+
+Self-hosted users can also use our official Android app - just point it to your server in the settings.
 
 ---
 
@@ -120,7 +128,9 @@ docker run -d --name laro-db \
 
 ## Android App
 
-Build the Android app to connect to your self-hosted server.
+**Self-hosted users can use our official Android app** - just connect it to your server in Settings > Server Configuration.
+
+Or build the app yourself from source:
 
 ### Setup
 
