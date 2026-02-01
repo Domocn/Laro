@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <a href="https://laro.food"><img src="https://img.shields.io/badge/Cloud-laro.food-6B8E6B?style=for-the-badge" alt="Cloud Version"></a>
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="License">
+  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
+</p>
+
+<p align="center">
   <a href="#dont-want-to-self-host">Cloud Version</a> •
   <a href="#quick-start">Self-Host</a> •
   <a href="#features">Features</a> •
