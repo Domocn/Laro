@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" alt="Laro Logo" width="120">
+  <img src="public/logo.png" alt="Laro Logo" width="120">
 </p>
 
 <h1 align="center">Laro</h1>
@@ -13,7 +13,7 @@
   <a href="#dont-want-to-self-host">Cloud Version</a> •
   <a href="#quick-start">Self-Host</a> •
   <a href="#features">Features</a> •
-  <a href="#android-app">Android App</a>
+  <a href="#configuration">Configuration</a>
 </p>
 
 ---
@@ -128,42 +128,11 @@ docker run -d --name laro-db \
 
 ## Android App
 
-**Self-hosted users can use our official Android app** - just connect it to your server in Settings > Server Configuration.
+Download our official Android app and connect it to your self-hosted server:
 
-Or build the app yourself from source:
-
-### Setup
-
-1. Copy config files:
-```bash
-cd android
-cp local.properties.example local.properties
-cp app/google-services.json.example app/google-services.json
-```
-
-2. Edit `local.properties`:
-```properties
-sdk.dir=/path/to/your/android/sdk
-MISE_API_BASE_URL=http://YOUR_SERVER_IP:8000/api/v1
-```
-
-3. Set up Firebase (for push notifications):
-   - Create project at [Firebase Console](https://console.firebase.google.com)
-   - Download `google-services.json` to `android/app/`
-
-4. Build:
-```bash
-./gradlew assembleDebug
-# APK at: app/build/outputs/apk/debug/app-debug.apk
-```
-
-### Connecting to Your Server
-
-The app connects to your backend via the API URL in `local.properties`:
-
-- **Same network:** `http://192.168.1.100:8000/api/v1`
-- **Over internet:** `https://laro.yourdomain.com/api/v1`
-- **Emulator to localhost:** `http://10.0.2.2:8000/api/v1`
+1. Install the Laro app from the Play Store or [laro.food](https://laro.food)
+2. Go to **Settings > Server Configuration**
+3. Enter your server URL (e.g., `https://laro.yourdomain.com`)
 
 ---
 
@@ -264,8 +233,7 @@ volumes:
 
 | Component | Technology |
 |-----------|------------|
-| Android | Kotlin, Jetpack Compose, Hilt, Room |
-| Web | React, Tailwind CSS, Vite |
+| Web | React, TypeScript, Tailwind CSS, Vite |
 | Backend | FastAPI (Python), PostgreSQL |
 | AI | Ollama, OpenAI, Claude, Gemini |
 
