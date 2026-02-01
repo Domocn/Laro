@@ -135,7 +135,7 @@ def get_base_template(content: str) -> str:
 
 async def send_password_reset_email(to: str, token: str) -> bool:
     """Send password reset email"""
-    reset_url = f"{APP_URL}/reset-password?token={token}"
+    reset_url = f"{APP_URL}/#/reset-password?token={token}"
     
     content = f"""
     <h2>Reset Your Password</h2>
@@ -188,7 +188,7 @@ async def send_new_login_notification(
             <li>Review your active sessions</li>
         </ol>
         <p style="text-align: center; margin-top: 15px;">
-            <a href="{APP_URL}/settings/security" class="button">Secure My Account</a>
+            <a href="{APP_URL}/#/settings/security" class="button">Secure My Account</a>
         </p>
     </div>
     """
@@ -212,7 +212,7 @@ async def send_password_changed_notification(to: str) -> bool:
         <strong>⚠️ Didn't change your password?</strong><br>
         If you didn't make this change, your account may be compromised.
         <p style="text-align: center; margin-top: 15px;">
-            <a href="{APP_URL}/forgot-password" class="button">Reset Password Now</a>
+            <a href="{APP_URL}/#/forgot-password" class="button">Reset Password Now</a>
         </p>
     </div>
     """
@@ -251,7 +251,7 @@ async def send_2fa_disabled_notification(to: str) -> bool:
         <strong>⚠️ Your account is less secure</strong><br>
         We recommend keeping 2FA enabled for maximum security.
         <p style="text-align: center; margin-top: 15px;">
-            <a href="{APP_URL}/settings/security" class="button">Re-enable 2FA</a>
+            <a href="{APP_URL}/#/settings/security" class="button">Re-enable 2FA</a>
         </p>
     </div>
     <p>If you didn't make this change, please secure your account immediately.</p>
@@ -274,7 +274,7 @@ async def send_account_locked_notification(to: str, unlock_minutes: int) -> bool
     </div>
     <p>If this was you, please wait and try again. If you've forgotten your password:</p>
     <p style="text-align: center;">
-        <a href="{APP_URL}/forgot-password" class="button">Reset Password</a>
+        <a href="{APP_URL}/#/forgot-password" class="button">Reset Password</a>
     </p>
     <p>If you didn't try to sign in, someone else may be trying to access your account. Consider:</p>
     <ul>
