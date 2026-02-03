@@ -4,7 +4,7 @@
 
 **Introducing Laro - Your AI-Powered Recipe Companion**
 
-Tired of scattered bookmarks, forgotten ingredients going bad, and the eternal "what's for dinner?" question? Meet **Laro** - a recipe manager built for home cooks who want to take control of their kitchen.
+Tired of scattered bookmarks, forgotten ingredients going bad, and the eternal "what's for dinner?" question? Meet **Laro** - a recipe manager I built for home cooks who want to take control of their kitchen.
 
 **What can Laro do?**
 
@@ -23,7 +23,7 @@ Tired of scattered bookmarks, forgotten ingredients going bad, and the eternal "
 - Cloud: https://laro.food
 - Self-host: https://github.com/Domocn/Laro
 
-Happy cooking!
+I'd love for you to try it out and let me know what you think!
 
 ---
 
