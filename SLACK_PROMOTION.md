@@ -14,6 +14,14 @@ Tired of scattered bookmarks, forgotten ingredients going bad, and the eternal "
 - **Smart Shopping Lists** - Auto-generated from your meal plan, grouped by store aisle.
 - **Cooking Mode** - Full-screen step-by-step guidance with built-in timers and an AI assistant to answer questions while you cook.
 
+**Built with neurodiversity in mind**
+
+Laro includes accessibility presets designed for different needs:
+- **Focus Mode (ADHD)** - Reduced distractions, clear progress indicators, and step highlighting to keep you on track
+- **Reading Support (Dyslexia)** - OpenDyslexic font, adjustable text spacing, and a reading ruler
+- **Predictable Mode (Autism)** - Consistent patterns, confirmation dialogs, and reduced animations
+- **Quiet Mode (Sensory)** - Minimal animations, muted colors, and optional sound/haptic controls
+
 **Self-hosted or Cloud - Your choice**
 
 - Want full control? Self-host with Docker in minutes. Your data stays on your server.
