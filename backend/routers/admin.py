@@ -21,6 +21,9 @@ import os
 import json
 import io
 import zipfile
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -949,3 +952,90 @@ async def update_backup_settings(
     )
 
     return {"message": "Backup settings updated", "next_scheduled": next_scheduled}
+
+# =============================================================================
+# BETA INVITE MANAGEMENT
+# =============================================================================
+
+PLAY_STORE_BETA_URL = os.environ.get(
+    "PLAY_STORE_BETA_URL",
+    "https://play.google.com/apps/testing/com.laro.app"
+)
+
+class BetaInviteRequest(BaseModel):
+    emails: List[EmailStr]
+
+class BetaInviteSingleRequest(BaseModel):
+    email: EmailStr
+
+@router.post("/beta/invite")
+async def send_beta_invites(
+    request: Request,
+    data: BetaInviteRequest,
+    background_tasks: BackgroundTasks,
+    admin: dict = Depends(get_admin_user)
+):
+    """Send beta invite emails to multiple users"""
+    from services.email import send_beta_invite_email
+
+    results = {"sent": [], "failed": []}
+
+    async def send_invite(email: str):
+        try:
+            success = await send_beta_invite_email(email, PLAY_STORE_BETA_URL)
+            if success:
+                results["sent"].append(email)
+            else:
+                results["failed"].append({"email": email, "reason": "Email not configured or send failed"})
+        except Exception as e:
+            results["failed"].append({"email": email, "reason": str(e)})
+
+    # Send all invites
+    for email in data.emails:
+        await send_invite(email)
+
+    # Log the action
+    await log_audit(
+        admin["id"],
+        admin["email"],
+        "beta_invites_sent",
+        "beta",
+        None,
+        {"count": len(results["sent"]), "emails": results["sent"]},
+        request.client.host if request.client else None
+    )
+
+    return {
+        "success": True,
+        "sent_count": len(results["sent"]),
+        "failed_count": len(results["failed"]),
+        "results": results
+    }
+
+@router.post("/beta/invite/single")
+async def send_single_beta_invite(
+    request: Request,
+    data: BetaInviteSingleRequest,
+    admin: dict = Depends(get_admin_user)
+):
+    """Send beta invite email to a single user"""
+    from services.email import send_beta_invite_email
+
+    success = await send_beta_invite_email(data.email, PLAY_STORE_BETA_URL)
+
+    if success:
+        await log_audit(
+            admin["id"],
+            admin["email"],
+            "beta_invite_sent",
+            "beta",
+            None,
+            {"email": data.email},
+            request.client.host if request.client else None
+        )
+        return {"success": True, "email": data.email, "message": "Beta invite sent"}
+    else:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send email. Check email configuration."
+        )
