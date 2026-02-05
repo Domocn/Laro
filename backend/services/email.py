@@ -282,9 +282,41 @@ async def send_account_locked_notification(to: str, unlock_minutes: int) -> bool
         <li>Enabling two-factor authentication</li>
     </ul>
     """
-    
+
     return await send_email(
         to=to,
         subject=f"[{APP_NAME}] Account locked - suspicious activity",
+        html_body=get_base_template(content)
+    )
+
+
+async def send_beta_invite_email(to: str, play_store_url: str) -> bool:
+    """Send beta invite email with Google Play download link"""
+    content = f"""
+    <h2>You're Invited to the Laro Beta!</h2>
+    <p>Great news! You've been accepted into the {APP_NAME} Android beta. 🎉</p>
+    <div class="info-box">
+        <p>As a beta tester, you'll get early access to new features and help shape the future of {APP_NAME}.</p>
+    </div>
+    <p style="text-align: center;">
+        <a href="{play_store_url}" class="button">Download from Google Play</a>
+    </p>
+    <p><strong>How to get started:</strong></p>
+    <ol>
+        <li>Click the button above to open Google Play</li>
+        <li>Accept the beta tester invitation</li>
+        <li>Install the {APP_NAME} app</li>
+        <li>Sign in with this email address</li>
+    </ol>
+    <div class="alert-box">
+        <strong>🐛 Found a bug?</strong><br>
+        We'd love your feedback! You can report issues directly through the app or reply to this email.
+    </div>
+    <p>Thanks for being an early supporter!</p>
+    """
+
+    return await send_email(
+        to=to,
+        subject=f"[{APP_NAME}] You're in! Download the beta app",
         html_body=get_base_template(content)
     )
