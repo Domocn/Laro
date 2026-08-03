@@ -34,8 +34,33 @@ class RecipeRepository(BaseRepository):
         )
 
     async def delete_recipe(self, recipe_id: str) -> int:
-        """Delete a recipe"""
-        return await self.delete({"id": recipe_id})
+        """Delete a recipe and all rows that reference it.
+
+        Several tables have a FK to recipes(id) without ON DELETE CASCADE
+        (recipe_shares, reviews, recipe_versions, recipe_feedback, cook_sessions,
+        meal_plans), so we remove dependents first inside a transaction.
+        """
+        pool = await self._get_db()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                for table in (
+                    "recipe_shares",
+                    "reviews",
+                    "recipe_versions",
+                    "recipe_feedback",
+                    "cook_sessions",
+                    "meal_plans",
+                ):
+                    await conn.execute(
+                        f"DELETE FROM {table} WHERE recipe_id = $1", recipe_id
+                    )
+                result = await conn.execute(
+                    "DELETE FROM recipes WHERE id = $1", recipe_id
+                )
+        try:
+            return int(result.split()[-1])
+        except (AttributeError, ValueError):
+            return 0
 
     async def find_by_author(
         self,
