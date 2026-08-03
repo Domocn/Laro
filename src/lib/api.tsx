@@ -8,7 +8,9 @@ const RUNTIME_BACKEND_URL = '%REACT_APP_BACKEND_URL%';
 // Get server URL - check localStorage first, then runtime env, then fallback to same-origin
 // When using same-origin (empty string), requests go through nginx proxy to backend
 const getServerUrl = () => {
-  const savedUrl = localStorage.getItem('mise_server_url');
+  // Prefer the current 'laro_server_url' key (written by ServerConfig), falling
+  // back to the legacy 'mise_server_url' key for backward compatibility.
+  const savedUrl = localStorage.getItem('laro_server_url') || localStorage.getItem('mise_server_url');
   if (savedUrl) {
     return savedUrl;
   }

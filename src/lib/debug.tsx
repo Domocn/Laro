@@ -3,19 +3,32 @@ export class DebugLogger {
   constructor(namespace: string) {
     this.namespace = namespace;
   }
+  debug(...args: any[]) { console.debug(`[${this.namespace}]`, ...args); }
   info(...args: any[]) { console.log(`[${this.namespace}]`, ...args); }
   warn(...args: any[]) { console.warn(`[${this.namespace}]`, ...args); }
   error(...args: any[]) { console.error(`[${this.namespace}]`, ...args); }
 }
 
-export const logStateChange = (namespace: string, state: string, data: any) => {
-  console.log(`[${namespace}] State Change: ${state}`, data);
+export const logStateChange = (namespace: string, key: string, oldValue?: any, newValue?: any) => {
+  console.log(`[${namespace}] State Change: ${key}`, { from: oldValue, to: newValue });
+};
+
+export const logWsEvent = (event: string, data?: any, meta?: any) => {
+  console.log(`[websocket] Event: ${event}`, data ?? '', meta ?? '');
+};
+
+export const debugStats = {
+  wsEvents: {} as Record<string, number>,
+  recordWsEvent(type: string) {
+    this.wsEvents[type] = (this.wsEvents[type] || 0) + 1;
+  },
 };
 
 export const debug = {
   api: new DebugLogger('api'),
   auth: new DebugLogger('auth'),
   ui: new DebugLogger('ui'),
+  ws: new DebugLogger('websocket'),
 };
 
 export const createApiDebugInterceptor = (instance: any) => {

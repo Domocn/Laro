@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }) => {
           // Get extended user info with role
           const res = await authApi.me();
           // Get server URL - use relative URL for HA ingress compatibility
-          const serverUrl = localStorage.getItem('mise_server_url') || process.env.REACT_APP_BACKEND_URL || '';
+          const serverUrl = localStorage.getItem('laro_server_url') || localStorage.getItem('mise_server_url') || process.env.REACT_APP_BACKEND_URL || '';
           const apiPath = serverUrl ? `${serverUrl}/api/auth/me/extended` : 'api/auth/me/extended';
           const extendedRes = await fetch(
             apiPath,
