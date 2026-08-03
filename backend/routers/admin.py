@@ -174,6 +174,9 @@ async def list_users(
         status=status
     )
 
+    def _to_iso(value):
+        return value.isoformat() if hasattr(value, "isoformat") else value
+
     users = []
     for u in users_raw:
         users.append(UserListItem(
@@ -182,8 +185,8 @@ async def list_users(
             name=u["name"],
             role=u.get("role", "user"),
             status=u.get("status", "active"),
-            created_at=u["created_at"],
-            last_login=u.get("last_login"),
+            created_at=_to_iso(u["created_at"]),
+            last_login=_to_iso(u.get("last_login")),
             household_id=u.get("household_id")
         ))
 

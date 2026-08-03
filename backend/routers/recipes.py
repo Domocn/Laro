@@ -394,8 +394,9 @@ async def create_share_link(recipe_id: str, user: dict = Depends(get_current_use
     share_id = str(uuid.uuid4())[:8]
     share_doc = {
         "id": share_id,
+        "share_code": share_id,
         "recipe_id": recipe_id,
-        "created_by": user["id"],
+        "user_id": user["id"],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
     }

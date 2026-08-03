@@ -692,6 +692,75 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='subscription_source') THEN
         ALTER TABLE users ADD COLUMN subscription_source VARCHAR(50);
     END IF;
+
+    -- Review fields expected by the reviews API (schema originally only had rating/content/tags)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='user_name') THEN
+        ALTER TABLE reviews ADD COLUMN user_name VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='title') THEN
+        ALTER TABLE reviews ADD COLUMN title TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='comment') THEN
+        ALTER TABLE reviews ADD COLUMN comment TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='would_make_again') THEN
+        ALTER TABLE reviews ADD COLUMN would_make_again BOOLEAN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='difficulty_rating') THEN
+        ALTER TABLE reviews ADD COLUMN difficulty_rating INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='helpful_count') THEN
+        ALTER TABLE reviews ADD COLUMN helpful_count INTEGER DEFAULT 0;
+    END IF;
+
+    -- Recipe rating aggregates written by update_recipe_rating() and read by the reviews API
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='rating_average') THEN
+        ALTER TABLE recipes ADD COLUMN rating_average DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='rating_count') THEN
+        ALTER TABLE recipes ADD COLUMN rating_count INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='would_make_again_percent') THEN
+        ALTER TABLE recipes ADD COLUMN would_make_again_percent INTEGER DEFAULT 0;
+    END IF;
+
+    -- Recipe cost fields read by the cost-tracking API (/costs/summary, /costs/recipe)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_total') THEN
+        ALTER TABLE recipes ADD COLUMN cost_total DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_per_serving') THEN
+        ALTER TABLE recipes ADD COLUMN cost_per_serving DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_calculated_at') THEN
+        ALTER TABLE recipes ADD COLUMN cost_calculated_at TIMESTAMP;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_currency') THEN
+        ALTER TABLE recipes ADD COLUMN cost_currency VARCHAR(10) DEFAULT 'USD';
+    END IF;
+
+    -- ingredient_costs is user-scoped in the cost-tracking API (schema originally was household-scoped)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_costs' AND column_name='user_id') THEN
+        ALTER TABLE ingredient_costs ADD COLUMN user_id VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_costs' AND column_name='name') THEN
+        ALTER TABLE ingredient_costs ADD COLUMN name VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_costs' AND column_name='name_normalized') THEN
+        ALTER TABLE ingredient_costs ADD COLUMN name_normalized VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_costs' AND column_name='price') THEN
+        ALTER TABLE ingredient_costs ADD COLUMN price DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_costs' AND column_name='quantity') THEN
+        ALTER TABLE ingredient_costs ADD COLUMN quantity DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_costs' AND column_name='notes') THEN
+        ALTER TABLE ingredient_costs ADD COLUMN notes TEXT;
+    END IF;
+    -- Legacy household-scoped columns are no longer populated by the API; relax NOT NULL
+    ALTER TABLE ingredient_costs ALTER COLUMN household_id DROP NOT NULL;
+    ALTER TABLE ingredient_costs ALTER COLUMN ingredient_name DROP NOT NULL;
+    ALTER TABLE ingredient_costs ALTER COLUMN cost DROP NOT NULL;
 END $$;
 """
 
