@@ -436,7 +436,9 @@ async def _get_shared_recipe(share_id: str):
         raise HTTPException(status_code=404, detail="Shared recipe not found")
 
     if share.get("expires_at"):
-        expires = datetime.fromisoformat(share["expires_at"].replace("Z", "+00:00"))
+        expires = share["expires_at"]
+        if isinstance(expires, str):
+            expires = datetime.fromisoformat(expires.replace("Z", "+00:00"))
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) > expires:

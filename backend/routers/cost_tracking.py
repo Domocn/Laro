@@ -235,7 +235,9 @@ async def add_ingredient_price(
 
     pool = await get_db()
     normalized = normalize_ingredient_name(data.name)
-    updated_at = datetime.now(timezone.utc).isoformat()
+    # ingredient_costs.updated_at is a naive TIMESTAMP column; asyncpg needs a datetime
+    # (raw conn.execute here bypasses the repository's ISO-string conversion)
+    updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     async with pool.acquire() as conn:
         # Check if exists
