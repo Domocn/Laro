@@ -17,6 +17,7 @@ import logging
 
 from dependencies import get_current_user
 from database.connection import get_db, dict_from_row, rows_to_dicts
+from config import settings
 
 router = APIRouter(prefix="/remote", tags=["remote-access"])
 logger = logging.getLogger(__name__)
@@ -208,7 +209,7 @@ async def link_to_cloud(request: LinkInstanceRequest):
     return {
         "instance_id": instance["instance_id"],
         "webhook_id": webhook_id,
-        "cloud_url": "wss://web-production-b3fb4.up.railway.app/api/v1/remote/relay",
+        "cloud_url": settings.cloud_relay_url,
         "message": "Successfully linked to Laro Cloud"
     }
 
@@ -217,7 +218,7 @@ async def link_to_cloud(request: LinkInstanceRequest):
 async def get_connection_info():
     """Get cloud relay connection info for self-hosted instances"""
     return {
-        "relay_url": "wss://web-production-b3fb4.up.railway.app/api/v1/remote/relay",
+        "relay_url": settings.cloud_relay_url,
         "api_version": "v1"
     }
 

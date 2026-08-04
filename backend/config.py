@@ -82,6 +82,13 @@ class Settings:
         # Self-hosted users can choose their own AI provider
         self.is_cloud: bool = os.getenv("IS_CLOUD", "false").lower() == "true"
 
+        # WebSocket relay URL that self-hosted instances tunnel through ("Laro Cloud").
+        # Configurable so the cloud backend can be hosted anywhere (not hardcoded to Railway).
+        self.cloud_relay_url: str = os.getenv(
+            "CLOUD_RELAY_URL",
+            "wss://web-production-b3fb4.up.railway.app/api/v1/remote/relay",
+        )
+
         # Redis Settings (for Pub/Sub and caching)
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
         self.redis_pubsub_enabled: bool = os.getenv("REDIS_PUBSUB_ENABLED", "true").lower() == "true"
