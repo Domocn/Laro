@@ -1,24 +1,24 @@
 # Cheap single-VPS deployment (e.g. OVH)
 
-Runs all of Laro on one small VPS as **two containers** — the app (FastAPI
-backend serving the built frontend) and Postgres — behind Caddy for automatic
-HTTPS. No Ollama, Redis, Celery worker, Flower or analytics stack (none are
-required), which is what makes it cheap compared to the multi-service
-`docker-compose.yml` or a usage-billed PaaS.
+Runs **all of Laro** (web UI + API + database) on one small VPS at a single
+address — by default the bare IP you were given (e.g. `http://51.38.68.224`).
+No Netlify frontend and no Railway backend are required.
+
+Architecture: **two containers** — the app (FastAPI backend that also serves the
+built frontend) and Postgres — behind Caddy. No Ollama, Redis, Celery worker,
+Flower or analytics stack (none are required), which is what makes it cheap.
 
 ## Why this is cheaper
-- **One app process** serves both the API and the web UI (`SERVE_FRONTEND=true`),
-  so there's no separate nginx/frontend container.
-- **Postgres runs on the same box** — no managed-database fee.
-- **No self-hosted LLM** (Ollama is the biggest RAM cost). Use the on-device AI in
-  the Android app, or a pay-per-use cloud key.
-- A flat-rate VPS (~€4–5/mo) is typically far cheaper than usage-billed hosting
-  for an always-on API.
+- **One app process** serves both the API and the web UI (`SERVE_FRONTEND=true`).
+- **Postgres on the same box** — no managed-database fee.
+- **No self-hosted LLM** — use the on-device AI in the Android app, or a
+  pay-per-use cloud key.
+- Flat-rate VPS (~€4–5/mo) beats usage-billed PaaS for an always-on API.
 
 ## Prerequisites
-- A VPS with a public IP (e.g. OVH `vps-51feb6de.vps.ovh.net`, `51.38.68.224`).
-- A DNS name pointing at it. The OVH hostname already resolves, or point your own
-  domain's A/AAAA records at the VPS IP.
+- A VPS with a public IP (yours: `51.38.68.224`, hostname
+  `vps-51feb6de.vps.ovh.net`).
+- Ports **80** (and optionally **443**) open inbound.
 
 ## One-time setup on the VPS
 
@@ -29,54 +29,59 @@ SSH in as `ubuntu`, then:
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER && newgrp docker
 
-# 2) Get the code
+# 2) Get the code (use the branch that has this deploy pack once merged, or main)
 git clone https://github.com/Domocn/Laro.git
 cd Laro
 
-# 3) Configure
+# 3) Configure — IP mode (default): leave LARO_SITE_ADDRESS blank
 cp deploy/env.example deploy/.env
-nano deploy/.env          # set LARO_DOMAIN, POSTGRES_PASSWORD, JWT_SECRET (openssl rand -base64 48)
+nano deploy/.env
+# Required: POSTGRES_PASSWORD, JWT_SECRET (openssl rand -base64 48)
+# Leave LARO_SITE_ADDRESS= empty so the site is http://51.38.68.224
 
-# 4) Launch (builds the combined image, starts postgres + app + caddy)
+# 4) Launch
 docker compose -f deploy/docker-compose.cheap.yml --env-file deploy/.env up -d --build
 ```
 
-Open `https://<LARO_DOMAIN>` — Caddy fetches a Let's Encrypt certificate
-automatically. The first registered user becomes admin. The database schema is
-created automatically on first boot.
+Open **`http://51.38.68.224`**. The first registered user becomes admin. Schema
+is created automatically on first boot.
+
+### Optional: HTTPS with a domain later
+Set `LARO_SITE_ADDRESS=vps-51feb6de.vps.ovh.net` (or your own domain whose A/AAAA
+points at `51.38.68.224`), then recreate Caddy:
+
+```bash
+docker compose -f deploy/docker-compose.cheap.yml --env-file deploy/.env up -d caddy
+```
+
+Let's Encrypt cannot issue certificates for a bare IP — TLS needs a DNS name.
+
+## Point clients at this VPS
+- **Web (this box):** open `http://51.38.68.224` — UI and API are same-origin.
+- **Android app:** server URL = `http://51.38.68.224` (or `https://…` after TLS).
+- You can stop the Netlify frontend and Railway backend once this is live.
 
 ## Operations
 
 ```bash
-# logs
 docker compose -f deploy/docker-compose.cheap.yml logs -f app
 
-# update to latest code
-git pull && docker compose -f deploy/docker-compose.cheap.yml up -d --build
+git pull && docker compose -f deploy/docker-compose.cheap.yml --env-file deploy/.env up -d --build
 
-# backup the database
 docker compose -f deploy/docker-compose.cheap.yml exec postgres \
   pg_dump -U laro laro > backup-$(date +%F).sql
 ```
 
-## Frontend hosting
-
-You can either serve the UI from this one container (default here) or keep the
-existing Netlify frontend and point it at `https://<LARO_DOMAIN>` (set the server
-URL in the app, and restrict `CORS_ORIGINS` to the Netlify origin).
-
 ## Moving off Railway
 The old cloud relay URL was hardcoded to `web-production-b3fb4.up.railway.app`.
-It's now configurable via `CLOUD_RELAY_URL` (`backend/config.py`). If this VPS is
-your new "cloud" relay, set in `deploy/.env`:
+It's now configurable via `CLOUD_RELAY_URL`. If this VPS is your new "cloud"
+relay (after you have HTTPS on a domain):
 
 ```
-CLOUD_RELAY_URL=wss://<LARO_DOMAIN>/api/v1/remote/relay
+CLOUD_RELAY_URL=wss://vps-51feb6de.vps.ovh.net/api/v1/remote/relay
 ```
 
-## Notes / limitations
-- The combined image build and the app's ability to serve the SPA + API on one
-  port were verified in development. Caddy's Let's Encrypt issuance needs a real
-  public domain, so it can only be verified on the VPS itself.
-- `usesCleartextTraffic`/HTTP is only for local testing; always use the HTTPS
-  Caddy endpoint in production (the web app calls the API over HTTPS).
+## Notes
+- Combined SPA+API on one port was verified in development. Caddy on a bare IP
+  (HTTP `:80`) is the default for this OVH box; cert issuance only applies when
+  `LARO_SITE_ADDRESS` is a public domain.

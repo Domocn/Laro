@@ -1,7 +1,12 @@
-# Automatic HTTPS (Let's Encrypt) reverse proxy for the Laro app container.
-# LARO_DOMAIN must be a public DNS name that points to this VPS's IP
-# (e.g. the OVH hostname vps-xxxx.vps.ovh.net, or your own domain).
-{$LARO_DOMAIN} {
+# Front door for the Laro app container.
+#
+# Default (LARO_SITE_ADDRESS unset) => ":80": serves plain HTTP for ANY host,
+# so the app is reachable directly at http://<VPS-IP> (e.g. http://51.38.68.224).
+#
+# Set LARO_SITE_ADDRESS to a public DNS name (e.g. vps-51feb6de.vps.ovh.net or
+# your own domain) to get automatic HTTPS via Let's Encrypt. Let's Encrypt cannot
+# issue certificates for a bare IP address, so TLS requires a domain.
+{$LARO_SITE_ADDRESS::80} {
 	encode gzip
 	reverse_proxy app:8001
 }
