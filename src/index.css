@@ -1,0 +1,600 @@
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+/* OpenDyslexic font - using Comic Sans MS as fallback which is proven dyslexia-friendly */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        /* Laro Brand Colors - Sage Green Theme */
+        --background: 40 33% 97%;
+        --foreground: 215 28% 17%;
+        --card: 0 0% 100%;
+        --card-foreground: 215 28% 17%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 215 28% 17%;
+        --primary: 150 45% 63%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 258 85% 85%;
+        --secondary-foreground: 215 28% 17%;
+        --muted: 40 20% 94%;
+        --muted-foreground: 215 15% 40%;
+        --accent: 258 85% 85%;
+        --accent-foreground: 215 28% 17%;
+        --destructive: 0 72% 55%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 40 15% 88%;
+        --input: 40 20% 94%;
+        --ring: 150 45% 63%;
+        --radius: 1rem;
+        --chart-1: 150 45% 63%;
+        --chart-2: 258 85% 85%;
+        --chart-3: 45 100% 60%;
+        --chart-4: 173 100% 41%;
+        --chart-5: 32 100% 63%;
+    }
+
+    .dark {
+        /* Laro Dark Theme */
+        --background: 215 28% 17%;
+        --foreground: 210 20% 98%;
+        --card: 215 23% 23%;
+        --card-foreground: 210 20% 98%;
+        --popover: 215 23% 23%;
+        --popover-foreground: 210 20% 98%;
+        --primary: 150 50% 70%;
+        --primary-foreground: 215 28% 17%;
+        --secondary: 258 70% 80%;
+        --secondary-foreground: 215 28% 17%;
+        --muted: 215 20% 25%;
+        --muted-foreground: 215 15% 65%;
+        --accent: 258 70% 80%;
+        --accent-foreground: 210 20% 98%;
+        --destructive: 0 62% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 215 20% 30%;
+        --input: 215 20% 25%;
+        --ring: 150 50% 70%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background font-sans text-foreground antialiased;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+        background-blend-mode: overlay;
+        background-size: 150px;
+    }
+    .dark body {
+        background-image: none;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        @apply font-heading tracking-tight;
+    }
+}
+
+@layer utilities {
+    .glass {
+        @apply bg-white/80 backdrop-blur-md dark:bg-gray-900/80;
+    }
+    .text-balance {
+        text-wrap: balance;
+    }
+}
+
+/* Dark mode overrides for custom colors */
+.dark .bg-cream {
+    @apply bg-background;
+}
+.dark .bg-cream-subtle {
+    background-color: hsl(215 20% 20%);
+}
+.dark .bg-cream-paper {
+    background-color: hsl(215 23% 23%);
+}
+.dark .bg-white {
+    background-color: hsl(215 23% 23%);
+}
+.dark .bg-laro-light,
+.dark .bg-laro-light {
+    background-color: hsl(150 30% 25%);
+}
+.dark .text-laro,
+.dark .text-laro {
+    color: hsl(150 50% 70%);
+}
+.dark .border-laro,
+.dark .border-laro {
+    border-color: hsl(150 50% 70%);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #F0F9F4;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #A8D8B9;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #7BC89C;
+}
+
+.dark ::-webkit-scrollbar-track {
+    background: hsl(215 20% 20%);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    background: hsl(215 20% 35%);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+    background: hsl(150 50% 70%);
+}
+
+/* Animation helpers */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+
+
+/* Reduced motion */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+}
+
+/* Respect system preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ========================================
+   NEURODIVERSITY ACCESSIBILITY FEATURES
+   ======================================== */
+
+/* Dyslexic Font Support */
+.dyslexic-font,
+.dyslexic-font * {
+    font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif !important;
+}
+
+.dyslexic-font h1,
+.dyslexic-font h2,
+.dyslexic-font h3,
+.dyslexic-font h4,
+.dyslexic-font h5,
+.dyslexic-font h6 {
+    font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif !important;
+    font-weight: 700;
+}
+
+/* Text Spacing for Dyslexia */
+.text-spacing-comfortable {
+    letter-spacing: 0.05em;
+    word-spacing: 0.16em;
+}
+
+.text-spacing-spacious {
+    letter-spacing: 0.12em;
+    word-spacing: 0.25em;
+}
+
+.text-spacing-comfortable p,
+.text-spacing-comfortable li,
+.text-spacing-comfortable span,
+.text-spacing-comfortable div {
+    margin-bottom: 0.5em;
+}
+
+.text-spacing-spacious p,
+.text-spacing-spacious li,
+.text-spacing-spacious span,
+.text-spacing-spacious div {
+    margin-bottom: 0.75em;
+}
+
+/* Line Height Adjustments */
+.line-height-relaxed {
+    line-height: 1.8 !important;
+}
+
+.line-height-relaxed * {
+    line-height: 1.8 !important;
+}
+
+.line-height-loose {
+    line-height: 2.2 !important;
+}
+
+.line-height-loose * {
+    line-height: 2.2 !important;
+}
+
+/* Focus Mode (ADHD Support) - Reduce distractions */
+.focus-mode {
+    /* Simplify background */
+    background-image: none !important;
+}
+
+.focus-mode .sidebar,
+.focus-mode [class*="sidebar"],
+.focus-mode nav:not(.breadcrumb) {
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.focus-mode .sidebar:hover,
+.focus-mode [class*="sidebar"]:hover,
+.focus-mode nav:not(.breadcrumb):hover {
+    opacity: 1;
+}
+
+/* Hide non-essential decorative elements in focus mode */
+.focus-mode [class*="decoration"],
+.focus-mode [class*="badge"]:not(.status-badge),
+.focus-mode [class*="pattern"] {
+    display: none !important;
+}
+
+/* Simplified Mode - Cleaner UI */
+.simplified-mode [class*="gradient"],
+.simplified-mode [class*="shadow"]:not([class*="shadow-sm"]) {
+    background-image: none !important;
+    box-shadow: none !important;
+}
+
+.simplified-mode .glass {
+    background: var(--background) !important;
+    backdrop-filter: none !important;
+}
+
+/* Highlight Current Step (for cooking mode and lists) */
+.step-highlighted {
+    background: linear-gradient(90deg,
+        hsl(var(--primary) / 0.15) 0%,
+        hsl(var(--primary) / 0.05) 100%) !important;
+    border-left: 4px solid hsl(var(--primary)) !important;
+    padding-left: 1rem !important;
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1) !important;
+    position: relative;
+}
+
+.step-highlighted::before {
+    content: '';
+    position: absolute;
+    left: -4px;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: hsl(var(--primary));
+    animation: pulse-border 2s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Reading Ruler */
+.reading-ruler-active {
+    cursor: crosshair;
+}
+
+.reading-ruler-line {
+    position: fixed;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: hsl(var(--primary));
+    pointer-events: none;
+    z-index: 9999;
+    box-shadow:
+        0 -3px 15px hsl(var(--primary) / 0.3),
+        0 3px 15px hsl(var(--primary) / 0.3);
+}
+
+.reading-ruler-highlight {
+    position: fixed;
+    left: 0;
+    right: 0;
+    background: hsl(var(--primary) / 0.1);
+    pointer-events: none;
+    z-index: 9998;
+}
+
+/* High Contrast Mode */
+.contrast-high {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --border: 0 0% 20%;
+    --muted: 0 0% 90%;
+    --muted-foreground: 0 0% 10%;
+}
+
+.dark.contrast-high {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --border: 0 0% 80%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 90%;
+}
+
+.contrast-high button,
+.contrast-high a,
+.contrast-high input,
+.contrast-high select,
+.contrast-high textarea {
+    border: 2px solid hsl(var(--border)) !important;
+}
+
+/* Maximum Contrast Mode */
+.contrast-maximum {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+    --border: 0 0% 0%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 0 0% 0%;
+}
+
+.dark.contrast-maximum {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 0%;
+    --border: 0 0% 100%;
+    --muted: 0 0% 5%;
+    --muted-foreground: 0 0% 100%;
+}
+
+.contrast-maximum * {
+    border-color: hsl(var(--border)) !important;
+}
+
+.contrast-maximum button,
+.contrast-maximum a,
+.contrast-maximum input,
+.contrast-maximum select,
+.contrast-maximum textarea {
+    border: 3px solid hsl(var(--border)) !important;
+    font-weight: 600 !important;
+}
+
+/* Animation Levels */
+.animations-none *,
+.animations-none *::before,
+.animations-none *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
+.animations-reduced * {
+    animation-duration: 0.15s !important;
+    transition-duration: 0.15s !important;
+}
+
+.animations-enhanced * {
+    animation-duration: 0.5s !important;
+    transition-duration: 0.3s !important;
+}
+
+/* Progress Indicators */
+.progress-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    background: hsl(var(--primary) / 0.1);
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: hsl(var(--primary));
+}
+
+.progress-indicator::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+}
+
+/* Icon Labels */
+.icon-with-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.icon-with-label .icon-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* Enhanced Focus Indicators */
+.accessibility-focus:focus,
+.accessibility-focus:focus-visible {
+    outline: 3px solid hsl(var(--primary)) !important;
+    outline-offset: 3px !important;
+    box-shadow: 0 0 0 6px hsl(var(--primary) / 0.2) !important;
+}
+
+/* Skip to Content Link (Keyboard Navigation) */
+.skip-to-content {
+    position: absolute;
+    top: -100px;
+    left: 0;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    z-index: 10000;
+    border-radius: 0 0 0.5rem 0;
+}
+
+.skip-to-content:focus {
+    top: 0;
+    outline: 3px solid hsl(var(--foreground));
+    outline-offset: 3px;
+}
+
+/* Timer Notification Styles */
+.timer-notification {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    padding: 1.5rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-radius: 0.75rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    font-size: 1.25rem;
+    font-weight: 600;
+    z-index: 10000;
+    animation: timer-alert 0.5s ease-out;
+}
+
+@keyframes timer-alert {
+    0% { transform: scale(0.8) translateY(-20px); opacity: 0; }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.animations-none .timer-notification {
+    animation: none;
+}
+
+/* Confirmation Dialog Enhancement */
+.accessibility-confirm-dialog {
+    border: 3px solid hsl(var(--primary)) !important;
+}
+
+.accessibility-confirm-dialog .dialog-title {
+    font-size: 1.5rem !important;
+    font-weight: 700 !important;
+    margin-bottom: 1rem !important;
+}
+
+.accessibility-confirm-dialog .dialog-description {
+    font-size: 1.125rem !important;
+    line-height: 1.8 !important;
+    margin-bottom: 1.5rem !important;
+}
+
+/* Step Counter */
+.step-counter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 0.875rem;
+    margin-right: 0.75rem;
+}
+
+.step-counter.completed {
+    background: hsl(var(--primary) / 0.2);
+    color: hsl(var(--primary));
+}
+
+.step-counter.current {
+    animation: pulse-counter 2s ease-in-out infinite;
+    box-shadow: 0 0 0 4px hsl(var(--primary) / 0.2);
+}
+
+@keyframes pulse-counter {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+/* Quiet Mode - Muted Colors */
+.simplified-mode.focus-mode {
+    /* Additional muting in combined modes */
+}
+
+.simplified-mode.focus-mode [class*="color"],
+.simplified-mode.focus-mode [class*="bg-"]:not([class*="bg-background"]):not([class*="bg-card"]) {
+    opacity: 0.7;
+}
+
+/* Print Styles - Ensure accessibility features work in print */
+@media print {
+    .dyslexic-font,
+    .dyslexic-font * {
+        font-family: 'Comic Sans MS', sans-serif !important;
+    }
+
+    .step-highlighted {
+        border-left: 4px solid #000 !important;
+        background: #f0f0f0 !important;
+    }
+}
+
+/* Ensure touch targets are large enough (WCAG 2.5.5) */
+button,
+a,
+input[type="checkbox"],
+input[type="radio"],
+select {
+    min-height: 44px;
+    min-width: 44px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+    width: 24px;
+    height: 24px;
+}
+
+/* Loading state with reduced motion support */
+.loading-accessible {
+    animation: spin 1s linear infinite;
+}
+
+.animations-none .loading-accessible,
+.animations-reduced .loading-accessible {
+    animation: none;
+    opacity: 0.6;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
