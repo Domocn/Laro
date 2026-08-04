@@ -1,0 +1,182 @@
+/* Mise App Styles */
+
+/* Recipe card hover effects */
+.recipe-card {
+    @apply transition-all duration-300 ease-out;
+}
+
+.recipe-card:hover {
+    @apply shadow-hover -translate-y-1;
+}
+
+/* Image overlay gradient */
+.image-overlay {
+    background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.4) 100%);
+}
+
+/* Button animations */
+.btn-bounce {
+    @apply transition-transform duration-200;
+}
+
+.btn-bounce:hover {
+    @apply scale-105;
+}
+
+.btn-bounce:active {
+    @apply scale-95;
+}
+
+/* Input focus states */
+.input-focus {
+    @apply transition-all duration-200;
+}
+
+.input-focus:focus {
+    @apply ring-2 ring-laro ring-offset-2;
+}
+
+/* Category pills */
+.category-pill {
+    @apply px-4 py-2 rounded-full text-sm font-medium transition-all duration-200;
+}
+
+.category-pill.active {
+    @apply bg-laro text-white;
+}
+
+.category-pill:not(.active) {
+    @apply bg-cream-subtle text-foreground hover:bg-laro-light;
+}
+
+/* Meal plan card */
+.meal-card {
+    @apply p-4 rounded-xl bg-white border border-border/60 shadow-soft;
+}
+
+/* Shopping list item */
+.shopping-item {
+    @apply flex items-center gap-3 p-3 rounded-xl transition-all duration-200;
+}
+
+.shopping-item.checked {
+    @apply bg-laro-light/50 line-through text-muted-foreground;
+}
+
+/* Loading skeleton */
+.skeleton {
+    @apply animate-pulse bg-cream-subtle rounded;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+    @apply fixed inset-0 bg-black/40 backdrop-blur-sm z-50;
+}
+
+/* Toast styling */
+.toast-success {
+    @apply bg-laro text-white;
+}
+
+.toast-error {
+    @apply bg-destructive text-white;
+}
+
+/* Navigation active state */
+.nav-link {
+    @apply relative px-4 py-2 rounded-full transition-all duration-200;
+}
+
+.nav-link.active::after {
+    @apply absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 bg-laro rounded-full;
+    content: '';
+}
+
+/* Hero pattern */
+.hero-pattern {
+    background-image: radial-gradient(circle at 1px 1px, #6C5CE7 1px, transparent 0);
+    background-size: 40px 40px;
+    opacity: 0.03;
+}
+
+/* Print styles */
+@media print {
+    body {
+        background: white !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* Hide non-essential elements */
+    nav,
+    header,
+    .print\:hidden,
+    button:not([data-print]),
+    [data-testid="favorite-btn"],
+    [data-testid="print-btn"],
+    [data-testid="add-to-meal-plan"],
+    [data-testid="add-to-shopping"],
+    [data-testid="share-recipe"],
+    [data-testid="edit-recipe-btn"],
+    [data-testid="delete-recipe-btn"] {
+        display: none !important;
+    }
+
+    /* Reset layout */
+    .max-w-4xl {
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Style recipe card for print */
+    article {
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* Make text black for better printing */
+    h1, h2, h3, p, li, span {
+        color: black !important;
+    }
+
+    /* Recipe title */
+    h1 {
+        font-size: 24pt !important;
+        margin-bottom: 10pt !important;
+    }
+
+    h2 {
+        font-size: 16pt !important;
+        margin-top: 16pt !important;
+        margin-bottom: 8pt !important;
+        page-break-after: avoid;
+    }
+
+    /* Ingredients and instructions */
+    ul, ol {
+        page-break-inside: avoid;
+    }
+
+    li {
+        padding: 4pt 0 !important;
+        background: none !important;
+    }
+
+    /* Hide hero image for faster printing (optional) */
+    .aspect-video {
+        max-height: 200px !important;
+    }
+
+    /* Add Laro branding */
+    article::after {
+        content: "Printed from Laro";
+        display: block;
+        text-align: center;
+        font-size: 10pt;
+        color: #666;
+        margin-top: 20pt;
+        padding-top: 10pt;
+        border-top: 1px solid #ccc;
+    }
+}

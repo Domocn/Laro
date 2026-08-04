@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="384" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5"/>
+      <stop offset="100%" style="stop-color:#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" fill="url(#gradient)" rx="22"/>
+  <path d="M35 28 Q32 20 35 14 Q38 8 35 2" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <path d="M50 25 Q47 17 50 11 Q53 5 50 -1" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.8"/>
+  <path d="M65 28 Q62 20 65 14 Q68 8 65 2" stroke="#FFFFFF" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.6"/>
+  <rect x="10" y="43" width="12" height="5" rx="2.5" fill="#FFFFFF"/>
+  <rect x="78" y="43" width="12" height="5" rx="2.5" fill="#FFFFFF"/>
+  <rect x="18" y="38" width="64" height="8" rx="4" fill="#FFFFFF"/>
+  <path d="M20 46 L20 70 Q20 82 32 82 L68 82 Q80 82 80 70 L80 46 Z" fill="#FFFFFF"/>
+  <circle cx="35" cy="58" r="6" fill="#FCD34D"/>
+  <circle cx="50" cy="55" r="7" fill="#F87171"/>
+  <circle cx="66" cy="62" r="5" fill="#4ADE80"/>
+</svg>
