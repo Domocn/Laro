@@ -1,2 +1,6 @@
 web: uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}
-worker: celery -A workers.celery_app worker --loglevel=info --concurrency=2
+# The Celery worker was removed: AI import runs synchronously in the web process
+# (enqueue_job is never called), so a second always-on worker just adds cost.
+# If background jobs are wired up later, re-add:
+#   worker: celery -A workers.celery_app worker --loglevel=info --concurrency=2
+
