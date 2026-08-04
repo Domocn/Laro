@@ -57,7 +57,9 @@ services:
     depends_on:
       - app
     environment:
-      LARO_DOMAIN: ${LARO_DOMAIN:?set LARO_DOMAIN in deploy/.env}
+      # Leave LARO_SITE_ADDRESS unset to serve HTTP on the bare IP (http://<VPS-IP>).
+      # Set it to a domain (e.g. vps-51feb6de.vps.ovh.net) for automatic HTTPS.
+      LARO_SITE_ADDRESS: ${LARO_SITE_ADDRESS:-}
     ports:
       - "80:80"
       - "443:443"
