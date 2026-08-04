@@ -1,0 +1,16 @@
+.git
+node_modules
+dist
+build
+android
+screenshots
+**/__pycache__
+**/*.pyc
+backend/venv
+backend/.pytest_cache
+backend/uploads
+**/.env
+**/.env.*
+!**/.env.example
+*.log
+.DS_Store

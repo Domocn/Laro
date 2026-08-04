@@ -1,0 +1,41 @@
+# Combined image: builds the web frontend and serves it from the FastAPI backend,
+# so a single container runs the whole app (cheapest to host).
+# Build context is the repository root.
+
+# --- Stage 1: build the React/Vite frontend ---
+FROM node:20-alpine AS web
+WORKDIR /web
+COPY package.json ./
+RUN npm install
+COPY index.html vite.config.ts tsconfig.json tsconfig.node.json postcss.config.cjs tailwind.config.cjs ./
+COPY src ./src
+COPY public ./public
+RUN npm run build
+
+# --- Stage 2: Python backend that also serves the built frontend ---
+FROM python:3.11-slim AS app
+WORKDIR /app
+
+ARG APP_VERSION=0.0.0-dev
+ENV APP_VERSION=$APP_VERSION \
+    PYTHONUNBUFFERED=1 \
+    SERVE_FRONTEND=true \
+    STATIC_FILES_DIR=static
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ ./
+
+# Frontend build output served by the backend (see server.py serve_frontend).
+COPY --from=web /web/dist ./static
+# server.py mounts <static>/static for /static; ensure it exists even though
+# Vite emits hashed files under <static>/assets (served by the SPA catch-all).
+RUN mkdir -p static/static uploads
+
+EXPOSE 8001
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -1,0 +1,73 @@
+# Minimal, low-cost Laro deployment for a single small VPS.
+#
+# Runs only what the app needs:
+#   - postgres   : database
+#   - app        : FastAPI backend that ALSO serves the built frontend (one process)
+#   - caddy      : reverse proxy with automatic HTTPS (Let's Encrypt)
+#
+# Deliberately omits Ollama, Redis, the Celery worker, Flower and the OpenPanel
+# analytics stack from docker-compose.yml — none are required to run Laro.
+#
+# Usage (from the repo root on the VPS):
+#   cp deploy/env.example deploy/.env    # then edit deploy/.env
+#   docker compose -f deploy/docker-compose.cheap.yml --env-file deploy/.env up -d --build
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-laro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-laro}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-laro} -d ${POSTGRES_DB:-laro}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.combined
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-laro}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-laro}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env (min 32 chars)}
+      SERVE_FRONTEND: "true"
+      STATIC_FILES_DIR: static
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLOUD_RELAY_URL: ${CLOUD_RELAY_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+    expose:
+      - "8001"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      LARO_DOMAIN: ${LARO_DOMAIN:?set LARO_DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:
