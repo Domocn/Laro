@@ -44,8 +44,8 @@ use `server:app` on **8001**.
   local hello-world so registration auto-verifies).
 - `REVENUECAT_API_KEY` — Play public SDK key (`goog_…`). Written to
   `~/laro-priv/android/local.properties` by the update script; Gradle also reads
-  the env var. Release CI still needs the same GitHub Actions secret plus an env
-  line on `bundleRelease` (deploy key cannot push workflow YAML).
+  the env var. Release CI on `laro-priv` already injects
+  `secrets.REVENUECAT_API_KEY` into `bundleRelease` (keep the GitHub secret).
 
 ### Lint / test / build
 
