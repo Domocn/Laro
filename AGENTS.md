@@ -31,6 +31,11 @@ use `server:app` on **8001**.
 - `config.py` does **not** auto-load `.env`; `source` it before uvicorn.
 - Registration auto-verifies when email is not configured (`EMAIL_ENABLED` + Resend/SMTP).
 - Frontend API base: `localStorage.laro_server_url` or `REACT_APP_BACKEND_URL`.
+- **Localhost port gotcha:** `normalizeServerUrl` collapses any same-hostname
+  URL to same-origin mode (ignores port). Serving the SPA on
+  `http://localhost:3000` with API `http://localhost:8001` yields relative
+  `api/` → `:3000` 404s. Use mixed hostnames (`127.0.0.1` vs `localhost`) for
+  UI, or call the API directly. Production same-host proxy is fine.
 - Redis / Ollama optional for core auth + recipe CRUD.
 
 ### Secrets useful in Cloud Agents
