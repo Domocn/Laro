@@ -50,9 +50,15 @@ use `server:app` on **8001**.
 ### Lint / test / build
 
 - Backend: `cd ~/laro-priv/backend && ./venv/bin/python -m pytest`
-  (some async tests need `pytest-asyncio` if not declared).
-- Frontend: `npm start` / `npm run build` under `~/laro-priv/frontend` (or `/workspace`).
+  Install `pytest-asyncio` in the venv (update script does) or 8 async tests fail.
+- Frontend: `npm start` / `npm run build` under `~/laro-priv/frontend` (or `/workspace` root CRA).
+  Prefer UI on `http://127.0.0.1:3000` with `REACT_APP_BACKEND_URL=http://localhost:8001`.
 - Android: `./gradlew :app:generateDebugBuildConfig` verifies `BuildConfig.REVENUECAT_API_KEY`;
   full `assembleDebug` needs `android/app/google-services.json`.
+
+### Surface map
+
+Full web + backend + Android map, settings audit, and verified gaps:
+`~/laro-priv/docs/app-map.md` (on `laro-priv`; not always present in the public artefact).
 
 See `~/laro-priv/AGENTS.md` and `DEPLOY.md` for production OVH notes.
