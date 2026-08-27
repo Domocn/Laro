@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import events from "../data/events.json";
 import { KIND_LABEL, type FestivalEvent, type Kind } from "../data/types";
 import { go } from "../lib/routes";
@@ -23,31 +23,32 @@ function uniqueActs(list: FestivalEvent[]): FestivalEvent[] {
 
 export function LineupPage({ q, kind }: { q?: string; kind?: string }) {
   const plan = usePlan();
-  const query = (q ?? "").trim().toLowerCase();
+  const [query, setQuery] = useState(q ?? "");
+  const needle = query.trim().toLowerCase();
   const acts = useMemo(() => {
     return uniqueActs(all)
       .filter((e) => (kind ? e.kind === kind : true))
-      .filter((e) => (query ? e.title.toLowerCase().includes(query) : true));
-  }, [kind, query]);
+      .filter((e) => (needle ? e.title.toLowerCase().includes(needle) : true));
+  }, [kind, needle]);
 
   return (
     <div className="page">
       <h1>Line-up</h1>
       <p>Search the full billed weekend, then star what you refuse to miss.</p>
       <SearchField
-        value={q ?? ""}
+        value={query}
         placeholder="Search Basement Jaxx, Simon Rogan…"
-        onCommit={(next) => go({ name: "lineup", q: next || undefined, kind })}
+        onChange={setQuery}
       />
       <div className="filters">
-        <button className={`pill ${!kind ? "active" : ""}`} onClick={() => go({ name: "lineup", q })}>
+        <button className={`pill ${!kind ? "active" : ""}`} onClick={() => go({ name: "lineup" })}>
           All
         </button>
         {KINDS.map((k) => (
           <button
             key={k}
             className={`pill ${kind === k ? "active" : ""}`}
-            onClick={() => go({ name: "lineup", q, kind: k })}
+            onClick={() => go({ name: "lineup", kind: k })}
           >
             {KIND_LABEL[k]}
           </button>
