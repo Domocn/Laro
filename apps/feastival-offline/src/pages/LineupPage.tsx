@@ -4,6 +4,7 @@ import { KIND_LABEL, type FestivalEvent, type Kind } from "../data/types";
 import { go } from "../lib/routes";
 import { usePlan } from "../lib/usePlan";
 import { EventRow } from "../components/EventRow";
+import { SearchField } from "../components/SearchField";
 
 const all = events as FestivalEvent[];
 const KINDS = Object.keys(KIND_LABEL) as Kind[];
@@ -33,11 +34,10 @@ export function LineupPage({ q, kind }: { q?: string; kind?: string }) {
     <div className="page">
       <h1>Line-up</h1>
       <p>Search the full billed weekend, then star what you refuse to miss.</p>
-      <input
-        className="search"
-        placeholder="Search Basement Jaxx, Simon Rogan…"
+      <SearchField
         value={q ?? ""}
-        onChange={(e) => go({ name: "lineup", q: e.target.value || undefined, kind })}
+        placeholder="Search Basement Jaxx, Simon Rogan…"
+        onCommit={(next) => go({ name: "lineup", q: next || undefined, kind })}
       />
       <div className="filters">
         <button className={`pill ${!kind ? "active" : ""}`} onClick={() => go({ name: "lineup", q })}>

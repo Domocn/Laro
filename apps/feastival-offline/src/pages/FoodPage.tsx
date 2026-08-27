@@ -1,4 +1,5 @@
 import { DINING, STREET_FOOD } from "../data/food";
+import { SearchField } from "../components/SearchField";
 import { go } from "../lib/routes";
 
 export function FoodPage({ q }: { q?: string }) {
@@ -10,11 +11,10 @@ export function FoodPage({ q }: { q?: string }) {
     <div className="page">
       <h1>Food &amp; drink</h1>
       <p>Street food from the official map, plus bookable dining experiences.</p>
-      <input
-        className="search"
-        placeholder="Search tacos, dumplings, paella…"
+      <SearchField
         value={q ?? ""}
-        onChange={(e) => go({ name: "food", q: e.target.value || undefined })}
+        placeholder="Search tacos, dumplings, paella…"
+        onCommit={(next) => go({ name: "food", q: next || undefined })}
       />
       <section className="card">
         <h2>Dining experiences</h2>

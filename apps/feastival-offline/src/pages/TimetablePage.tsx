@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import events from "../data/events.json";
 import { DAYS, toMinutes, type DayId, type FestivalEvent } from "../data/types";
 import { EventRow } from "../components/EventRow";
+import { SearchField } from "../components/SearchField";
 import { go } from "../lib/routes";
 import { usePlan } from "../lib/usePlan";
 
@@ -41,11 +42,10 @@ export function TimetablePage({ day, stage, q }: Props) {
     <div className="page">
       <h1>Timetable</h1>
       <p>Every billed set we captured from the official grid. Star a row to keep it on My plan.</p>
-      <input
-        className="search"
-        placeholder="Search artist, chef or stage"
+      <SearchField
         value={q ?? ""}
-        onChange={(e) => go({ name: "timetable", day: dayId, stage, q: e.target.value || undefined })}
+        placeholder="Search artist, chef or stage"
+        onCommit={(next) => go({ name: "timetable", day: dayId, stage, q: next || undefined })}
       />
       <div className="filters" role="tablist" aria-label="Day">
         {DAYS.map((d) => (
