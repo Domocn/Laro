@@ -1,0 +1,2270 @@
+[
+  {
+    "id": "fri-main-stage-1345-fiona-lee-001",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "13:45",
+    "end": "14:15",
+    "title": "Fiona-Lee",
+    "kind": "music"
+  },
+  {
+    "id": "fri-main-stage-1445-jerub-002",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "14:45",
+    "end": "15:15",
+    "title": "Jerub",
+    "kind": "music"
+  },
+  {
+    "id": "fri-main-stage-1545-the-ordinary-boys-003",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "15:45",
+    "end": "16:15",
+    "title": "The Ordinary Boys",
+    "kind": "music"
+  },
+  {
+    "id": "fri-main-stage-1645-meek-004",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "16:45",
+    "end": "17:15",
+    "title": "Meek",
+    "kind": "music"
+  },
+  {
+    "id": "fri-main-stage-1745-white-lies-005",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "17:45",
+    "end": "18:30",
+    "title": "White Lies",
+    "kind": "music"
+  },
+  {
+    "id": "fri-main-stage-1900-antony-szmierek-006",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "19:00",
+    "end": "19:30",
+    "title": "Antony Szmierek",
+    "kind": "music"
+  },
+  {
+    "id": "fri-main-stage-2000-perrie-007",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "20:00",
+    "end": "20:45",
+    "title": "Perrie",
+    "kind": "music"
+  },
+  {
+    "id": "fri-main-stage-2115-basement-jaxx-008",
+    "day": "fri",
+    "stage": "Main Stage",
+    "start": "21:15",
+    "end": "22:45",
+    "title": "Basement Jaxx",
+    "kind": "music"
+  },
+  {
+    "id": "fri-alex-james-cheese--1415-sable-s-birthday-mix-with-al-009",
+    "day": "fri",
+    "stage": "Alex James' Cheese Hub",
+    "start": "14:15",
+    "end": "15:00",
+    "title": "Sable's Birthday Mix with Alex James",
+    "kind": "music"
+  },
+  {
+    "id": "fri-alex-james-cheese--1500-nelson-ryecroft-010",
+    "day": "fri",
+    "stage": "Alex James' Cheese Hub",
+    "start": "15:00",
+    "end": "16:30",
+    "title": "Nelson Ryecroft",
+    "kind": "music"
+  },
+  {
+    "id": "fri-alex-james-cheese--1630-fort-green-takeover-ft-geron-011",
+    "day": "fri",
+    "stage": "Alex James' Cheese Hub",
+    "start": "16:30",
+    "end": "20:30",
+    "title": "Fort Green Takeover ft Geronimo, RJD, Sofa, Masqunada Brothers & LoopDeeLoop",
+    "kind": "music"
+  },
+  {
+    "id": "fri-alex-james-cheese--2030-jamz-supernova-012",
+    "day": "fri",
+    "stage": "Alex James' Cheese Hub",
+    "start": "20:30",
+    "end": "22:00",
+    "title": "Jamz Supernova",
+    "kind": "music"
+  },
+  {
+    "id": "fri-alex-james-cheese--2215-dj-spoony-013",
+    "day": "fri",
+    "stage": "Alex James' Cheese Hub",
+    "start": "22:15",
+    "end": "00:15",
+    "title": "DJ Spoony",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-1200-beato-burrito-014",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "12:00",
+    "end": "12:45",
+    "title": "Beato Burrito",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-1315-jack-ride-out-015",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "13:15",
+    "end": "14:00",
+    "title": "Jack Ride Out",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-1430-maya-lane-016",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "14:30",
+    "end": "15:15",
+    "title": "Maya Lane",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-1545-jonny-morgan-the-moral-suppo-017",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "15:45",
+    "end": "16:30",
+    "title": "Jonny Morgan & The Moral Support",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-1700-gospeloke-018",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "17:00",
+    "end": "18:00",
+    "title": "Gospeloke",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-1830-the-in-here-brothers-019",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "18:30",
+    "end": "19:30",
+    "title": "The In-Here Brothers",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-2000-hip-hop-house-band-020",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "20:00",
+    "end": "21:00",
+    "title": "Hip Hop House Band",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-2130-disco-ceilidh-021",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "21:30",
+    "end": "22:30",
+    "title": "Disco Ceilidh",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-outpost-2245-the-allergies-022",
+    "day": "fri",
+    "stage": "The Outpost",
+    "start": "22:45",
+    "end": "00:15",
+    "title": "The Allergies",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-big-kitchen-1330-alex-james-flava-dave-the-ch-023",
+    "day": "fri",
+    "stage": "The Big Kitchen",
+    "start": "13:30",
+    "end": "14:00",
+    "title": "Alex James, Flava Dave & The Cheese Hub Gang",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-big-kitchen-1430-james-graham-024",
+    "day": "fri",
+    "stage": "The Big Kitchen",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "James Graham",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-big-kitchen-1530-jon-watts-025",
+    "day": "fri",
+    "stage": "The Big Kitchen",
+    "start": "15:30",
+    "end": "16:00",
+    "title": "Jon Watts",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-big-kitchen-1630-poppy-o-toole-026",
+    "day": "fri",
+    "stage": "The Big Kitchen",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "Poppy O'Toole",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-exchange-1300-the-rubbish-shakespeare-comp-027",
+    "day": "fri",
+    "stage": "The Exchange",
+    "start": "13:00",
+    "end": "14:00",
+    "title": "The Rubbish Shakespeare Company presents Romeo & Juliet",
+    "kind": "comedy"
+  },
+  {
+    "id": "fri-the-exchange-1430-you-okay-hun-quiz-028",
+    "day": "fri",
+    "stage": "The Exchange",
+    "start": "14:30",
+    "end": "15:30",
+    "title": "You Okay Hun? Quiz",
+    "kind": "talk"
+  },
+  {
+    "id": "fri-the-exchange-1600-improv-comedy-show-029",
+    "day": "fri",
+    "stage": "The Exchange",
+    "start": "16:00",
+    "end": "16:30",
+    "title": "Improv Comedy Show",
+    "kind": "comedy"
+  },
+  {
+    "id": "fri-the-exchange-1645-daniel-foxx-030",
+    "day": "fri",
+    "stage": "The Exchange",
+    "start": "16:45",
+    "end": "17:15",
+    "title": "Daniel Foxx",
+    "kind": "comedy"
+  },
+  {
+    "id": "fri-the-exchange-1730-harriet-kemsley-031",
+    "day": "fri",
+    "stage": "The Exchange",
+    "start": "17:30",
+    "end": "18:00",
+    "title": "Harriet Kemsley",
+    "kind": "comedy"
+  },
+  {
+    "id": "fri-the-exchange-1815-ivo-graham-032",
+    "day": "fri",
+    "stage": "The Exchange",
+    "start": "18:15",
+    "end": "18:45",
+    "title": "Ivo Graham",
+    "kind": "comedy"
+  },
+  {
+    "id": "fri-the-exchange-1930-silent-disco-fri-033",
+    "day": "fri",
+    "stage": "The Exchange",
+    "start": "19:30",
+    "end": "23:45",
+    "title": "Silent Disco (Fri)",
+    "kind": "other"
+  },
+  {
+    "id": "fri-the-barn-1230-sofar-sounds-presents-ouraa-034",
+    "day": "fri",
+    "stage": "The Barn",
+    "start": "12:30",
+    "end": "13:00",
+    "title": "Sofar Sounds presents Ouraa",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-barn-1330-sofar-sounds-presents-dan-py-035",
+    "day": "fri",
+    "stage": "The Barn",
+    "start": "13:30",
+    "end": "14:00",
+    "title": "Sofar Sounds presents Dan Pye",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-barn-1430-sofar-sounds-presents-edbl-036",
+    "day": "fri",
+    "stage": "The Barn",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Sofar Sounds presents Edbl",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-barn-1530-big-smoke-brass-back-to-the--037",
+    "day": "fri",
+    "stage": "The Barn",
+    "start": "15:30",
+    "end": "16:15",
+    "title": "Big Smoke Brass: Back to the Noughties",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-barn-1645-the-whitney-soul-club-northe-038",
+    "day": "fri",
+    "stage": "The Barn",
+    "start": "16:45",
+    "end": "19:00",
+    "title": "The Whitney Soul Club \u2013 Northern Soul Session",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-big-top-1130-mini-disco-divas-dance-party-039",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "Mini Disco Divas Dance Party",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-big-top-1215-gabby-s-dollhouse-storytime--040",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "12:15",
+    "end": "12:30",
+    "title": "Gabby's Dollhouse Storytime (1)",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-big-top-1300-tales-of-beatrix-potter-041",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "13:00",
+    "end": "13:45",
+    "title": "Tales of Beatrix Potter",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-big-top-1415-gabby-s-dollhouse-storytime--042",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "14:15",
+    "end": "14:30",
+    "title": "Gabby's Dollhouse Storytime (2)",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-big-top-1445-mini-rhythm-makers-drumming--043",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "14:45",
+    "end": "15:15",
+    "title": "Mini Rhythm Makers Drumming Workshop",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-big-top-1530-gabby-s-dollhouse-storytime--044",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "15:30",
+    "end": "15:45",
+    "title": "Gabby's Dollhouse Storytime (3)",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-big-top-1615-superhero-science-live-045",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "16:15",
+    "end": "17:00",
+    "title": "Superhero Science Live!",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-big-top-1845-special-guest-bedtime-storie-046",
+    "day": "fri",
+    "stage": "The Big Top",
+    "start": "18:45",
+    "end": "19:00",
+    "title": "Special Guest Bedtime Stories",
+    "kind": "family"
+  },
+  {
+    "id": "fri-the-saloon-1200-breakthrough-acoustic-set-fr-047",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "12:00",
+    "end": "12:45",
+    "title": "Breakthrough Acoustic Set \u2013 Fri (1)",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-saloon-1315-jack-banting-048",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "13:15",
+    "end": "14:00",
+    "title": "Jack Banting",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-saloon-1430-breakthrough-fri-1-049",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "14:30",
+    "end": "15:15",
+    "title": "Breakthrough \u2013 Fri (1)",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-saloon-1545-kenny-dolly-country-legends-050",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "15:45",
+    "end": "17:15",
+    "title": "Kenny & Dolly: Country Legends",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-saloon-1745-breakthrough-fri-2-051",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "17:45",
+    "end": "18:30",
+    "title": "Breakthrough \u2013 Fri (2)",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-saloon-1900-inferno-djs-fri-052",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "19:00",
+    "end": "19:45",
+    "title": "Inferno DJs \u2013 Fri",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-saloon-2015-breakthrough-fri-3-053",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "20:15",
+    "end": "21:00",
+    "title": "Breakthrough \u2013 Fri (3)",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-saloon-2245-breakthrough-acoustic-set-fr-054",
+    "day": "fri",
+    "stage": "The Saloon",
+    "start": "22:45",
+    "end": "00:15",
+    "title": "Breakthrough Acoustic Set \u2013 Fri (2)",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-fire-pit-1230-christina-soteriou-055",
+    "day": "fri",
+    "stage": "The Fire Pit",
+    "start": "12:30",
+    "end": "13:00",
+    "title": "Christina Soteriou",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-fire-pit-1345-josh-eggleton-the-pony-056",
+    "day": "fri",
+    "stage": "The Fire Pit",
+    "start": "13:45",
+    "end": "14:15",
+    "title": "Josh Eggleton: The Pony",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-fire-pit-1500-duncan-robertson-kyu-jeon-057",
+    "day": "fri",
+    "stage": "The Fire Pit",
+    "start": "15:00",
+    "end": "15:30",
+    "title": "Duncan Robertson & Kyu Jeon",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-fire-pit-1630-cai-ap-bryn-with-game-and-fl-058",
+    "day": "fri",
+    "stage": "The Fire Pit",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "Cai Ap Bryn with Game and Flames",
+    "kind": "food"
+  },
+  {
+    "id": "fri-the-fire-pit-1900-matblak-x-the-pony-josh-eggl-059",
+    "day": "fri",
+    "stage": "The Fire Pit",
+    "start": "19:00",
+    "end": "20:30",
+    "title": "MatBlak x The Pony (Josh Eggleton)",
+    "kind": "food"
+  },
+  {
+    "id": "fri-campervan-live-lou-1600-joseph-lofthouse-060",
+    "day": "fri",
+    "stage": "Campervan Live Lounge",
+    "start": "16:00",
+    "end": "17:00",
+    "title": "Joseph Lofthouse",
+    "kind": "music"
+  },
+  {
+    "id": "fri-campervan-live-lou-1700-hannigan-061",
+    "day": "fri",
+    "stage": "Campervan Live Lounge",
+    "start": "17:00",
+    "end": "18:00",
+    "title": "Hannigan",
+    "kind": "music"
+  },
+  {
+    "id": "fri-campervan-live-lou-1800-kavalla-062",
+    "day": "fri",
+    "stage": "Campervan Live Lounge",
+    "start": "18:00",
+    "end": "19:00",
+    "title": "Kavalla",
+    "kind": "music"
+  },
+  {
+    "id": "fri-campervan-live-lou-2300-unplugged-jam-063",
+    "day": "fri",
+    "stage": "Campervan Live Lounge",
+    "start": "23:00",
+    "end": "00:00",
+    "title": "Unplugged Jam",
+    "kind": "music"
+  },
+  {
+    "id": "fri-the-chef-s-pantry-1200-the-ultimate-picnic-potato-s-064",
+    "day": "fri",
+    "stage": "The Chef's Pantry",
+    "start": "12:00",
+    "end": "12:30",
+    "title": "The Ultimate Picnic Potato Salad with Poppy O'Toole",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-the-chef-s-pantry-1315-the-ultimate-salad-with-jon--065",
+    "day": "fri",
+    "stage": "The Chef's Pantry",
+    "start": "13:15",
+    "end": "13:45",
+    "title": "The Ultimate Salad with Jon Watts",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-the-chef-s-pantry-1430-wildfarmed-s-crumpet-club-066",
+    "day": "fri",
+    "stage": "The Chef's Pantry",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Wildfarmed's Crumpet Club",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-the-chef-s-pantry-1545-umami-crunch-contrast-with-c-067",
+    "day": "fri",
+    "stage": "The Chef's Pantry",
+    "start": "15:45",
+    "end": "16:15",
+    "title": "Umami, Crunch & Contrast with Christina Soteriou",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-the-chef-s-pantry-1700-oi-kimchi-with-duncan-kyu-fr-068",
+    "day": "fri",
+    "stage": "The Chef's Pantry",
+    "start": "17:00",
+    "end": "17:30",
+    "title": "Oi Kimchi with Duncan & Kyu from Bokman's",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-table-sessions-1100-session-sign-ups-069",
+    "day": "fri",
+    "stage": "Table Sessions",
+    "start": "11:00",
+    "end": "12:00",
+    "title": "Session sign-ups",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-table-sessions-1200-pact-coffee-070",
+    "day": "fri",
+    "stage": "Table Sessions",
+    "start": "12:00",
+    "end": "12:30",
+    "title": "Pact Coffee",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-table-sessions-1315-masterclasses-with-project-d-071",
+    "day": "fri",
+    "stage": "Table Sessions",
+    "start": "13:15",
+    "end": "13:45",
+    "title": "Masterclasses with Project-D",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-table-sessions-1430-pop-pour-with-bordeaux-wines-072",
+    "day": "fri",
+    "stage": "Table Sessions",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Pop & Pour with Bordeaux Wines",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-table-sessions-1545-st-germain-073",
+    "day": "fri",
+    "stage": "Table Sessions",
+    "start": "15:45",
+    "end": "16:15",
+    "title": "St-Germain",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-table-sessions-1700-champagne-canard-duch\u00eane-074",
+    "day": "fri",
+    "stage": "Table Sessions",
+    "start": "17:00",
+    "end": "17:30",
+    "title": "Champagne Canard-Duch\u00eane",
+    "kind": "workshop"
+  },
+  {
+    "id": "fri-book-signing-1305-christina-soteriou-075",
+    "day": "fri",
+    "stage": "Book Signing",
+    "start": "13:05",
+    "end": "13:30",
+    "title": "Christina Soteriou",
+    "kind": "talk"
+  },
+  {
+    "id": "fri-book-signing-1605-jon-watts-076",
+    "day": "fri",
+    "stage": "Book Signing",
+    "start": "16:05",
+    "end": "16:30",
+    "title": "Jon Watts",
+    "kind": "talk"
+  },
+  {
+    "id": "fri-book-signing-1705-poppy-o-toole-077",
+    "day": "fri",
+    "stage": "Book Signing",
+    "start": "17:05",
+    "end": "17:30",
+    "title": "Poppy O'Toole",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-main-stage-1200-justin-fletcher-078",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "12:00",
+    "end": "12:40",
+    "title": "Justin Fletcher",
+    "kind": "family"
+  },
+  {
+    "id": "sat-main-stage-1315-she-s-in-parties-079",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "13:15",
+    "end": "13:45",
+    "title": "She's in Parties",
+    "kind": "music"
+  },
+  {
+    "id": "sat-main-stage-1415-bradley-simpson-080",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "14:15",
+    "end": "14:45",
+    "title": "Bradley Simpson",
+    "kind": "music"
+  },
+  {
+    "id": "sat-main-stage-1515-ms-dynamite-081",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "15:15",
+    "end": "15:45",
+    "title": "Ms. Dynamite",
+    "kind": "music"
+  },
+  {
+    "id": "sat-main-stage-1615-the-cuban-brothers-082",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "16:15",
+    "end": "17:00",
+    "title": "The Cuban Brothers",
+    "kind": "music"
+  },
+  {
+    "id": "sat-main-stage-1730-tors-083",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "17:30",
+    "end": "18:00",
+    "title": "Tors",
+    "kind": "music"
+  },
+  {
+    "id": "sat-main-stage-1830-mimi-webb-084",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "18:30",
+    "end": "19:15",
+    "title": "Mimi Webb",
+    "kind": "music"
+  },
+  {
+    "id": "sat-main-stage-1945-rudim3ntal-085",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "19:45",
+    "end": "20:45",
+    "title": "Rudim3ntal",
+    "kind": "music"
+  },
+  {
+    "id": "sat-main-stage-2115-the-streets-086",
+    "day": "sat",
+    "stage": "Main Stage",
+    "start": "21:15",
+    "end": "22:55",
+    "title": "The Streets",
+    "kind": "music"
+  },
+  {
+    "id": "sat-alex-james-cheese--1100-alex-james-hub-quiz-087",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "11:00",
+    "end": "12:00",
+    "title": "Alex James Hub Quiz",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-alex-james-cheese--1300-dj-dan-propaganda-088",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "13:00",
+    "end": "14:30",
+    "title": "DJ Dan (Propaganda)",
+    "kind": "music"
+  },
+  {
+    "id": "sat-alex-james-cheese--1430-geronimo-089",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "14:30",
+    "end": "16:30",
+    "title": "Geronimo",
+    "kind": "music"
+  },
+  {
+    "id": "sat-alex-james-cheese--1700-chris-stark-dj-set-090",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "17:00",
+    "end": "18:00",
+    "title": "Chris Stark \u2013 DJ set",
+    "kind": "music"
+  },
+  {
+    "id": "sat-alex-james-cheese--1815-katya-friends-091",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "18:15",
+    "end": "19:15",
+    "title": "Katya & Friends",
+    "kind": "music"
+  },
+  {
+    "id": "sat-alex-james-cheese--1930-pips-taylor-092",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "19:30",
+    "end": "20:45",
+    "title": "Pips Taylor",
+    "kind": "music"
+  },
+  {
+    "id": "sat-alex-james-cheese--2100-connor-coates-093",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "21:00",
+    "end": "22:30",
+    "title": "Connor Coates",
+    "kind": "music"
+  },
+  {
+    "id": "sat-alex-james-cheese--2245-sarah-story-094",
+    "day": "sat",
+    "stage": "Alex James' Cheese Hub",
+    "start": "22:45",
+    "end": "00:15",
+    "title": "Sarah Story",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-1100-disco-divas-dance-workout-095",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "11:00",
+    "end": "11:45",
+    "title": "Disco Divas Dance Workout",
+    "kind": "other"
+  },
+  {
+    "id": "sat-the-outpost-1215-ben-brown-096",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "12:15",
+    "end": "13:00",
+    "title": "Ben Brown",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-1330-marley-097",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "13:30",
+    "end": "14:00",
+    "title": "Marley",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-1430-ines-rae-098",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "14:30",
+    "end": "15:15",
+    "title": "Ines Rae",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-1545-duke-099",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "15:45",
+    "end": "16:45",
+    "title": "Duke",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-1715-riding-the-low-100",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "17:15",
+    "end": "18:00",
+    "title": "Riding the Low",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-1830-grohlercoaster-101",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "18:30",
+    "end": "19:30",
+    "title": "Grohlercoaster",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-2000-barrioke-102",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "20:00",
+    "end": "21:00",
+    "title": "Barrioke",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-2115-ed-travers-dj-set-103",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "21:15",
+    "end": "22:30",
+    "title": "Ed Travers DJ set",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-outpost-2245-revival-house-project-104",
+    "day": "sat",
+    "stage": "The Outpost",
+    "start": "22:45",
+    "end": "00:15",
+    "title": "Revival House Project",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-big-kitchen-1130-sophie-wyburd-with-country-l-105",
+    "day": "sat",
+    "stage": "The Big Kitchen",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "Sophie Wyburd with Country Life",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-big-kitchen-1230-amber-francis-106",
+    "day": "sat",
+    "stage": "The Big Kitchen",
+    "start": "12:30",
+    "end": "13:00",
+    "title": "Amber Francis",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-big-kitchen-1330-anna-haugh-107",
+    "day": "sat",
+    "stage": "The Big Kitchen",
+    "start": "13:30",
+    "end": "14:00",
+    "title": "Anna Haugh",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-big-kitchen-1430-rachel-allen-108",
+    "day": "sat",
+    "stage": "The Big Kitchen",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Rachel Allen",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-big-kitchen-1530-nokx-majozi-109",
+    "day": "sat",
+    "stage": "The Big Kitchen",
+    "start": "15:30",
+    "end": "16:00",
+    "title": "Nokx Majozi",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-big-kitchen-1630-tom-barnes-110",
+    "day": "sat",
+    "stage": "The Big Kitchen",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "Tom Barnes",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-exchange-1200-big-feastival-s-big-quiz-111",
+    "day": "sat",
+    "stage": "The Exchange",
+    "start": "12:00",
+    "end": "12:45",
+    "title": "Big Feastival's Big Quiz",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-the-exchange-1315-joe-and-james-fact-up-podcas-112",
+    "day": "sat",
+    "stage": "The Exchange",
+    "start": "13:15",
+    "end": "14:00",
+    "title": "Joe and James Fact Up Podcast",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-the-exchange-1430-the-scummy-mummies-show-113",
+    "day": "sat",
+    "stage": "The Exchange",
+    "start": "14:30",
+    "end": "15:30",
+    "title": "The Scummy Mummies show",
+    "kind": "comedy"
+  },
+  {
+    "id": "sat-the-exchange-1600-the-traitors-improv-show-114",
+    "day": "sat",
+    "stage": "The Exchange",
+    "start": "16:00",
+    "end": "16:45",
+    "title": "The Traitors Improv Show",
+    "kind": "comedy"
+  },
+  {
+    "id": "sat-the-exchange-1745-shappi-khorsandi-115",
+    "day": "sat",
+    "stage": "The Exchange",
+    "start": "17:45",
+    "end": "18:15",
+    "title": "Shappi Khorsandi",
+    "kind": "comedy"
+  },
+  {
+    "id": "sat-the-exchange-1830-suzi-ruffell-116",
+    "day": "sat",
+    "stage": "The Exchange",
+    "start": "18:30",
+    "end": "19:00",
+    "title": "Suzi Ruffell",
+    "kind": "comedy"
+  },
+  {
+    "id": "sat-the-exchange-1930-silent-disco-sat-117",
+    "day": "sat",
+    "stage": "The Exchange",
+    "start": "19:30",
+    "end": "23:45",
+    "title": "Silent Disco (Sat)",
+    "kind": "other"
+  },
+  {
+    "id": "sat-the-barn-1230-sofar-sounds-presents-jessie-118",
+    "day": "sat",
+    "stage": "The Barn",
+    "start": "12:30",
+    "end": "13:00",
+    "title": "Sofar Sounds presents Jessie Malcolm",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-barn-1330-sofar-sounds-presents-darcey-119",
+    "day": "sat",
+    "stage": "The Barn",
+    "start": "13:30",
+    "end": "14:00",
+    "title": "Sofar Sounds presents Darcey Salt",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-barn-1430-sofar-sounds-presents-yaz-120",
+    "day": "sat",
+    "stage": "The Barn",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Sofar Sounds presents Yaz",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-barn-1515-piano-oke-121",
+    "day": "sat",
+    "stage": "The Barn",
+    "start": "15:15",
+    "end": "16:00",
+    "title": "Piano-oke",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-barn-1630-kilne-122",
+    "day": "sat",
+    "stage": "The Barn",
+    "start": "16:30",
+    "end": "17:30",
+    "title": "Kilne",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-barn-1800-king-cerulean-123",
+    "day": "sat",
+    "stage": "The Barn",
+    "start": "18:00",
+    "end": "19:00",
+    "title": "King Cerulean",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-big-top-1030-morning-dance-party-k-pop-de-124",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "10:30",
+    "end": "11:00",
+    "title": "Morning Dance Party \u2013 K-Pop Demon Hunters Disco",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-big-top-1130-mini-rhythm-makers-drumming--125",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "Mini Rhythm Makers Drumming Workshop",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-big-top-1230-big-beats-little-feet-family-126",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "12:30",
+    "end": "13:15",
+    "title": "Big Beats & Little Feet Family Disco",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-big-top-1345-mc-grammar-127",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "13:45",
+    "end": "14:15",
+    "title": "MC Grammar",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-big-top-1445-the-selfish-giant-128",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "14:45",
+    "end": "15:45",
+    "title": "The Selfish Giant",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-big-top-1615-street-dance-workshop-129",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "16:15",
+    "end": "17:00",
+    "title": "Street Dance Workshop",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-big-top-1730-musical-bingo-130",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "17:30",
+    "end": "18:30",
+    "title": "Musical Bingo",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-big-top-1845-special-guest-bedtime-storie-131",
+    "day": "sat",
+    "stage": "The Big Top",
+    "start": "18:45",
+    "end": "19:00",
+    "title": "Special Guest Bedtime Stories",
+    "kind": "family"
+  },
+  {
+    "id": "sat-the-saloon-1030-kieran-ferrier-132",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "10:30",
+    "end": "11:15",
+    "title": "Kieran Ferrier",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-1145-breakthrough-acoustic-set-sa-133",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "11:45",
+    "end": "12:30",
+    "title": "Breakthrough Acoustic Set \u2013 Sat (1)",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-1300-breakthrough-sat-2-134",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "13:00",
+    "end": "13:45",
+    "title": "Breakthrough \u2013 Sat (2)",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-1415-connor-mcgrath-135",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "14:15",
+    "end": "15:00",
+    "title": "Connor McGrath",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-1600-bradley-simpson-presents-the-136",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "16:00",
+    "end": "16:45",
+    "title": "Bradley Simpson Presents: The Open Arms Popup",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-1745-breakthrough-sat-2-137",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "17:45",
+    "end": "18:30",
+    "title": "Breakthrough \u2013 Sat (2)",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-1900-inferno-djs-sat-138",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "19:00",
+    "end": "19:45",
+    "title": "Inferno DJs \u2013 Sat",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-2015-breakthrough-sat-3-139",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "20:15",
+    "end": "21:00",
+    "title": "Breakthrough \u2013 Sat (3)",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-2115-the-modern-kind-140",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "21:15",
+    "end": "22:30",
+    "title": "The Modern Kind",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-saloon-2245-breakthrough-acoustic-set-sa-141",
+    "day": "sat",
+    "stage": "The Saloon",
+    "start": "22:45",
+    "end": "00:15",
+    "title": "Breakthrough Acoustic Set \u2013 Sat (2)",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-fire-pit-1200-matblak-142",
+    "day": "sat",
+    "stage": "The Fire Pit",
+    "start": "12:00",
+    "end": "12:30",
+    "title": "MatBlak",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-fire-pit-1315-asim-merali-goldies-143",
+    "day": "sat",
+    "stage": "The Fire Pit",
+    "start": "13:15",
+    "end": "13:45",
+    "title": "Asim Merali: Goldies",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-fire-pit-1430-bab-haus-with-leyli-homayoon-144",
+    "day": "sat",
+    "stage": "The Fire Pit",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Bab Haus with Leyli Homayoonfar",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-fire-pit-1545-diotima-vila-with-the-dragon-145",
+    "day": "sat",
+    "stage": "The Fire Pit",
+    "start": "15:45",
+    "end": "16:15",
+    "title": "Diotima Vila with The Dragon Flame",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-fire-pit-1700-murf-with-the-beefy-boys-146",
+    "day": "sat",
+    "stage": "The Fire Pit",
+    "start": "17:00",
+    "end": "17:30",
+    "title": "Murf with The Beefy Boys",
+    "kind": "food"
+  },
+  {
+    "id": "sat-the-fire-pit-1900-matblak-x-goldie-s-asim-mera-147",
+    "day": "sat",
+    "stage": "The Fire Pit",
+    "start": "19:00",
+    "end": "20:30",
+    "title": "MatBlak x Goldie's Asim Merali",
+    "kind": "food"
+  },
+  {
+    "id": "sat-campervan-live-lou-1600-sorrel-148",
+    "day": "sat",
+    "stage": "Campervan Live Lounge",
+    "start": "16:00",
+    "end": "17:00",
+    "title": "Sorrel",
+    "kind": "music"
+  },
+  {
+    "id": "sat-campervan-live-lou-1700-samuel-ashton-149",
+    "day": "sat",
+    "stage": "Campervan Live Lounge",
+    "start": "17:00",
+    "end": "18:00",
+    "title": "Samuel Ashton",
+    "kind": "music"
+  },
+  {
+    "id": "sat-campervan-live-lou-1800-laura-silverstone-150",
+    "day": "sat",
+    "stage": "Campervan Live Lounge",
+    "start": "18:00",
+    "end": "19:00",
+    "title": "Laura Silverstone",
+    "kind": "music"
+  },
+  {
+    "id": "sat-campervan-live-lou-2300-unplugged-jam-151",
+    "day": "sat",
+    "stage": "Campervan Live Lounge",
+    "start": "23:00",
+    "end": "00:00",
+    "title": "Unplugged Jam",
+    "kind": "music"
+  },
+  {
+    "id": "sat-the-chef-s-pantry-1030-wildfarmed-s-crumpet-club-152",
+    "day": "sat",
+    "stage": "The Chef's Pantry",
+    "start": "10:30",
+    "end": "11:00",
+    "title": "Wildfarmed's Crumpet Club",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-the-chef-s-pantry-1130-peppermint-crisp-tarts-with--153",
+    "day": "sat",
+    "stage": "The Chef's Pantry",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "Peppermint Crisp Tarts with Nokx Majozi",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-the-chef-s-pantry-1245-q-a-with-tom-barnes-154",
+    "day": "sat",
+    "stage": "The Chef's Pantry",
+    "start": "12:45",
+    "end": "13:15",
+    "title": "Q&A with Tom Barnes",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-the-chef-s-pantry-1400-capturing-the-season-create--155",
+    "day": "sat",
+    "stage": "The Chef's Pantry",
+    "start": "14:00",
+    "end": "14:30",
+    "title": "Capturing the Season: Create Your Own Finishing Salt with Amber Francis",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-the-chef-s-pantry-1515-anna-haugh-s-courgette-salad-156",
+    "day": "sat",
+    "stage": "The Chef's Pantry",
+    "start": "15:15",
+    "end": "15:45",
+    "title": "Anna Haugh's Courgette Salad",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-the-chef-s-pantry-1630-picnic-time-with-rachel-alle-157",
+    "day": "sat",
+    "stage": "The Chef's Pantry",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "Picnic time with Rachel Allen",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-table-sessions-1000-session-sign-ups-158",
+    "day": "sat",
+    "stage": "Table Sessions",
+    "start": "10:00",
+    "end": "11:00",
+    "title": "Session sign-ups",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-table-sessions-1130-st-germain-159",
+    "day": "sat",
+    "stage": "Table Sessions",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "St-Germain",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-table-sessions-1245-tiny-rebel-presents-rebel-bi-160",
+    "day": "sat",
+    "stage": "Table Sessions",
+    "start": "12:45",
+    "end": "13:15",
+    "title": "Tiny Rebel presents Rebel Bingo",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-table-sessions-1400-chapel-down-161",
+    "day": "sat",
+    "stage": "Table Sessions",
+    "start": "14:00",
+    "end": "14:30",
+    "title": "Chapel Down",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-table-sessions-1515-farm-to-skin-discovery-works-162",
+    "day": "sat",
+    "stage": "Table Sessions",
+    "start": "15:15",
+    "end": "15:45",
+    "title": "Farm-to-Skin Discovery Workshop with Tarro Skincare",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-table-sessions-1630-champagne-canard-duch\u00eane-163",
+    "day": "sat",
+    "stage": "Table Sessions",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "Champagne Canard-Duch\u00eane",
+    "kind": "workshop"
+  },
+  {
+    "id": "sat-book-signing-1405-anna-haugh-164",
+    "day": "sat",
+    "stage": "Book Signing",
+    "start": "14:05",
+    "end": "14:30",
+    "title": "Anna Haugh",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-book-signing-1505-adam-henson-165",
+    "day": "sat",
+    "stage": "Book Signing",
+    "start": "15:05",
+    "end": "15:30",
+    "title": "Adam Henson",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-book-signing-1605-nokx-majozi-166",
+    "day": "sat",
+    "stage": "Book Signing",
+    "start": "16:05",
+    "end": "16:30",
+    "title": "Nokx Majozi",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-book-signing-1705-murf-the-beefy-boys-167",
+    "day": "sat",
+    "stage": "Book Signing",
+    "start": "17:05",
+    "end": "17:30",
+    "title": "Murf \u2013 The Beefy Boys",
+    "kind": "talk"
+  },
+  {
+    "id": "sat-book-signing-1715-martyn-odell-168",
+    "day": "sat",
+    "stage": "Book Signing",
+    "start": "17:15",
+    "end": "17:45",
+    "title": "Martyn Odell",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-main-stage-1315-the-rosadocs-169",
+    "day": "sun",
+    "stage": "Main Stage",
+    "start": "13:15",
+    "end": "13:45",
+    "title": "The Rosadocs",
+    "kind": "music"
+  },
+  {
+    "id": "sun-main-stage-1415-nubiyan-twist-170",
+    "day": "sun",
+    "stage": "Main Stage",
+    "start": "14:15",
+    "end": "15:00",
+    "title": "Nubiyan Twist",
+    "kind": "music"
+  },
+  {
+    "id": "sun-main-stage-1530-red-rum-club-171",
+    "day": "sun",
+    "stage": "Main Stage",
+    "start": "15:30",
+    "end": "16:00",
+    "title": "Red Rum Club",
+    "kind": "music"
+  },
+  {
+    "id": "sun-main-stage-1630-the-coral-172",
+    "day": "sun",
+    "stage": "Main Stage",
+    "start": "16:30",
+    "end": "17:15",
+    "title": "The Coral",
+    "kind": "music"
+  },
+  {
+    "id": "sun-main-stage-1745-freya-ridings-173",
+    "day": "sun",
+    "stage": "Main Stage",
+    "start": "17:45",
+    "end": "18:30",
+    "title": "Freya Ridings",
+    "kind": "music"
+  },
+  {
+    "id": "sun-main-stage-1900-doves-174",
+    "day": "sun",
+    "stage": "Main Stage",
+    "start": "19:00",
+    "end": "19:45",
+    "title": "Doves",
+    "kind": "music"
+  },
+  {
+    "id": "sun-main-stage-2015-bastille-175",
+    "day": "sun",
+    "stage": "Main Stage",
+    "start": "20:15",
+    "end": "21:45",
+    "title": "Bastille",
+    "kind": "music"
+  },
+  {
+    "id": "sun-alex-james-cheese--1100-alex-james-hub-quiz-sunday-s-176",
+    "day": "sun",
+    "stage": "Alex James' Cheese Hub",
+    "start": "11:00",
+    "end": "12:00",
+    "title": "Alex James Hub Quiz Sunday Special",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-alex-james-cheese--1300-dj-flack-the-james-family-ta-177",
+    "day": "sun",
+    "stage": "Alex James' Cheese Hub",
+    "start": "13:00",
+    "end": "17:30",
+    "title": "DJ Flack & The James Family Takeover ft Da Cheese Police",
+    "kind": "music"
+  },
+  {
+    "id": "sun-alex-james-cheese--1745-simon-pegg-178",
+    "day": "sun",
+    "stage": "Alex James' Cheese Hub",
+    "start": "17:45",
+    "end": "19:15",
+    "title": "Simon Pegg",
+    "kind": "music"
+  },
+  {
+    "id": "sun-alex-james-cheese--1930-syrup-tall-paul-b2b-seb-font-179",
+    "day": "sun",
+    "stage": "Alex James' Cheese Hub",
+    "start": "19:30",
+    "end": "22:45",
+    "title": "Syrup: Tall Paul B2B Seb Fontaine",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-outpost-1115-pop-party-dance-workout-180",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "11:15",
+    "end": "12:00",
+    "title": "Pop Party Dance Workout",
+    "kind": "other"
+  },
+  {
+    "id": "sun-the-outpost-1230-das-brass-181",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "12:30",
+    "end": "13:15",
+    "title": "Das Brass",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-outpost-1345-mia-kelly-182",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "13:45",
+    "end": "14:30",
+    "title": "Mia Kelly",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-outpost-1500-noble-jacks-183",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "15:00",
+    "end": "16:00",
+    "title": "Noble Jacks",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-outpost-1745-dj-noel-malaga-s-indie-karao-184",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "17:45",
+    "end": "18:45",
+    "title": "DJ Noel Malaga's Indie Karaoke",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-outpost-1900-dj-dials-davis-garage-warm-u-185",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "19:00",
+    "end": "20:00",
+    "title": "DJ Dials Davis 'Garage Warm Up'",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-outpost-2015-sweet-female-attitude-186",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "20:15",
+    "end": "21:00",
+    "title": "Sweet Female Attitude",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-outpost-2115-fabio-grooverider-187",
+    "day": "sun",
+    "stage": "The Outpost",
+    "start": "21:15",
+    "end": "22:45",
+    "title": "Fabio & Grooverider",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-big-kitchen-1130-sharp-s-brewery-stephane-del-188",
+    "day": "sun",
+    "stage": "The Big Kitchen",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "Sharp's Brewery: Stephane Delourme",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-big-kitchen-1230-meera-sodha-189",
+    "day": "sun",
+    "stage": "The Big Kitchen",
+    "start": "12:30",
+    "end": "13:00",
+    "title": "Meera Sodha",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-big-kitchen-1330-emily-english-190",
+    "day": "sun",
+    "stage": "The Big Kitchen",
+    "start": "13:30",
+    "end": "14:00",
+    "title": "Emily English",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-big-kitchen-1430-sally-ab\u00e9-191",
+    "day": "sun",
+    "stage": "The Big Kitchen",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Sally Ab\u00e9",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-big-kitchen-1530-simon-rogan-192",
+    "day": "sun",
+    "stage": "The Big Kitchen",
+    "start": "15:30",
+    "end": "16:00",
+    "title": "Simon Rogan",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-big-kitchen-1630-edd-kimber-theboywhobakes-193",
+    "day": "sun",
+    "stage": "The Big Kitchen",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "Edd Kimber (TheBoyWhoBakes)",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-big-kitchen-1630-the-horne-section-194",
+    "day": "sun",
+    "stage": "The Big Kitchen",
+    "start": "16:30",
+    "end": "17:15",
+    "title": "The Horne Section",
+    "kind": "comedy"
+  },
+  {
+    "id": "sun-the-exchange-1115-big-feastival-s-got-talent-195",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "11:15",
+    "end": "12:45",
+    "title": "Big Feastival's Got Talent",
+    "kind": "other"
+  },
+  {
+    "id": "sun-the-exchange-1315-taskmaster-club-196",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "13:15",
+    "end": "14:15",
+    "title": "Taskmaster Club",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-the-exchange-1445-the-scummy-mummies-podcast-w-197",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "14:45",
+    "end": "15:45",
+    "title": "The Scummy Mummies Podcast with Em Clarkson",
+    "kind": "comedy"
+  },
+  {
+    "id": "sun-the-exchange-1600-play-your-charts-right-198",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "16:00",
+    "end": "16:45",
+    "title": "Play Your Charts Right",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-the-exchange-1700-kyrah-gray-199",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "17:00",
+    "end": "17:30",
+    "title": "Kyrah Gray",
+    "kind": "comedy"
+  },
+  {
+    "id": "sun-the-exchange-1745-scott-bennett-200",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "17:45",
+    "end": "18:15",
+    "title": "Scott Bennett",
+    "kind": "comedy"
+  },
+  {
+    "id": "sun-the-exchange-1830-joel-dommett-201",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "18:30",
+    "end": "19:00",
+    "title": "Joel Dommett",
+    "kind": "comedy"
+  },
+  {
+    "id": "sun-the-exchange-1930-silent-disco-sun-202",
+    "day": "sun",
+    "stage": "The Exchange",
+    "start": "19:30",
+    "end": "22:45",
+    "title": "Silent Disco (Sun)",
+    "kind": "other"
+  },
+  {
+    "id": "sun-the-barn-1115-big-brass-energy-with-das-br-203",
+    "day": "sun",
+    "stage": "The Barn",
+    "start": "11:15",
+    "end": "12:00",
+    "title": "Big Brass Energy with Das Brass",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-barn-1230-sofar-sounds-presents-krysty-204",
+    "day": "sun",
+    "stage": "The Barn",
+    "start": "12:30",
+    "end": "13:00",
+    "title": "Sofar Sounds presents Krystyn",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-barn-1330-sofar-sounds-presents-drleos-205",
+    "day": "sun",
+    "stage": "The Barn",
+    "start": "13:30",
+    "end": "14:00",
+    "title": "Sofar Sounds presents Drleosol",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-barn-1430-daisy-veacock-206",
+    "day": "sun",
+    "stage": "The Barn",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Daisy Veacock",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-barn-1545-big-feastival-barn-dance-207",
+    "day": "sun",
+    "stage": "The Barn",
+    "start": "15:45",
+    "end": "16:45",
+    "title": "Big Feastival Barn Dance",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-barn-1745-sunday-singalong-with-james--208",
+    "day": "sun",
+    "stage": "The Barn",
+    "start": "17:45",
+    "end": "18:30",
+    "title": "Sunday Singalong with James Bradshaw",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-big-top-1030-nursery-rhyme-time-209",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "10:30",
+    "end": "11:00",
+    "title": "Nursery Rhyme Time",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-big-top-1130-taskmaster-club-mini-210",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "11:30",
+    "end": "12:30",
+    "title": "Taskmaster Club Mini",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-big-top-1300-maddie-moate-s-big-honeybee--211",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "13:00",
+    "end": "14:00",
+    "title": "Maddie Moate's Big Honeybee Bash",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-big-top-1430-school-of-beatbox-performanc-212",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "14:30",
+    "end": "15:15",
+    "title": "School of Beatbox Performance",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-big-top-1515-school-of-beatbox-workshop-213",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "15:15",
+    "end": "15:45",
+    "title": "School of Beatbox Workshop",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-big-top-1615-nick-cope-singalong-214",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "16:15",
+    "end": "17:00",
+    "title": "Nick Cope Singalong",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-big-top-1730-mini-rhythm-makers-drumming--215",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "17:30",
+    "end": "18:15",
+    "title": "Mini Rhythm Makers Drumming Workshop",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-big-top-1830-special-guest-bedtime-storie-216",
+    "day": "sun",
+    "stage": "The Big Top",
+    "start": "18:30",
+    "end": "18:45",
+    "title": "Special Guest Bedtime Stories",
+    "kind": "family"
+  },
+  {
+    "id": "sun-the-saloon-1030-kieran-ferrier-217",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "10:30",
+    "end": "11:15",
+    "title": "Kieran Ferrier",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-1145-breakthrough-acoustic-set-su-218",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "11:45",
+    "end": "12:30",
+    "title": "Breakthrough Acoustic Set \u2013 Sun (1)",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-1300-inferno-djs-219",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "13:00",
+    "end": "13:45",
+    "title": "Inferno DJs",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-1400-stomp-shuffle-line-dancing-220",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "14:00",
+    "end": "14:45",
+    "title": "Stomp & Shuffle Line Dancing",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-1600-breakthrough-221",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "16:00",
+    "end": "16:45",
+    "title": "Breakthrough",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-1700-kieran-ferrier-solo-acoustic-222",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "17:00",
+    "end": "17:30",
+    "title": "Kieran Ferrier Solo Acoustic",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-1745-breakthrough-223",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "17:45",
+    "end": "18:30",
+    "title": "Breakthrough",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-1900-breakthrough-224",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "19:00",
+    "end": "19:45",
+    "title": "Breakthrough",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-2015-kieran-ferrier-225",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "20:15",
+    "end": "21:00",
+    "title": "Kieran Ferrier",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-saloon-2130-breakthrough-acoustic-set-226",
+    "day": "sun",
+    "stage": "The Saloon",
+    "start": "21:30",
+    "end": "22:15",
+    "title": "Breakthrough Acoustic Set",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-fire-pit-1200-melanie-brown-227",
+    "day": "sun",
+    "stage": "The Fire Pit",
+    "start": "12:00",
+    "end": "12:30",
+    "title": "Melanie Brown",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-fire-pit-1315-matblak-228",
+    "day": "sun",
+    "stage": "The Fire Pit",
+    "start": "13:15",
+    "end": "13:45",
+    "title": "MatBlak",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-fire-pit-1430-freddy-bird-the-little-frenc-229",
+    "day": "sun",
+    "stage": "The Fire Pit",
+    "start": "14:30",
+    "end": "15:00",
+    "title": "Freddy Bird: The Little French",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-fire-pit-1545-matt-jefferies-with-the-wooz-230",
+    "day": "sun",
+    "stage": "The Fire Pit",
+    "start": "15:45",
+    "end": "16:15",
+    "title": "Matt Jefferies with The Woozy Pig",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-fire-pit-1700-stewart-parker-with-the-lard-231",
+    "day": "sun",
+    "stage": "The Fire Pit",
+    "start": "17:00",
+    "end": "17:30",
+    "title": "Stewart Parker with The Larder House",
+    "kind": "food"
+  },
+  {
+    "id": "sun-the-fire-pit-1830-matblak-x-the-laundry-s-mela-232",
+    "day": "sun",
+    "stage": "The Fire Pit",
+    "start": "18:30",
+    "end": "20:00",
+    "title": "MatBlak x The Laundry's Melanie Brown",
+    "kind": "food"
+  },
+  {
+    "id": "sun-campervan-live-lou-1600-doad-233",
+    "day": "sun",
+    "stage": "Campervan Live Lounge",
+    "start": "16:00",
+    "end": "17:00",
+    "title": "Doad",
+    "kind": "music"
+  },
+  {
+    "id": "sun-campervan-live-lou-1700-run-remedy-234",
+    "day": "sun",
+    "stage": "Campervan Live Lounge",
+    "start": "17:00",
+    "end": "18:00",
+    "title": "Run Remedy",
+    "kind": "music"
+  },
+  {
+    "id": "sun-campervan-live-lou-1800-tom-dibb-235",
+    "day": "sun",
+    "stage": "Campervan Live Lounge",
+    "start": "18:00",
+    "end": "19:00",
+    "title": "Tom Dibb",
+    "kind": "music"
+  },
+  {
+    "id": "sun-campervan-live-lou-2200-unplugged-jam-236",
+    "day": "sun",
+    "stage": "Campervan Live Lounge",
+    "start": "22:00",
+    "end": "23:00",
+    "title": "Unplugged Jam",
+    "kind": "music"
+  },
+  {
+    "id": "sun-the-chef-s-pantry-1130-meera-sodha-s-no-cook-chickp-237",
+    "day": "sun",
+    "stage": "The Chef's Pantry",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "Meera Sodha's No-Cook Chickpea, Tomato and Cucumber Salad",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-the-chef-s-pantry-1245-q-a-with-simon-rogan-238",
+    "day": "sun",
+    "stage": "The Chef's Pantry",
+    "start": "12:45",
+    "end": "13:15",
+    "title": "Q&A with Simon Rogan",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-the-chef-s-pantry-1400-chocolate-tasting-and-truffl-239",
+    "day": "sun",
+    "stage": "The Chef's Pantry",
+    "start": "14:00",
+    "end": "14:30",
+    "title": "Chocolate Tasting and Truffle Making with Edd Kimber",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-the-chef-s-pantry-1515-nutrition-myths-q-a-with-emi-240",
+    "day": "sun",
+    "stage": "The Chef's Pantry",
+    "start": "15:15",
+    "end": "15:45",
+    "title": "Nutrition Myths Q&A with Emily English",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-the-chef-s-pantry-1630-a-very-berry-british-trifle--241",
+    "day": "sun",
+    "stage": "The Chef's Pantry",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "A Very Berry British Trifle with Sally Ab\u00e9",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-table-sessions-1000-session-sign-ups-242",
+    "day": "sun",
+    "stage": "Table Sessions",
+    "start": "10:00",
+    "end": "11:00",
+    "title": "Session sign-ups",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-table-sessions-1130-masterclasses-with-project-d-243",
+    "day": "sun",
+    "stage": "Table Sessions",
+    "start": "11:30",
+    "end": "12:00",
+    "title": "Masterclasses with Project-D",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-table-sessions-1245-champagne-canard-duch\u00eane-244",
+    "day": "sun",
+    "stage": "Table Sessions",
+    "start": "12:45",
+    "end": "13:15",
+    "title": "Champagne Canard-Duch\u00eane",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-table-sessions-1400-farm-to-glass-cocktail-club--245",
+    "day": "sun",
+    "stage": "Table Sessions",
+    "start": "14:00",
+    "end": "14:30",
+    "title": "Farm-to-Glass Cocktail Club with Warner's",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-table-sessions-1515-chapel-down-246",
+    "day": "sun",
+    "stage": "Table Sessions",
+    "start": "15:15",
+    "end": "15:45",
+    "title": "Chapel Down",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-table-sessions-1630-pop-pour-with-bordeaux-wines-247",
+    "day": "sun",
+    "stage": "Table Sessions",
+    "start": "16:30",
+    "end": "17:00",
+    "title": "Pop & Pour with Bordeaux Wines",
+    "kind": "workshop"
+  },
+  {
+    "id": "sun-book-signing-1305-meera-sodha-248",
+    "day": "sun",
+    "stage": "Book Signing",
+    "start": "13:05",
+    "end": "13:30",
+    "title": "Meera Sodha",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-book-signing-1405-emily-english-249",
+    "day": "sun",
+    "stage": "Book Signing",
+    "start": "14:05",
+    "end": "14:30",
+    "title": "Emily English",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-book-signing-1415-maddie-moate-250",
+    "day": "sun",
+    "stage": "Book Signing",
+    "start": "14:15",
+    "end": "14:45",
+    "title": "Maddie Moate",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-book-signing-1505-sally-ab\u00e9-251",
+    "day": "sun",
+    "stage": "Book Signing",
+    "start": "15:05",
+    "end": "15:30",
+    "title": "Sally Ab\u00e9",
+    "kind": "talk"
+  },
+  {
+    "id": "sun-book-signing-1605-simon-rogan-252",
+    "day": "sun",
+    "stage": "Book Signing",
+    "start": "16:05",
+    "end": "16:30",
+    "title": "Simon Rogan",
+    "kind": "talk"
+  }
+]

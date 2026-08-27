@@ -1,0 +1,280 @@
+export type Place = {
+  id: string;
+  name: string;
+  category: "stage" | "experience" | "food" | "bar" | "facility";
+  blurb: string;
+};
+
+export const PLACES: Place[] = [
+  {
+    id: "main-stage",
+    name: "Main Stage",
+    category: "stage",
+    blurb: "Headliners each evening plus the rest of the weekend's biggest sets.",
+  },
+  {
+    id: "outpost",
+    name: "The Outpost",
+    category: "stage",
+    blurb: "Indoor dancefloor from midday to midnight — covers, DJs and floor-fillers.",
+  },
+  {
+    id: "cheese-hub",
+    name: "Alex James' Cheese Hub",
+    category: "stage",
+    blurb: "Double-decker disco party-within-a-party with guest DJs.",
+  },
+  {
+    id: "barn",
+    name: "The Barn",
+    category: "stage",
+    blurb: "Brass, barn dances, Sofar Sounds and high-energy family raves.",
+  },
+  {
+    id: "exchange",
+    name: "The Exchange",
+    category: "stage",
+    blurb: "Comedy, quizzes, podcasts and the late silent disco.",
+  },
+  {
+    id: "big-kitchen",
+    name: "Big Kitchen with Country Life Butter",
+    category: "stage",
+    blurb: "Chef demos all weekend.",
+  },
+  {
+    id: "fire-pit",
+    name: "The Fire Pit",
+    category: "stage",
+    blurb: "Chefs cooking over flames, plus evening MatBlak feasts.",
+  },
+  {
+    id: "big-top",
+    name: "The Big Top",
+    category: "stage",
+    blurb: "Kids' shows, workshops and bedtime stories.",
+  },
+  {
+    id: "saloon",
+    name: "The Saloon",
+    category: "stage",
+    blurb: "Live music, breakthrough acts and late-night drinks.",
+  },
+  {
+    id: "campervan",
+    name: "Campervan Live Lounge",
+    category: "stage",
+    blurb: "New for 2026 — acoustic sets around the campfire.",
+  },
+  {
+    id: "vip",
+    name: "Monzo VIP Lounge",
+    category: "experience",
+    blurb: "VIP-only bolt hole with Main Stage views, private bar and premium street food.",
+  },
+  {
+    id: "dining",
+    name: "Dining Experiences",
+    category: "experience",
+    blurb:
+      "Thursday Night Feast, Lazy Lunches with Pit Kitchen, and Fire Pit Feasts with MatBlak. Each includes a St-Germain Spritz and Champagne Canard-Duchêne.",
+  },
+  {
+    id: "bbq-school",
+    name: "BBQ Cook School",
+    category: "experience",
+    blurb: "Hands-on outdoor cooking.",
+  },
+  {
+    id: "chefs-pantry",
+    name: "The Chef's Pantry",
+    category: "experience",
+    blurb: "Workshops with chefs and food experts.",
+  },
+  {
+    id: "table-sessions",
+    name: "Table Sessions",
+    category: "experience",
+    blurb: "Brand tastings and masterclasses across the farm.",
+  },
+  {
+    id: "playhouse",
+    name: "Monzo Playhouse",
+    category: "experience",
+    blurb: "Games and prizes for little adventurers.",
+  },
+  {
+    id: "retreat",
+    name: "The Monzo Retreat",
+    category: "experience",
+    blurb: "Camper-only retreat.",
+  },
+  {
+    id: "blueroom",
+    name: "Priority presents O2 Blueroom",
+    category: "experience",
+    blurb: "Members-only seating, games, charging and merch.",
+  },
+  {
+    id: "range-rover",
+    name: "Range Rover",
+    category: "experience",
+    blurb: "Off-road showcase in the Main Arena.",
+  },
+  {
+    id: "mini-defenders",
+    name: "Mini Defenders Off Road Adventure",
+    category: "experience",
+    blurb: "Kids' off-road rides.",
+  },
+  {
+    id: "disney",
+    name: "Disney+",
+    category: "experience",
+    blurb: "Mega Claw, show-inspired ice cream and Hulu on Disney+.",
+  },
+  {
+    id: "little-cooks",
+    name: "Little Cooks with Prept",
+    category: "experience",
+    blurb: "Hands-on cooking for kids.",
+  },
+  {
+    id: "more-nutrition",
+    name: "More Nutrition",
+    category: "experience",
+    blurb: "Drinks, snacks and a campsite chill zone with yoga and challenges.",
+  },
+  {
+    id: "wild-play",
+    name: "Lizzie's Way Wild Play",
+    category: "experience",
+    blurb: "Woodland play area.",
+  },
+  {
+    id: "circus",
+    name: "Kids Circus School / Farmyard Circus",
+    category: "experience",
+    blurb: "Circus school and farmyard circus fun.",
+  },
+  {
+    id: "funfair",
+    name: "Vintage Funfair",
+    category: "experience",
+    blurb: "Classic Feastival rides all weekend.",
+  },
+  {
+    id: "farm-park",
+    name: "Adam Henson's Cotswold Farm",
+    category: "experience",
+    blurb: "Festival meets farm animals.",
+  },
+  {
+    id: "seagull",
+    name: "The Flying Seagull Project",
+    category: "experience",
+    blurb: "Play and performance for families.",
+  },
+  {
+    id: "woodland-spa",
+    name: "Woodland Spa",
+    category: "experience",
+    blurb: "Hot tubs, sauna and cold plunge — campers only.",
+  },
+  {
+    id: "tiny-rebel",
+    name: "Tiny Rebel bars",
+    category: "bar",
+    blurb: "Main Arena, East/West and The Smokery.",
+  },
+  {
+    id: "cider",
+    name: "Cold River Cider",
+    category: "bar",
+    blurb: "Main Arena and The Smokery tipi.",
+  },
+  {
+    id: "st-germain",
+    name: "La Place by St-Germain",
+    category: "bar",
+    blurb: "Spritzes and cocktail sessions.",
+  },
+  {
+    id: "sharps",
+    name: "Sharp's Beach",
+    category: "bar",
+    blurb: "Cornwall-on-the-farm beer hangout.",
+  },
+  {
+    id: "info",
+    name: "Info Point",
+    category: "facility",
+    blurb: "Help, welfare and performance interpreting.",
+  },
+  {
+    id: "first-aid",
+    name: "First Aid Point",
+    category: "facility",
+    blurb: "On-site medical.",
+  },
+  {
+    id: "hdu",
+    name: "High Dependency Unit",
+    category: "facility",
+    blurb: "Accessible medical support.",
+  },
+  {
+    id: "water",
+    name: "Water refill stations",
+    category: "facility",
+    blurb: "Bring a bottle — refill for free.",
+  },
+  {
+    id: "toilets",
+    name: "Toilets & access toilets",
+    category: "facility",
+    blurb: "Standard and accessible toilets around the arena and campsite.",
+  },
+  {
+    id: "showers",
+    name: "Showers",
+    category: "facility",
+    blurb: "Campsite showers (hot showers with boutique camping).",
+  },
+  {
+    id: "viewing",
+    name: "Accessible viewing platform",
+    category: "facility",
+    blurb: "Step-free viewing for Main Stage.",
+  },
+  {
+    id: "pitstop",
+    name: "Parents Pitstop",
+    category: "facility",
+    blurb: "Family reset point.",
+  },
+  {
+    id: "red-gate",
+    name: "Red Gate",
+    category: "facility",
+    blurb: "Pedestrian entrance. Taxi pickup and a 4-minute walk to Kingham station.",
+  },
+  {
+    id: "blue-gate",
+    name: "Blue Gate",
+    category: "facility",
+    blurb: "Second site entrance — follow yellow AA signs, not sat nav.",
+  },
+  {
+    id: "coach",
+    name: "Coach pick-up",
+    category: "facility",
+    blurb: "Red Car Park. Coaches 23:00 Fri/Sat, 22:00 Sun.",
+  },
+  {
+    id: "taxi",
+    name: "Taxi point",
+    category: "facility",
+    blurb: "Red Gate exit. Pre-book and tell drivers Red Gate taxi pickup.",
+  },
+];
