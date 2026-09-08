@@ -208,13 +208,48 @@ def _slugify_recipe_query(text: str) -> str:
     t = re.sub(r"[“”\"'’]", "", t)
     t = re.sub(r"\(.*?\)", " ", t)
     t = re.sub(r"[^a-z0-9]+", "-", t).strip("-")
-    # Drop lead-magnet / promo noise tokens
+    # Drop lead-magnet / promo / review noise tokens
     drop = {
         "comment", "send", "follow", "following", "link", "bio", "recipe", "recipes",
         "the", "and", "for", "with", "from", "this", "that", "your", "you", "are",
+        "these", "those", "best", "ever", "turned", "out", "just", "like", "picture",
+        "fluffy", "great", "tasting", "thank", "thanks", "much", "telling", "everyone",
+        "use", "them", "were", "huge", "win", "our", "house", "didnt", "have", "hand",
+        "so", "used", "suggested", "they", "cooked", "beautifully", "really", "tasty",
+        "perfect", "doubled", "ate", "breakfast", "then", "again", "dinner", "amazing",
+        "amp", "amped", "when", "yall", "love", "stuff", "as", "we", "do", "weekend",
+        "ya", "how", "to", "make", "also", "details", "linked", "ill", "over", "sure",
     }
     parts = [p for p in t.split("-") if p and p not in drop and len(p) > 1]
     return "-".join(parts[:10])
+
+
+def _food_phrase_candidates(blob: str) -> list[str]:
+    """Pull likely dish names out of review-quote captions."""
+    out: list[str] = []
+    low = (blob or "").lower()
+    for m in re.finditer(
+        r"\b((?:protein\s+)?pancakes?\s+without\s+protein\s+powder)\b",
+        low,
+    ):
+        out.append(m.group(1).strip())
+    for m in re.finditer(
+        r"\b(pancake(?:s)?\s+recipe\s+without\s+protein\s+powder)\b",
+        low,
+    ):
+        out.append("pancakes without protein powder")
+    for m in re.finditer(
+        r"\b((?:caramel\s+)?slice\s+weet-?bix|weet-?bix\s+caramel\s+slice)\b",
+        low,
+    ):
+        out.append(re.sub(r"\s+", " ", m.group(1)).strip())
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for p in out:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return uniq[:4]
 
 
 def _looks_like_recipe_page(url: str) -> bool:
@@ -291,16 +326,31 @@ def _search_terms_from_caption(caption: str, title: str = "") -> list[str]:
     terms: list[str] = []
 
     def _clean(s: str) -> str:
-        s = re.sub(r"[“”\"'’]", "", s or "")
+        s = re.sub(r"[“”\"\'’]", "", s or "")
         s = re.sub(r"[^\w\s\-']+", " ", s, flags=re.UNICODE)
         s = re.sub(r"\s+", " ", s).strip()
         # Drop DM-funnel CTAs: COMMENT "SLICE" AND I'LL SEND IT OVER
         s = re.sub(r"\bcomment\b.{0,40}\b(send|dm|inbox)\b.*", " ", s, flags=re.I)
         return re.sub(r"\s+", " ", s).strip()
 
+    combined = f"{title or ''}\n{caption or ''}"
+    # Prefer dish phrases over review-quote fluff (common on IG).
+    for phrase in _food_phrase_candidates(combined):
+        terms.append(phrase)
+
     title_c = _clean(title)
+    # Skip titles that are mostly a customer review quote
     if title_c and len(title_c) > 4:
-        terms.append(title_c[:80])
+        reviewish = bool(
+            re.search(
+                r"\b(thank you|turned out|huge win|amazing|telling everyone|love this)\b",
+                title_c,
+                flags=re.I,
+            )
+        )
+        if not reviewish or not terms:
+            terms.append(title_c[:80])
+
     first = ""
     for line in (caption or "").splitlines():
         clean = _clean(line)
@@ -308,50 +358,31 @@ def _search_terms_from_caption(caption: str, title: str = "") -> list[str]:
             continue
         if re.match(r"^(comment|follow|link in bio|dm me)\b", clean, flags=re.I):
             continue
-        # Skip pure macro lines
         if re.search(r"\b(calories?|protein|carbs?|macros?)\b", clean, re.I) and len(clean) < 40:
+            continue
+        if re.search(
+            r"\b(thank you|turned out|huge win|amazing|telling everyone|doubled the recipe)\b",
+            clean,
+            flags=re.I,
+        ):
             continue
         first = clean[:90]
         break
     if first:
         terms.append(first)
-    # Drop filler words for a tighter site: query
+
+    filler = {
+        "i", "am", "the", "a", "an", "and", "or", "to", "for", "my", "this", "that",
+        "with", "from", "just", "about", "obsessed", "recipe", "recipes", "comment",
+        "send", "follow", "following", "ill", "over", "make", "sure", "you", "are",
+        "these", "best", "ever", "turned", "out", "like", "picture", "fluffy", "great",
+        "tasting", "thank", "much", "telling", "everyone", "use",
+    }
     for base in list(terms):
         words = [
             w
             for w in re.findall(r"[A-Za-z0-9']+", base)
-            if w.lower()
-            not in {
-                "i",
-                "am",
-                "the",
-                "a",
-                "an",
-                "and",
-                "or",
-                "to",
-                "for",
-                "my",
-                "this",
-                "that",
-                "with",
-                "from",
-                "just",
-                "about",
-                "obsessed",
-                "recipe",
-                "recipes",
-                "comment",
-                "send",
-                "follow",
-                "following",
-                "ill",
-                "over",
-                "make",
-                "sure",
-                "you",
-                "are",
-            }
+            if w.lower() not in filler
         ]
         if len(words) >= 3:
             terms.append(" ".join(words[:8]))
@@ -359,12 +390,17 @@ def _search_terms_from_caption(caption: str, title: str = "") -> list[str]:
         slug = _slugify_recipe_query(t)
         if slug and "-" in slug:
             terms.append(slug.replace("-", " "))
+            parts = slug.split("-")
+            if "pancake" in parts or "pancakes" in parts:
+                # WP often uses protein-pancakes-without-protein-powder
+                if "without" in parts and "protein" in parts:
+                    terms.append("protein pancakes without protein powder")
     # Dedupe preserve order
     out: list[str] = []
     for t in terms:
         if t and t not in out:
             out.append(t)
-    return out[:5]
+    return out[:6]
 
 
 def _normalize_recipe_url(url: str) -> str:
@@ -441,17 +477,21 @@ async def _find_matching_recipe_url(
     # even when their search result pages omit absolute URLs in Jina markdown.
     if not candidates:
         slug_try: list[str] = []
-        for term in terms[:3]:
+        # Known dish reorderings when review quotes scramble the title.
+        if {"pancake", "pancakes", "protein", "powder", "without"} & token_set:
+            if "pancake" in token_set or "pancakes" in token_set:
+                slug_try.append("protein-pancakes-without-protein-powder")
+                slug_try.append("pancakes-without-protein-powder")
+        for term in terms[:4]:
             slug = _slugify_recipe_query(term)
             if slug and "-" in slug and slug not in slug_try:
                 slug_try.append(slug)
-            # Also try dropping trailing fluff words if slug is very long
             parts = slug.split("-") if slug else []
             if len(parts) > 6:
                 shorter = "-".join(parts[:6])
                 if shorter not in slug_try:
                     slug_try.append(shorter)
-        for slug in slug_try[:4]:
+        for slug in slug_try[:6]:
             probe = f"https://{host}/{slug}/"
             try:
                 resp = await client.get(

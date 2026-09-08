@@ -75,3 +75,21 @@ def test_search_terms_and_score():
     assert "cinnamon" in terms[0].lower() or "Cinnamon" in terms[0]
     url = "https://eliyaeats.com/baked-protein-pancake-bowls-great-for-meal-prep-and-no-banana-needed/"
     assert _score_recipe_url(url, {"protein", "pancake", "bowl", "baked"}) >= 3
+
+
+def test_search_terms_joytothefood_review_caption():
+    title = (
+        "“These are the best pancake recipe without protein powder ever! "
+        "They turned out just like the picture, fluffy and great "
+    )
+    caption = (
+        "“These are the best pancake recipe without protein powder ever!\"\n\n"
+        "⭐Comment RECIPE or PANCAKE and I’ll send ya how to make them!\n\n"
+        "recipe + full details also linked in bio ✨"
+    )
+    terms = _search_terms_from_caption(caption, title)
+    blob = " ".join(terms).lower()
+    assert "pancake" in blob
+    assert "without" in blob and "protein" in blob
+    # Should not be dominated by review fluff slug
+    assert not any(t.startswith("these best pancake") for t in terms)
