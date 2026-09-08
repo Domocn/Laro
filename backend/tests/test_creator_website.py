@@ -55,8 +55,13 @@ def test_caption_mentions_dm_gate():
     )
     assert caption_mentions_dm_gate("DM me for the full recipe")
     assert caption_mentions_dm_gate("Comment RECIPE and I'll send it to your inbox")
+    assert caption_mentions_dm_gate(
+        "comment the word ROLLS for the lowest calorie, highest protein breakfast"
+    )
+    assert caption_mentions_dm_gate("Comment PANCAKE for the full recipe")
     assert not caption_mentions_dm_gate("Full recipe linked in my bio")
     assert not caption_mentions_dm_gate("2 weetabix, 60ml milk, 150g yogurt")
+    assert not caption_mentions_dm_gate("Leave a comment if you try this!")
 
 
 def test_handle_host_score_rejects_wrong_blog():

@@ -308,6 +308,9 @@ def caption_mentions_dm_gate(text: str) -> bool:
         r"\bdrop\s+a\s+comment\b.{0,60}\b(send|dm)\b",
         r"\bcomment\b.{0,30}\band\s+i(?:'|’)?ll\b",
         r"\bsend\s+(you\s+)?(the\s+)?recipe\b.{0,40}\b(dm|inbox|comment)\b",
+        # "comment the word ROLLS for the …" / "comment RECIPE for the full recipe"
+        r"\bcomment\s+(?:the\s+word\s+)?[\"'“”]?\w+[\"'“”]?\s+for\b",
+        r"\bcomment\b.{0,40}\bfor\s+the\s+(?:full\s+)?(?:recipe|ingredients?|method|details)\b",
     )
     return any(re.search(p, t, flags=re.I | re.S) for p in patterns)
 
