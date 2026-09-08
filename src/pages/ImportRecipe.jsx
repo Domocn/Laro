@@ -38,12 +38,18 @@ export const ImportRecipe = () => {
   const [showDmGateDialog, setShowDmGateDialog] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [dmCommentWords, setDmCommentWords] = useState([]);
+  const [dmInstagramUrl, setDmInstagramUrl] = useState(null);
+  const [dmInstagramHandle, setDmInstagramHandle] = useState('');
   const applyDmGate = (meta = {}) => {
     if (meta.dm_gated) {
       const msg =
         meta.dm_gated_message ||
-        'This creator asks people to comment or DM them for the recipe — the full written amounts usually aren’t in the caption or on a public page. Laro will still try to read the video (spoken + on-screen text). For the exact written recipe, you’ll need to get it from them (or their site if they post it later).';
+        'This creator asks people to comment or DM them for the recipe — the full written amounts usually aren’t in the caption or on a public page. Laro will still try to read the video (spoken + on-screen text). For the exact written recipe, you’ll need to get it from them on Instagram.';
       setDmGatedMessage(msg);
+      setDmCommentWords(Array.isArray(meta.dm_comment_words) ? meta.dm_comment_words.filter(Boolean) : []);
+      setDmInstagramUrl(meta.dm_instagram_url || null);
+      setDmInstagramHandle(meta.dm_instagram_handle || '');
       setShowDmGateDialog(true);
     }
   };
@@ -136,11 +142,28 @@ export const ImportRecipe = () => {
         <AlertDialogContent data-testid="dm-gated-recipe-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>Recipe is behind a DM</AlertDialogTitle>
-            <AlertDialogDescription className="whitespace-pre-wrap">
-              {dmGatedMessage}
+            <AlertDialogDescription className="whitespace-pre-wrap space-y-3">
+              <span className="block">{dmGatedMessage}</span>
+              {dmCommentWords.length > 0 && (
+                <span className="block text-foreground font-medium" data-testid="dm-comment-words">
+                  {dmCommentWords.length === 1
+                    ? `They asked you to comment: “${dmCommentWords[0]}”`
+                    : `They asked you to comment: ${dmCommentWords.map((w) => `“${w}”`).join(', ')}`}
+                </span>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            {dmInstagramUrl && (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm"
+                data-testid="dm-gated-open-instagram"
+                onClick={() => window.open(dmInstagramUrl, '_blank', 'noopener,noreferrer')}
+              >
+                {dmInstagramHandle ? `Open @${dmInstagramHandle} on Instagram` : 'Open on Instagram'}
+              </button>
+            )}
             <AlertDialogAction
               data-testid="dm-gated-recipe-got-it"
               onClick={() => setShowDmGateDialog(false)}

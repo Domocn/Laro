@@ -315,13 +315,135 @@ def caption_mentions_dm_gate(text: str) -> bool:
     return any(re.search(p, t, flags=re.I | re.S) for p in patterns)
 
 
-def dm_gate_user_message() -> str:
+_DM_COMMENT_STOP = frozenset(
+    {
+        "the",
+        "word",
+        "a",
+        "an",
+        "and",
+        "or",
+        "for",
+        "below",
+        "if",
+        "you",
+        "try",
+        "this",
+        "that",
+        "me",
+        "my",
+        "your",
+        "on",
+        "to",
+        "with",
+        "from",
+        "full",
+        "details",
+        "method",
+        "ingredients",
+        "inbox",
+        "over",
+        "send",
+        "dm",
+        "message",
+        "how",
+        "make",
+        "them",
+        "ya",
+        "ill",
+        "will",
+        # Keep "recipe" allowed — creators often say Comment RECIPE
+    }
+)
+
+
+def extract_dm_comment_keywords(text: str) -> list[str]:
+    """
+    Pull the word(s) the creator asks people to comment, e.g. ROLLS / SLICE / RECIPE.
+    """
+    raw = text or ""
+    found: list[str] = []
+
+    def _add(word: str | None):
+        w = (word or "").strip().strip("\"'“”").upper()
+        if not w or len(w) > 24:
+            return
+        if w.lower() in _DM_COMMENT_STOP:
+            return
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]*", w):
+            return
+        if w not in found:
+            found.append(w)
+
+    patterns = (
+        # comment the word ROLLS
+        r"\bcomment\s+the\s+word\s+[\"'“”]?([A-Za-z0-9_-]+)[\"'“”]?",
+        # COMMENT "SLICE" …
+        r"\bcomment\s+[\"'“”]([A-Za-z0-9_-]+)[\"'“”]",
+        # Comment RECIPE or PANCAKE and I'll…
+        r"\bcomment\s+([A-Za-z0-9_-]+)(?:\s+or\s+([A-Za-z0-9_-]+))?\s+and\s+i",
+        # comment RECIPE for the…
+        r"\bcomment\s+(?:the\s+word\s+)?[\"'“”]?([A-Za-z0-9_-]+)[\"'“”]?\s+for\b",
+    )
+    for pat in patterns:
+        for m in re.finditer(pat, raw, flags=re.I):
+            _add(m.group(1))
+            if m.lastindex and m.lastindex >= 2:
+                _add(m.group(2))
+    return found[:4]
+
+
+def instagram_profile_url(handle: Optional[str]) -> Optional[str]:
+    h = _norm_handle(handle)
+    if not h or len(h) < 2:
+        return None
+    return f"https://www.instagram.com/{h}/"
+
+
+def dm_gate_user_message(
+    *,
+    keywords: Optional[list[str]] = None,
+    handle: Optional[str] = None,
+) -> str:
+    words = [w for w in (keywords or []) if w]
+    handle_disp = f"@{_norm_handle(handle)}" if _norm_handle(handle) else "their Instagram"
+
+    if len(words) == 1:
+        comment_bit = f'comment "{words[0]}"'
+    elif len(words) == 2:
+        comment_bit = f'comment "{words[0]}" or "{words[1]}"'
+    elif len(words) > 2:
+        quoted = ", ".join(f'"{w}"' for w in words[:-1]) + f', or "{words[-1]}"'
+        comment_bit = f"comment {quoted}"
+    else:
+        comment_bit = "comment or DM them"
+
     return (
-        "This creator asks people to comment or DM them for the recipe — "
+        f"This creator asks people to {comment_bit} on {handle_disp} for the recipe — "
         "the full written amounts usually aren’t in the caption or on a public page. "
         "Laro will still try to read the video (spoken + on-screen text). "
-        "For the exact written recipe, you’ll need to get it from them (or their site if they post it later)."
+        f"For the exact written recipe, open {handle_disp} on Instagram and {comment_bit}."
     )
+
+
+def build_dm_gate_meta(caption: str = "", handle: Optional[str] = None) -> dict:
+    """Structured DM-gate payload for import clients (popup + IG link)."""
+    if not caption_mentions_dm_gate(caption or ""):
+        return {}
+    keywords = extract_dm_comment_keywords(caption or "")
+    ig_url = instagram_profile_url(handle)
+    h = _norm_handle(handle)
+    out: dict = {
+        "dm_gated": True,
+        "dm_gated_message": dm_gate_user_message(keywords=keywords, handle=h or None),
+    }
+    if keywords:
+        out["dm_comment_words"] = keywords
+    if h:
+        out["dm_instagram_handle"] = h
+    if ig_url:
+        out["dm_instagram_url"] = ig_url
+    return out
 
 
 def _search_terms_from_caption(caption: str, title: str = "") -> list[str]:

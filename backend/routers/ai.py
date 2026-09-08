@@ -464,15 +464,9 @@ async def import_recipe_from_url(
             caption_for_meta = (video_meta.get("description") or "")[:4000]
             author_for_meta = video_meta.get("uploader")
         try:
-            from services.creator_website import (
-                caption_mentions_dm_gate,
-                dm_gate_user_message,
-                resolve_creator_website,
-            )
+            from services.creator_website import build_dm_gate_meta, resolve_creator_website
 
-            if caption_mentions_dm_gate(caption_for_meta):
-                extra["dm_gated"] = True
-                extra["dm_gated_message"] = dm_gate_user_message()
+            extra.update(build_dm_gate_meta(caption_for_meta, handle=author_for_meta))
             if author_for_meta:
                 site = await resolve_creator_website(
                     author_for_meta,

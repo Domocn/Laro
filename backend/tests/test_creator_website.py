@@ -1,8 +1,10 @@
 """Tests for creator website discovery (link-in-bio style offers)."""
 
 from services.creator_website import (
+    build_dm_gate_meta,
     caption_mentions_dm_gate,
     caption_mentions_full_recipe,
+    extract_dm_comment_keywords,
     handle_domain_candidates,
     host_plausibly_matches_handle,
     is_social_or_linkpage_host,
@@ -62,6 +64,28 @@ def test_caption_mentions_dm_gate():
     assert not caption_mentions_dm_gate("Full recipe linked in my bio")
     assert not caption_mentions_dm_gate("2 weetabix, 60ml milk, 150g yogurt")
     assert not caption_mentions_dm_gate("Leave a comment if you try this!")
+
+
+def test_extract_dm_comment_keywords_and_meta():
+    assert extract_dm_comment_keywords(
+        'COMMENT “SLICE” AND I’LL SEND IT OVER'
+    ) == ["SLICE"]
+    assert extract_dm_comment_keywords(
+        "Comment RECIPE or PANCAKE and I’ll send ya how to make them!"
+    ) == ["RECIPE", "PANCAKE"]
+    assert extract_dm_comment_keywords(
+        "comment the word ROLLS for the lowest calorie breakfast"
+    ) == ["ROLLS"]
+    meta = build_dm_gate_meta(
+        "comment the word ROLLS for the recipe",
+        handle="thattastesdelish",
+    )
+    assert meta["dm_gated"] is True
+    assert meta["dm_comment_words"] == ["ROLLS"]
+    assert meta["dm_instagram_handle"] == "thattastesdelish"
+    assert meta["dm_instagram_url"] == "https://www.instagram.com/thattastesdelish/"
+    assert 'comment "ROLLS"' in meta["dm_gated_message"]
+    assert "@thattastesdelish" in meta["dm_gated_message"]
 
 
 def test_handle_host_score_rejects_wrong_blog():
