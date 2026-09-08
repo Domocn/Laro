@@ -15,6 +15,15 @@ import {
   Edit
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 
 export const ImportRecipe = () => {
   const navigate = useNavigate();
@@ -25,7 +34,19 @@ export const ImportRecipe = () => {
   const [creatorWebsite, setCreatorWebsite] = useState(null);
   const [suggestedRecipeUrl, setSuggestedRecipeUrl] = useState(null);
   const [creatorWebsiteHint, setCreatorWebsiteHint] = useState('');
+  const [dmGatedMessage, setDmGatedMessage] = useState('');
+  const [showDmGateDialog, setShowDmGateDialog] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const applyDmGate = (meta = {}) => {
+    if (meta.dm_gated) {
+      const msg =
+        meta.dm_gated_message ||
+        'This creator asks people to comment or DM them for the recipe — the full written amounts usually aren’t in the caption or on a public page. Laro will still try to read the video (spoken + on-screen text). For the exact written recipe, you’ll need to get it from them (or their site if they post it later).';
+      setDmGatedMessage(msg);
+      setShowDmGateDialog(true);
+    }
+  };
 
   // Extract recipe from URL
   const extractRecipe = async (recipeUrl) => {
@@ -42,6 +63,7 @@ export const ImportRecipe = () => {
       setCreatorWebsite(res.data.creator_website || null);
       setSuggestedRecipeUrl(res.data.suggested_recipe_url || null);
       setCreatorWebsiteHint(res.data.creator_website_hint || '');
+      applyDmGate(res.data);
       toast.success('Recipe extracted successfully!');
     } catch (error) {
       console.error('Extract error:', error);
@@ -50,6 +72,7 @@ export const ImportRecipe = () => {
         setCreatorWebsite(detail.creator_website || null);
         setSuggestedRecipeUrl(detail.suggested_recipe_url || null);
         setCreatorWebsiteHint(detail.creator_website_hint || '');
+        applyDmGate(detail);
       }
       toast.error(
         (typeof detail === 'string' && detail) ||
@@ -109,6 +132,24 @@ export const ImportRecipe = () => {
 
   return (
     <Layout>
+      <AlertDialog open={showDmGateDialog} onOpenChange={setShowDmGateDialog}>
+        <AlertDialogContent data-testid="dm-gated-recipe-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Recipe is behind a DM</AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-wrap">
+              {dmGatedMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="dm-gated-recipe-got-it"
+              onClick={() => setShowDmGateDialog(false)}
+            >
+              Got it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="max-w-3xl mx-auto" data-testid="import-recipe">
         {/* Back Button */}
         <button 

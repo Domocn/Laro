@@ -171,6 +171,52 @@ def _website_home(url: str) -> Optional[str]:
     return f"https://{host}/"
 
 
+def _handle_host_score(handle: str, host: str) -> int:
+    """
+    How likely is this hostname the creator's own site?
+    Rejects weak DDG hits like paleorunningmomma.com for @running.and.mumming.
+    """
+    h = _norm_handle(handle)
+    base = (host or "").lower().removeprefix("www.").split(":")[0].split(".")[0]
+    if not h or not base:
+        return 0
+    compact = re.sub(r"[^a-z0-9]", "", h)
+    score = 0
+    if compact and compact in base:
+        score += 10
+    if base and len(base) >= 5 and base in compact:
+        score += 8
+    tokens = [t for t in re.split(r"[^a-z0-9]+", h) if len(t) >= 4]
+    matched = [t for t in tokens if t in base]
+    score += len(matched) * 3
+    if tokens and base.startswith(tokens[0]):
+        score += 4
+    # Prefer hosts that are basically the handle (joytothefood, cindafit, eliyaeats)
+    for cand in handle_domain_candidates(h):
+        if cand.split(".")[0] == base:
+            score += 12
+            break
+    return score
+
+
+def host_plausibly_matches_handle(host: str, handle: str, *, min_score: int = 6) -> bool:
+    return _handle_host_score(handle, host) >= min_score
+
+
+def _slugify_recipe_query(text: str) -> str:
+    t = (text or "").lower()
+    t = re.sub(r"[“”\"'’]", "", t)
+    t = re.sub(r"\(.*?\)", " ", t)
+    t = re.sub(r"[^a-z0-9]+", "-", t).strip("-")
+    # Drop lead-magnet / promo noise tokens
+    drop = {
+        "comment", "send", "follow", "following", "link", "bio", "recipe", "recipes",
+        "the", "and", "for", "with", "from", "this", "that", "your", "you", "are",
+    }
+    parts = [p for p in t.split("-") if p and p not in drop and len(p) > 1]
+    return "-".join(parts[:10])
+
+
 def _looks_like_recipe_page(url: str) -> bool:
     try:
         p = urlparse(url)
@@ -210,16 +256,57 @@ def caption_mentions_full_recipe(text: str) -> bool:
     return any(m in t for m in markers)
 
 
+def caption_mentions_dm_gate(text: str) -> bool:
+    """
+    True when the poster says to comment / DM them to receive the recipe
+    (lead-magnet captions) — amounts are not public in the post.
+    """
+    t = (text or "").lower()
+    if not t.strip():
+        return False
+    patterns = (
+        r"\bcomment\b.{0,80}\b(send|dm|inbox|message)\b",
+        r"\b(dm|message)\s+me\b.{0,60}\b(recipe|send|ingredients?)\b",
+        r"\bi(?:'|’)?ll\s+(send|dm)\b",
+        r"\bi\s+will\s+(send|dm)\b",
+        r"\bsend\s+(it|the\s+recipe)\s+over\b",
+        r"\bdrop\s+a\s+comment\b.{0,60}\b(send|dm)\b",
+        r"\bcomment\b.{0,30}\band\s+i(?:'|’)?ll\b",
+        r"\bsend\s+(you\s+)?(the\s+)?recipe\b.{0,40}\b(dm|inbox|comment)\b",
+    )
+    return any(re.search(p, t, flags=re.I | re.S) for p in patterns)
+
+
+def dm_gate_user_message() -> str:
+    return (
+        "This creator asks people to comment or DM them for the recipe — "
+        "the full written amounts usually aren’t in the caption or on a public page. "
+        "Laro will still try to read the video (spoken + on-screen text). "
+        "For the exact written recipe, you’ll need to get it from them (or their site if they post it later)."
+    )
+
+
 def _search_terms_from_caption(caption: str, title: str = "") -> list[str]:
     """Build short search queries from reel title/caption."""
     terms: list[str] = []
-    if title and len(title.strip()) > 4:
-        terms.append(re.sub(r"\s+", " ", title.strip())[:80])
+
+    def _clean(s: str) -> str:
+        s = re.sub(r"[“”\"'’]", "", s or "")
+        s = re.sub(r"[^\w\s\-']+", " ", s, flags=re.UNICODE)
+        s = re.sub(r"\s+", " ", s).strip()
+        # Drop DM-funnel CTAs: COMMENT "SLICE" AND I'LL SEND IT OVER
+        s = re.sub(r"\bcomment\b.{0,40}\b(send|dm|inbox)\b.*", " ", s, flags=re.I)
+        return re.sub(r"\s+", " ", s).strip()
+
+    title_c = _clean(title)
+    if title_c and len(title_c) > 4:
+        terms.append(title_c[:80])
     first = ""
     for line in (caption or "").splitlines():
-        clean = re.sub(r"[^\w\s\-']+", " ", line, flags=re.UNICODE)
-        clean = re.sub(r"\s+", " ", clean).strip()
+        clean = _clean(line)
         if len(clean) < 12:
+            continue
+        if re.match(r"^(comment|follow|link in bio|dm me)\b", clean, flags=re.I):
             continue
         # Skip pure macro lines
         if re.search(r"\b(calories?|protein|carbs?|macros?)\b", clean, re.I) and len(clean) < 40:
@@ -254,16 +341,30 @@ def _search_terms_from_caption(caption: str, title: str = "") -> list[str]:
                 "obsessed",
                 "recipe",
                 "recipes",
+                "comment",
+                "send",
+                "follow",
+                "following",
+                "ill",
+                "over",
+                "make",
+                "sure",
+                "you",
+                "are",
             }
         ]
         if len(words) >= 3:
             terms.append(" ".join(words[:8]))
+    for t in list(terms):
+        slug = _slugify_recipe_query(t)
+        if slug and "-" in slug:
+            terms.append(slug.replace("-", " "))
     # Dedupe preserve order
     out: list[str] = []
     for t in terms:
         if t and t not in out:
             out.append(t)
-    return out[:4]
+    return out[:5]
 
 
 def _normalize_recipe_url(url: str) -> str:
@@ -291,7 +392,8 @@ async def _find_matching_recipe_url(
 ) -> Optional[str]:
     """
     Prefer an on-site search page (WordPress ?s=) via Jina — DDG site: queries are
-    flaky / rate-limited. Fall back to a couple of DDG queries when available.
+    flaky / rate-limited. Also probe likely kebab slugs (cheap HEAD/Jina) when
+    search pages omit absolute links.
     """
     terms = _search_terms_from_caption(caption, recipe_title)
     if not terms:
@@ -335,10 +437,46 @@ async def _find_matching_recipe_url(
         if candidates:
             break
 
+    # Slug probe: many WP blogs use /protein-pancakes-without-protein-powder/
+    # even when their search result pages omit absolute URLs in Jina markdown.
+    if not candidates:
+        slug_try: list[str] = []
+        for term in terms[:3]:
+            slug = _slugify_recipe_query(term)
+            if slug and "-" in slug and slug not in slug_try:
+                slug_try.append(slug)
+            # Also try dropping trailing fluff words if slug is very long
+            parts = slug.split("-") if slug else []
+            if len(parts) > 6:
+                shorter = "-".join(parts[:6])
+                if shorter not in slug_try:
+                    slug_try.append(shorter)
+        for slug in slug_try[:4]:
+            probe = f"https://{host}/{slug}/"
+            try:
+                resp = await client.get(
+                    probe,
+                    headers={"User-Agent": _UA, "Accept": "text/html"},
+                    timeout=12.0,
+                    follow_redirects=True,
+                )
+                if resp.status_code == 200 and len(resp.text or "") > 800:
+                    low = (resp.text or "").lower()
+                    if (
+                        "application/ld+json" in low
+                        or "wprm-recipe" in low
+                        or "recipeingredient" in low
+                        or "ingredient" in low
+                    ):
+                        candidates.append(_normalize_recipe_url(str(resp.url)))
+                        break
+            except Exception:
+                continue
+
     # Light DDG fallback (may be empty under rate limits)
     if not candidates:
         for term in terms[:2]:
-            for q in (f"{host} {term}", f"site:{host} {term}"):
+            for q in (f"site:{host} {term}", f"{host} {term}"):
                 for u in await _ddg_search(q, client, limit=8):
                     try:
                         uh = (urlparse(u).hostname or "").lower().removeprefix("www.")
@@ -402,6 +540,13 @@ async def resolve_creator_website(
             return None
         cached_site = payload.get("creator_website")
         cached_via = payload.get("via") or "cache"
+        # Drop stale false-positive homes (wrong creator domain).
+        if cached_site and not host_plausibly_matches_handle(
+            (urlparse(cached_site).hostname or ""), h
+        ):
+            cached_site = None
+            cached_via = ""
+            _cache.pop(cache_key, None)
 
     owns_client = client is None
     if owns_client:
@@ -426,12 +571,18 @@ async def resolve_creator_website(
             for q in queries:
                 ranked.extend(await _ddg_search(q, client, limit=10))
 
+            # Prefer DDG hits that actually look like this creator's domain.
+            scored_homes: list[tuple[int, str]] = []
             for u in ranked:
                 home = _website_home(u)
-                if home:
-                    website = home
-                    via = "ddg"
-                    break
+                if not home:
+                    continue
+                host0 = (urlparse(home).hostname or "").lower()
+                scored_homes.append((_handle_host_score(h, host0), home))
+            scored_homes.sort(key=lambda x: x[0], reverse=True)
+            if scored_homes and scored_homes[0][0] >= 6:
+                website = scored_homes[0][1]
+                via = "ddg"
 
             # 2) Handle → domain heuristic (eliya.eats → eliyaeats.com)
             if not website:
@@ -447,6 +598,31 @@ async def resolve_creator_website(
                             follow_redirects=True,
                         )
                         # Cloudflare 403 still means the site exists
+                        if resp.status_code in (200, 301, 302, 303, 307, 308, 403, 401, 429):
+                            final_host = (urlparse(str(resp.url)).hostname or host).lower()
+                            if not is_social_or_linkpage_host(final_host):
+                                website = f"https://{final_host}/"
+                                via = "handle-heuristic"
+                                break
+                    except Exception:
+                        continue
+
+            # Reject cached/weak DDG false positives (e.g. paleorunningmomma for @running.and.mumming)
+            if website and not host_plausibly_matches_handle(
+                (urlparse(website).hostname or ""), h
+            ):
+                # Try heuristic before giving up
+                website = None
+                via = ""
+                for host in handle_domain_candidates(h):
+                    probe = f"https://{host}/"
+                    try:
+                        resp = await client.get(
+                            probe,
+                            headers={"User-Agent": _UA, "Accept": "text/html"},
+                            timeout=12.0,
+                            follow_redirects=True,
+                        )
                         if resp.status_code in (200, 301, 302, 303, 307, 308, 403, 401, 429):
                             final_host = (urlparse(str(resp.url)).hostname or host).lower()
                             if not is_social_or_linkpage_host(final_host):
