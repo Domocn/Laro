@@ -415,6 +415,7 @@ async def import_recipe_from_url(
             except Exception as e:
                 logger.warning(f"Jina Reader fallback failed: {e}")
 
+        video_meta = None
         # Try yt-dlp as a universal fallback for video/social media pages
         # that don't have recipe schema (works on 1000+ sites)
         logger.info(f"Trying yt-dlp as fallback for: {url}")
@@ -456,10 +457,37 @@ async def import_recipe_from_url(
 
         logger.info(f"Successfully extracted recipe from URL: {recipe_data.get('title', 'Unknown')}")
 
+        extra: dict = {}
+        caption_for_meta = ""
+        author_for_meta = None
+        if video_meta:
+            caption_for_meta = (video_meta.get("description") or "")[:4000]
+            author_for_meta = video_meta.get("uploader")
+        try:
+            from services.creator_website import build_dm_gate_meta, resolve_creator_website
+
+            extra.update(build_dm_gate_meta(caption_for_meta, handle=author_for_meta))
+            if author_for_meta:
+                site = await resolve_creator_website(
+                    author_for_meta,
+                    caption=caption_for_meta,
+                    recipe_title=(recipe_data.get("title") or ""),
+                )
+                if site:
+                    if site.get("creator_website"):
+                        extra["creator_website"] = site["creator_website"]
+                    if site.get("suggested_recipe_url"):
+                        extra["suggested_recipe_url"] = site["suggested_recipe_url"]
+                    if site.get("creator_website_hint"):
+                        extra["creator_website_hint"] = site["creator_website_hint"]
+        except Exception as e:
+            logger.info("creator website / dm-gate meta skipped: %s", e)
+
         return {
             "status": "success",
             "recipe": recipe_data,
-            "source_url": url
+            "source_url": url,
+            **extra,
         }
 
     except json.JSONDecodeError as e:

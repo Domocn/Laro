@@ -15,6 +15,15 @@ import {
   Edit
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 
 export const ImportRecipe = () => {
   const navigate = useNavigate();
@@ -22,7 +31,28 @@ export const ImportRecipe = () => {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [extractedRecipe, setExtractedRecipe] = useState(null);
+  const [creatorWebsite, setCreatorWebsite] = useState(null);
+  const [suggestedRecipeUrl, setSuggestedRecipeUrl] = useState(null);
+  const [creatorWebsiteHint, setCreatorWebsiteHint] = useState('');
+  const [dmGatedMessage, setDmGatedMessage] = useState('');
+  const [showDmGateDialog, setShowDmGateDialog] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [dmCommentWords, setDmCommentWords] = useState([]);
+  const [dmInstagramUrl, setDmInstagramUrl] = useState(null);
+  const [dmInstagramHandle, setDmInstagramHandle] = useState('');
+  const applyDmGate = (meta = {}) => {
+    if (meta.dm_gated) {
+      const msg =
+        meta.dm_gated_message ||
+        'This creator asks people to comment or DM them for the recipe — the full written amounts usually aren’t in the caption or on a public page. Laro will still try to read the video (spoken + on-screen text). For the exact written recipe, you’ll need to get it from them on Instagram.';
+      setDmGatedMessage(msg);
+      setDmCommentWords(Array.isArray(meta.dm_comment_words) ? meta.dm_comment_words.filter(Boolean) : []);
+      setDmInstagramUrl(meta.dm_instagram_url || null);
+      setDmInstagramHandle(meta.dm_instagram_handle || '');
+      setShowDmGateDialog(true);
+    }
+  };
 
   // Extract recipe from URL
   const extractRecipe = async (recipeUrl) => {
@@ -36,10 +66,25 @@ export const ImportRecipe = () => {
       const res = await aiApi.importUrl(recipeUrl);
       // Backend returns { status, recipe, source_url } - extract the recipe object
       setExtractedRecipe(res.data.recipe);
+      setCreatorWebsite(res.data.creator_website || null);
+      setSuggestedRecipeUrl(res.data.suggested_recipe_url || null);
+      setCreatorWebsiteHint(res.data.creator_website_hint || '');
+      applyDmGate(res.data);
       toast.success('Recipe extracted successfully!');
     } catch (error) {
       console.error('Extract error:', error);
-      toast.error(error.response?.data?.detail || 'Couldn\'t read that recipe. Make sure the URL is a valid recipe page and try again. (E-IR001)');
+      const detail = error?.response?.data?.detail;
+      if (detail && typeof detail === 'object') {
+        setCreatorWebsite(detail.creator_website || null);
+        setSuggestedRecipeUrl(detail.suggested_recipe_url || null);
+        setCreatorWebsiteHint(detail.creator_website_hint || '');
+        applyDmGate(detail);
+      }
+      toast.error(
+        (typeof detail === 'string' && detail) ||
+          detail?.message ||
+          'Couldn\'t read that recipe. Make sure the URL is a valid recipe page and try again. (E-IR001)'
+      );
     } finally {
       setLoading(false);
     }
@@ -93,6 +138,41 @@ export const ImportRecipe = () => {
 
   return (
     <Layout>
+      <AlertDialog open={showDmGateDialog} onOpenChange={setShowDmGateDialog}>
+        <AlertDialogContent data-testid="dm-gated-recipe-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Recipe is behind a DM</AlertDialogTitle>
+            <AlertDialogDescription className="whitespace-pre-wrap space-y-3">
+              <span className="block">{dmGatedMessage}</span>
+              {dmCommentWords.length > 0 && (
+                <span className="block text-foreground font-medium" data-testid="dm-comment-words">
+                  {dmCommentWords.length === 1
+                    ? `They asked you to comment: “${dmCommentWords[0]}”`
+                    : `They asked you to comment: ${dmCommentWords.map((w) => `“${w}”`).join(', ')}`}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            {dmInstagramUrl && (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm"
+                data-testid="dm-gated-open-instagram"
+                onClick={() => window.open(dmInstagramUrl, '_blank', 'noopener,noreferrer')}
+              >
+                {dmInstagramHandle ? `Open @${dmInstagramHandle} on Instagram` : 'Open on Instagram'}
+              </button>
+            )}
+            <AlertDialogAction
+              data-testid="dm-gated-recipe-got-it"
+              onClick={() => setShowDmGateDialog(false)}
+            >
+              Got it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="max-w-3xl mx-auto" data-testid="import-recipe">
         {/* Back Button */}
         <button 
@@ -154,7 +234,41 @@ export const ImportRecipe = () => {
           </form>
 
           {/* Extracted Recipe Preview */}
-          {extractedRecipe && (
+          {(creatorWebsite || suggestedRecipeUrl) && (
+          <div className="mb-6 rounded-xl border border-laro/30 bg-laro/5 p-4 space-y-3" data-testid="creator-website-offer">
+            <p className="text-sm">
+              {creatorWebsiteHint ||
+                'This creator looks like they have a recipe website — check it for exact amounts and steps.'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedRecipeUrl && (
+                <Button
+                  type="button"
+                  className="rounded-full bg-laro hover:bg-laro-dark"
+                  disabled={loading}
+                  onClick={() => {
+                    setUrl(suggestedRecipeUrl);
+                    extractRecipe(suggestedRecipeUrl);
+                  }}
+                >
+                  Import written recipe
+                </Button>
+              )}
+              {creatorWebsite && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full"
+                  onClick={() => window.open(creatorWebsite, '_blank', 'noopener,noreferrer')}
+                >
+                  Open their website
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {extractedRecipe && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
