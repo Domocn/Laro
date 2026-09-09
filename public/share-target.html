@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Importing recipe…</title>
+  <style>
+    body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; background: #F8FAF9; color: #1a1a1a; }
+    p { opacity: 0.75; }
+  </style>
+  <script>
+    (function () {
+      var q = new URLSearchParams(window.location.search);
+      var url = (q.get('url') || '').trim();
+      var text = (q.get('text') || '').trim();
+      var title = (q.get('title') || '').trim();
+      if (!url && text) {
+        var m = text.match(/https?:\/\/[^\s<>"']+/i);
+        if (m) url = m[0].replace(/[.,;:)\]}]+$/g, '');
+      }
+      var params = new URLSearchParams();
+      if (url) params.set('url', url);
+      else if (text) params.set('text', text);
+      if (title) params.set('title', title);
+      var qs = params.toString();
+      var dest = '/#/recipes/import' + (qs ? '?' + qs : '');
+      window.location.replace(dest);
+    })();
+  </script>
+</head>
+<body>
+  <p>Opening Laro import…</p>
+</body>
+</html>

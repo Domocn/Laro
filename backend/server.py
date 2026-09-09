@@ -47,7 +47,7 @@ from routers import (
     roles, trusted_devices, recipe_versions, nutrition, seed,
     recipe_import, voice_cooking, cost_tracking, reviews, sharing, jobs, debug,
     api_tokens, cookbooks, pantry, export, remote_access, mobile, friends,
-    subscriptions
+    subscriptions, support, rewards, google_health
 )
 
 # Setup Logging for Docker/Portainer visibility
@@ -197,6 +197,19 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Firebase credential check failed: {e} - push notifications disabled")
         startup_state.firebase_status = f"error: {e}"
 
+    # In-process reminder scheduler (works without Redis/Celery Beat).
+    # Deduped via reminder_dispatch_log so it can coexist with beat.
+    reminder_task = None
+    reminders_inprocess = os.getenv("REMINDERS_INPROCESS", "true").lower() == "true"
+    if reminders_inprocess and startup_state.database_ready:
+        try:
+            import asyncio
+            from services.reminders import reminder_scheduler_loop
+            reminder_task = asyncio.create_task(reminder_scheduler_loop(interval_seconds=60))
+            logger.info("In-process reminder scheduler enabled")
+        except Exception as e:
+            logger.warning(f"Could not start reminder scheduler: {e}")
+
     logger.info("=" * 60)
     logger.info("LARO API SERVER READY")
     logger.info("=" * 60)
@@ -209,6 +222,15 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     logger.info("LARO API SERVER SHUTTING DOWN")
     logger.info("=" * 60)
+
+    if reminder_task is not None:
+        reminder_task.cancel()
+        try:
+            await reminder_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     Loggers.api.info("Closing HTTP client...")
     await app.state.http_client.aclose()
@@ -278,6 +300,7 @@ api_v1_router.include_router(cooking.router)
 api_v1_router.include_router(admin.router)
 api_v1_router.include_router(security.router)
 api_v1_router.include_router(oauth.router)
+api_v1_router.include_router(google_health.router)
 api_v1_router.include_router(preferences.router)
 api_v1_router.include_router(roles.router)
 api_v1_router.include_router(trusted_devices.router)
@@ -299,6 +322,8 @@ api_v1_router.include_router(remote_access.router)
 api_v1_router.include_router(mobile.router)
 api_v1_router.include_router(friends.router)
 api_v1_router.include_router(subscriptions.router)
+api_v1_router.include_router(support.router)
+api_v1_router.include_router(rewards.router)
 
 # Legacy /api router for backward compatibility (mirrors v1)
 api_router = APIRouter(prefix="/api")
@@ -321,6 +346,7 @@ api_router.include_router(cooking.router)
 api_router.include_router(admin.router)
 api_router.include_router(security.router)
 api_router.include_router(oauth.router)
+api_router.include_router(google_health.router)
 api_router.include_router(preferences.router)
 api_router.include_router(roles.router)
 api_router.include_router(trusted_devices.router)
@@ -342,6 +368,8 @@ api_router.include_router(remote_access.router)
 api_router.include_router(mobile.router)
 api_router.include_router(friends.router)
 api_router.include_router(subscriptions.router)
+api_router.include_router(support.router)
+api_router.include_router(rewards.router)
 
 
 # Shared helper functions for endpoints available on both v1 and legacy routers
@@ -365,7 +393,7 @@ async def _get_config():
         "features": {
             "ai_import": True,
             "ai_fridge_search": True,
-            "local_llm": settings.llm_provider == 'ollama',
+            "local_llm": (not settings.is_cloud) and settings.llm_provider == "ollama",
             "live_refresh": True,
             "cookbooks": True,
             "pantry": True,
@@ -447,16 +475,15 @@ async def _complete_setup():
 
 async def _get_shared_recipe(share_id: str):
     from datetime import datetime, timezone
+    from utils.share_links import parse_share_expiry
+
     share = await recipe_share_repository.find_by_id(share_id)
     if not share:
         raise HTTPException(status_code=404, detail="Shared recipe not found")
 
-    if share.get("expires_at"):
-        expires = datetime.fromisoformat(share["expires_at"].replace("Z", "+00:00"))
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > expires:
-            raise HTTPException(status_code=410, detail="Share link has expired")
+    expires = parse_share_expiry(share.get("expires_at"))
+    if expires and datetime.now(timezone.utc) > expires:
+        raise HTTPException(status_code=410, detail="Share link has expired")
 
     recipe = await recipe_repository.find_by_id(share["recipe_id"])
     if not recipe:
@@ -464,9 +491,10 @@ async def _get_shared_recipe(share_id: str):
     return recipe
 
 
-async def _get_upload(filename: str):
+async def _get_upload(filename: str, exp: str = None, sig: str = None):
     from fastapi.responses import FileResponse
     from pathlib import Path
+    from utils.upload_tokens import verify_upload_signature
 
     upload_dir = Path(settings.upload_dir)
     try:
@@ -478,6 +506,11 @@ async def _get_upload(filename: str):
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
+
+    # Require a valid HMAC signature (issued when recipes/shares are fetched)
+    if not verify_upload_signature(filename, exp, sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired upload link")
+
     return FileResponse(file_path)
 
 
@@ -511,14 +544,18 @@ async def health_check_v1():
 
 
 @api_v1_router.get("/debug/info")
-async def debug_info_v1():
-    """Get debug information (only available when DEBUG_MODE is enabled)"""
+async def debug_info_v1(user: dict = Depends(get_current_user)):
+    """Get debug information (DEBUG_MODE + admin only)"""
+    if (user.get("role") or "").lower() not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     return await _debug_info()
 
 
 @api_v1_router.get("/debug/config")
-async def debug_config_v1():
-    """Get debug configuration (only available when DEBUG_MODE is enabled)"""
+async def debug_config_v1(user: dict = Depends(get_current_user)):
+    """Get debug configuration (DEBUG_MODE + admin only)"""
+    if (user.get("role") or "").lower() not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     return await _debug_config()
 
 
@@ -541,9 +578,9 @@ async def get_shared_recipe_v1(share_id: str):
 
 
 @api_v1_router.get("/uploads/{filename}")
-async def get_upload_v1(filename: str):
-    """Get uploaded file"""
-    return await _get_upload(filename)
+async def get_upload_v1(filename: str, exp: str = None, sig: str = None):
+    """Get uploaded file (requires signed ?exp=&sig=)"""
+    return await _get_upload(filename, exp=exp, sig=sig)
 
 
 @api_v1_router.get("/ws/status")
@@ -572,14 +609,18 @@ async def health_check():
 
 
 @api_router.get("/debug/info")
-async def debug_info():
-    """Get debug information (only available when DEBUG_MODE is enabled)"""
+async def debug_info(user: dict = Depends(get_current_user)):
+    """Get debug information (DEBUG_MODE + admin only)"""
+    if (user.get("role") or "").lower() not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     return await _debug_info()
 
 
 @api_router.get("/debug/config")
-async def debug_config():
-    """Get debug configuration (only available when DEBUG_MODE is enabled)"""
+async def debug_config(user: dict = Depends(get_current_user)):
+    """Get debug configuration (DEBUG_MODE + admin only)"""
+    if (user.get("role") or "").lower() not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     return await _debug_config()
 
 
@@ -602,9 +643,9 @@ async def get_shared_recipe(share_id: str):
 
 
 @api_router.get("/uploads/{filename}")
-async def get_upload(filename: str):
-    """Get uploaded file"""
-    return await _get_upload(filename)
+async def get_upload(filename: str, exp: str = None, sig: str = None):
+    """Get uploaded file (requires signed ?exp=&sig=)"""
+    return await _get_upload(filename, exp=exp, sig=sig)
 
 
 @api_router.get("/ws/status")
@@ -651,10 +692,22 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None):
             payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
             user_id = payload.get("user_id")
             if user_id:
+                # Require live session (same as HTTP JWT auth)
+                from dependencies import session_repository
+                session = await session_repository.find_by_user_and_token(user_id, token)
+                if not session:
+                    log_ws_event("AUTH_FAILED", error="No live session for token")
+                    if not already_accepted:
+                        await websocket.close(code=4001)
+                    else:
+                        await websocket.close(code=4001)
+                    return
                 user = await user_repository.find_by_id(user_id)
                 if user:
                     household_id = user.get("household_id")
                     Loggers.ws.debug("Token validated", user_id=user_id, household_id=household_id)
+                else:
+                    user_id = None
         except jwt.InvalidTokenError as e:
             log_ws_event("AUTH_FAILED", error=f"Invalid token: {str(e)}")
             if not already_accepted:

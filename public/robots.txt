@@ -1,0 +1,5 @@
+# App-owned robots.txt (Cloudflare may append managed AI rules at the edge).
+User-agent: *
+Allow: /
+
+Sitemap: https://laro.food/sitemap.xml

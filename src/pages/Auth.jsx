@@ -5,12 +5,28 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { ChefHat, Mail, Lock, User, ArrowRight, Loader2, Smartphone, MailCheck, RefreshCw, Check, X } from 'lucide-react';
+import { ChefHat, Mail, Lock, User, ArrowRight, Loader2, Smartphone, MailCheck, RefreshCw, Check, X, Globe, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { oauthApi } from '../lib/api';
+import {
+  LANGUAGES,
+  COUNTRIES,
+  detectBrowserLocale,
+  defaultsForCountry,
+} from '../lib/locales';
+import { useLanguage } from '../context/LanguageContext';
+import { markOnboardingPending } from '../lib/onboarding';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 
 // Email Verification Component
 const EmailVerification = ({ email, onResend, onBack, loading }) => {
+  const { t } = useLanguage();
   const [resendCooldown, setResendCooldown] = useState(0);
 
   const handleResend = async () => {
@@ -29,30 +45,38 @@ const EmailVerification = ({ email, onResend, onBack, loading }) => {
   };
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4">
+    <div className="min-h-screen bg-cream flex items-center justify-center p-4 relative overflow-hidden">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'none',
+        }}
+        aria-hidden="true"
+      />
       <motion.div
-        className="w-full max-w-md"
+        className="w-full max-w-md relative z-10"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
         <Link to="/" className="flex justify-center mb-8">
-          <img src="/laro-banner.png" alt="Laro" className="h-14" />
+          <img src="/laro-banner.png" alt="Laro" className="h-12" />
         </Link>
 
-        <div className="bg-white rounded-2xl shadow-card border border-border/60 p-8 text-center">
+        <div className="bg-card/95 rounded-[12px] shadow-card border-0 p-8 text-center backdrop-blur-sm">
           <div className="w-16 h-16 bg-laro/10 rounded-full flex items-center justify-center mx-auto mb-6">
             <MailCheck className="w-8 h-8 text-laro" aria-hidden="true" />
           </div>
 
-          <h1 className="font-heading text-2xl font-bold mb-2">Check Your Email</h1>
+          <h1 className="font-heading text-2xl font-bold mb-2">{t('checkYourEmail')}</h1>
           <p className="text-muted-foreground mb-2">
-            We've sent a verification link to:
+            {t('verificationSentTo')}
           </p>
           <p className="font-semibold text-foreground mb-6">{email}</p>
 
           <p className="text-sm text-muted-foreground mb-6">
-            Click the link in the email to verify your account. If you don't see it, check your spam folder.
+            {t('verificationInstructions')}
           </p>
 
           <div className="space-y-3">
@@ -67,7 +91,7 @@ const EmailVerification = ({ email, onResend, onBack, loading }) => {
               ) : (
                 <>
                   <RefreshCw className="w-4 h-4 mr-2" aria-hidden="true" />
-                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Email'}
+                  {resendCooldown > 0 ? t('resendInSeconds', { seconds: resendCooldown }) : t('resendEmail')}
                 </>
               )}
             </Button>
@@ -77,7 +101,7 @@ const EmailVerification = ({ email, onResend, onBack, loading }) => {
               variant="ghost"
               className="w-full"
             >
-              Back to Login
+              {t('backToLogin')}
             </Button>
           </div>
         </div>
@@ -87,7 +111,8 @@ const EmailVerification = ({ email, onResend, onBack, loading }) => {
 };
 
 // OAuth Buttons Component
-const OAuthButtons = ({ dividerText = "or" }) => {
+const OAuthButtons = ({ dividerTextKey = 'or' }) => {
+  const { t } = useLanguage();
   const [oauthStatus, setOauthStatus] = useState({ google: false, github: false });
   const [oauthLoading, setOauthLoading] = useState(null);
 
@@ -109,20 +134,20 @@ const OAuthButtons = ({ dividerText = "or" }) => {
       window.location.href = res.data.auth_url;
     } catch (error) {
       const message = error.response?.data?.detail
-        || `Couldn't connect to ${provider}. Please check your connection and try again.`;
+        || t('toastOauthFailed', { provider });
       toast.error(message);
       setOauthLoading(null);
     }
   };
 
   return (
-    <div className="mt-6" role="group" aria-label="Social sign-in options">
+    <div className="mt-6" role="group" aria-label={t('socialSignInOptions')}>
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-border/60" />
         </div>
         <div className="relative flex justify-center text-sm">
-          <span className="bg-white px-4 text-muted-foreground">{dividerText}</span>
+          <span className="bg-card px-4 text-muted-foreground">{t(dividerTextKey)}</span>
         </div>
       </div>
 
@@ -134,7 +159,7 @@ const OAuthButtons = ({ dividerText = "or" }) => {
             className="w-full rounded-full h-12 border-border/60 focus-visible:ring-2 focus-visible:ring-laro focus-visible:ring-offset-2"
             onClick={() => handleOAuth('google')}
             disabled={oauthLoading !== null}
-            aria-label="Continue with Google"
+            aria-label={t('continueWithGoogle')}
           >
             {oauthLoading === 'google' ? (
               <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
@@ -146,7 +171,7 @@ const OAuthButtons = ({ dividerText = "or" }) => {
                   <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                 </svg>
-                Continue with Google
+                {t('continueWithGoogle')}
               </>
             )}
           </Button>
@@ -159,7 +184,7 @@ const OAuthButtons = ({ dividerText = "or" }) => {
             className="w-full rounded-full h-12 border-border/60 focus-visible:ring-2 focus-visible:ring-laro focus-visible:ring-offset-2"
             onClick={() => handleOAuth('github')}
             disabled={oauthLoading !== null}
-            aria-label="Continue with GitHub"
+            aria-label={t('continueWithGitHub')}
           >
             {oauthLoading === 'github' ? (
               <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
@@ -168,7 +193,7 @@ const OAuthButtons = ({ dividerText = "or" }) => {
                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
                 </svg>
-                Continue with GitHub
+                {t('continueWithGitHub')}
               </>
             )}
           </Button>
@@ -179,6 +204,7 @@ const OAuthButtons = ({ dividerText = "or" }) => {
 };
 
 export const Login = () => {
+  const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
@@ -198,7 +224,7 @@ export const Login = () => {
 
       if (result?.requires_2fa) {
         setRequires2FA(true);
-        toast.info('Please enter your 2FA code');
+        toast.info(t('toastEnter2fa'));
         setLoading(false);
         return;
       }
@@ -206,15 +232,15 @@ export const Login = () => {
       if (result?.requires_verification) {
         setRequiresVerification(true);
         setVerificationEmail(result.email || email);
-        toast.info('Please verify your email address');
+        toast.info(t('toastVerifyEmail'));
         setLoading(false);
         return;
       }
 
-      toast.success('Welcome back!');
+      toast.success(t('toastWelcomeBack'));
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Incorrect email or password. Please try again. (E-AU001)');
+      toast.error(error.response?.data?.detail || `${t('toastLoginFailed')} (E-AU001)`);
     } finally {
       setLoading(false);
     }
@@ -224,9 +250,9 @@ export const Login = () => {
     setLoading(true);
     try {
       await resendVerification(verificationEmail);
-      toast.success('Verification email sent!');
+      toast.success(t('toastVerificationSent'));
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t resend the verification email. Please try again. (E-AU002)');
+      toast.error(error.response?.data?.detail || `${t('toastResendFailed')} (E-AU002)`);
     } finally {
       setLoading(false);
     }
@@ -244,9 +270,17 @@ export const Login = () => {
   }
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4">
+    <div className="min-h-screen bg-cream flex items-center justify-center p-4 relative overflow-hidden">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'none',
+        }}
+        aria-hidden="true"
+      />
       <motion.div 
-        className="w-full max-w-md"
+        className="w-full max-w-md relative z-10"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
@@ -255,27 +289,29 @@ export const Login = () => {
         <Link to="/" className="flex justify-center mb-8">
           <img
             src="/laro-banner.png"
-            alt="Laro - Your Kitchen Sidekick"
-            className="h-14"
+            alt="Laro"
+            className="h-12"
           />
         </Link>
 
         {/* Form Card */}
-        <div className="bg-white rounded-2xl shadow-card border border-border/60 p-8">
+        <div className="bg-card/95 rounded-[12px] shadow-card border-0 p-8 backdrop-blur-sm">
           <div className="text-center mb-8">
-            <h1 className="font-heading text-2xl font-bold">Welcome Back</h1>
-            <p className="text-muted-foreground mt-2">Sign in to your account</p>
+            <h1 className="font-heading text-2xl font-bold tracking-tight">{t('welcomeBack')}</h1>
+            <p className="text-muted-foreground mt-2">{t('signInToKitchen')}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('email')}</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="email"
+                  name="email"
                   type="email"
-                  placeholder="you@example.com"
+                  autoComplete="username"
+                  placeholder={t('emailPlaceholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 rounded-xl bg-cream-subtle border-transparent focus:border-laro"
@@ -286,12 +322,14 @@ export const Login = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('pwdFieldLabel')}</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="password"
+                  name="password"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -309,12 +347,15 @@ export const Login = () => {
                 animate={{ opacity: 1, height: 'auto' }}
                 className="space-y-2"
               >
-                <Label htmlFor="totp">Two-Factor Authentication Code</Label>
+                <Label htmlFor="totp">{t('twoFactorCode')}</Label>
                 <div className="relative">
                   <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" aria-hidden="true" />
                   <Input
                     id="totp"
+                    name="totp"
                     type="text"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
                     placeholder="000000"
                     value={totpCode}
                     onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -325,47 +366,47 @@ export const Login = () => {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Enter the code from your authenticator app or a backup code
+                  {t('totpHint')}
                 </p>
               </motion.div>
             )}
 
             <Button 
               type="submit" 
-              className="w-full rounded-full bg-laro hover:bg-laro-dark h-12"
+              className="w-full rounded-full h-12"
               disabled={loading}
               data-testid="login-submit"
             >
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
-                  <span className="ml-2">Signing in...</span>
+                  <span className="ml-2">{t('signingIn')}</span>
                 </>
               ) : (
                 <>
-                  {requires2FA ? 'Verify' : 'Sign In'}
+                  {requires2FA ? t('verify') : t('signIn')}
                   <ArrowRight className="w-4 h-4 ml-2" aria-hidden="true" />
                 </>
               )}
             </Button>
           </form>
 
-          <OAuthButtons dividerText="or continue with" />
+          <OAuthButtons dividerTextKey="orContinueWith" />
 
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Don't have an account?{' '}
+            {t('dontHaveAccount')}{' '}
             <Link to="/register" className="text-laro hover:underline font-medium">
-              Sign up
+              {t('signUp')}
             </Link>
           </p>
           <p className="text-center text-sm mt-2">
             <Link to="/forgot-password" className="text-muted-foreground hover:text-laro">
-              Forgot your password?
+              {t('forgotPwdLink')}
             </Link>
           </p>
           <p className="text-center text-xs text-muted-foreground mt-4">
             <Link to="/privacy-policy" className="hover:text-laro">
-              Privacy Policy
+              {t('privacyPolicy')}
             </Link>
           </p>
         </div>
@@ -375,27 +416,52 @@ export const Login = () => {
 };
 
 export const Register = () => {
+  const detected = detectBrowserLocale();
+  const { t, language: uiLanguage, setLanguage } = useLanguage();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [showInviteCode, setShowInviteCode] = useState(false);
+  const [country, setCountry] = useState(detected.country);
+  const [language, setLanguageLocal] = useState(uiLanguage || detected.language);
   const [requiresVerification, setRequiresVerification] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [policy, setPolicy] = useState({ min_length: 8, require_uppercase: false, require_number: false, require_special: false });
   const { register, resendVerification } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     api.get('/auth/password-policy').then(res => setPolicy(res.data)).catch(() => {});
   }, []);
 
+  // Prefill friend referral from ?ref= or ?referral=
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const ref = (params.get('ref') || params.get('referral') || '').trim().toUpperCase();
+    if (ref) setReferralCode(ref);
+  }, [location.search]);
+
+  // Keep form language in sync with active UI language (e.g. after localStorage switch)
+  useEffect(() => {
+    if (uiLanguage) setLanguageLocal(uiLanguage);
+  }, [uiLanguage]);
+
+  const handleCountryChange = (code) => {
+    setCountry(code);
+    const defaults = defaultsForCountry(code);
+    setLanguageLocal(defaults.language);
+    setLanguage(defaults.language);
+  };
+
   const passwordChecks = [
-    { met: password.length >= policy.min_length, label: `At least ${policy.min_length} characters` },
-    ...(policy.require_uppercase ? [{ met: /[A-Z]/.test(password), label: 'One uppercase letter' }] : []),
-    ...(policy.require_number ? [{ met: /\d/.test(password), label: 'One number' }] : []),
-    ...(policy.require_special ? [{ met: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password), label: 'One special character' }] : []),
+    { met: password.length >= policy.min_length, label: t('atLeastNCharacters', { n: policy.min_length }) },
+    ...(policy.require_uppercase ? [{ met: /[A-Z]/.test(password), label: t('oneUppercaseLetter') }] : []),
+    ...(policy.require_number ? [{ met: /\d/.test(password), label: t('oneNumber') }] : []),
+    ...(policy.require_special ? [{ met: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password), label: t('oneSpecialCharacter') }] : []),
   ];
   const passwordValid = password.length > 0 && passwordChecks.every(c => c.met);
 
@@ -404,25 +470,41 @@ export const Register = () => {
     setLoading(true);
 
     try {
-      const result = await register(name, email, password, null, inviteCode || null);
-      // A stale flag from a recycled user id would silently skip the
-      // walkthrough for a genuinely new account. Ported from Domocn/Laro.
+      setLanguage(language);
+      const result = await register(
+        name,
+        email,
+        password,
+        null,
+        inviteCode || null,
+        { language, country },
+        referralCode || null,
+      );
+      // Only new signups queue the kitchen tutorial (not every login).
       if (result?.user?.id) {
-        localStorage.removeItem(`laro_onboarding_${result.user.id}`);
+        markOnboardingPending(result.user.id);
       }
 
       if (result?.requires_verification) {
         setRequiresVerification(true);
         setVerificationEmail(result.email || email);
-        toast.success('Account created! Please check your email to verify.');
+        toast.success(
+          result?.user?.has_referral_trial
+            ? t('toastAccountCreatedVerifyReferral')
+            : t('toastAccountCreatedVerify')
+        );
         setLoading(false);
         return;
       }
 
-      toast.success('Account created successfully!');
+      if (result?.user?.has_referral_trial || result?.user?.is_pro) {
+        toast.success(t('toastAccountCreatedReferral'));
+      } else {
+        toast.success(t('toastAccountCreated'));
+      }
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Something went wrong. Please check your details and try again. (E-AU003)');
+      toast.error(error.response?.data?.detail || `${t('toastRegisterFailed')} (E-AU003)`);
     } finally {
       setLoading(false);
     }
@@ -432,9 +514,9 @@ export const Register = () => {
     setLoading(true);
     try {
       await resendVerification(verificationEmail);
-      toast.success('Verification email sent!');
+      toast.success(t('toastVerificationSent'));
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t resend the verification email. Please try again. (E-AU004)');
+      toast.error(error.response?.data?.detail || `${t('toastResendFailed')} (E-AU004)`);
     } finally {
       setLoading(false);
     }
@@ -452,9 +534,17 @@ export const Register = () => {
   }
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4">
+    <div className="min-h-screen bg-cream flex items-center justify-center p-4 relative overflow-hidden">
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'none',
+        }}
+        aria-hidden="true"
+      />
       <motion.div 
-        className="w-full max-w-md"
+        className="w-full max-w-md relative z-10"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
@@ -463,27 +553,29 @@ export const Register = () => {
         <Link to="/" className="flex justify-center mb-8">
           <img
             src="/laro-banner.png"
-            alt="Laro - Your Kitchen Sidekick"
-            className="h-14"
+            alt="Laro"
+            className="h-12"
           />
         </Link>
 
         {/* Form Card */}
-        <div className="bg-white rounded-2xl shadow-card border border-border/60 p-8">
+        <div className="bg-card/95 rounded-[12px] shadow-card border-0 p-8 backdrop-blur-sm">
           <div className="text-center mb-8">
-            <h1 className="font-heading text-2xl font-bold">Create Account</h1>
-            <p className="text-muted-foreground mt-2">Start organizing your recipes</p>
+            <h1 className="font-heading text-2xl font-bold tracking-tight">{t('createYourKitchen')}</h1>
+            <p className="text-muted-foreground mt-2">{t('registerSubtitle')}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="name">First Name</Label>
+              <Label htmlFor="name">{t('firstName')}</Label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="name"
+                  name="name"
                   type="text"
-                  placeholder="e.g. Sarah"
+                  autoComplete="given-name"
+                  placeholder={t('firstNamePlaceholder')}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="pl-10 rounded-xl bg-cream-subtle border-transparent focus:border-laro"
@@ -496,13 +588,15 @@ export const Register = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('email')}</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="email"
+                  name="email"
                   type="email"
-                  placeholder="you@example.com"
+                  autoComplete="username"
+                  placeholder={t('emailPlaceholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 rounded-xl bg-cream-subtle border-transparent focus:border-laro"
@@ -512,13 +606,63 @@ export const Register = () => {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>{t('country')}</Label>
+                <Select value={country} onValueChange={handleCountryChange}>
+                  <SelectTrigger className="rounded-xl bg-cream-subtle border-transparent" data-testid="register-country">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {Object.entries(COUNTRIES).map(([code, { name, flag }]) => (
+                      <SelectItem key={code} value={code}>
+                        <span className="flex items-center gap-2">
+                          <span aria-hidden="true">{flag}</span>
+                          <span>{name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5" aria-hidden="true" />
+                  {t('language')}
+                </Label>
+                <Select
+                  value={language}
+                  onValueChange={(code) => {
+                    setLanguageLocal(code);
+                    setLanguage(code);
+                  }}
+                >
+                  <SelectTrigger className="rounded-xl bg-cream-subtle border-transparent" data-testid="register-language">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {Object.entries(LANGUAGES).map(([code, { name, flag }]) => (
+                      <SelectItem key={code} value={code}>
+                        <span className="flex items-center gap-2">
+                          <span aria-hidden="true">{flag}</span>
+                          <span>{name}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('pwdFieldLabel')}</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="password"
+                  name="password"
                   type="password"
+                  autoComplete="new-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -528,8 +672,8 @@ export const Register = () => {
                 />
               </div>
               {password.length > 0 && (
-                <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Password requirements:</p>
+                <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{t('pwdRequirements')}</p>
                   {passwordChecks.map((check, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
                       {check.met ? (
@@ -546,7 +690,26 @@ export const Register = () => {
               )}
             </div>
 
-            {/* Invite Code (optional) */}
+            {/* Friend referral code → 2-week Pro trial */}
+            <div className="space-y-2">
+              <Label htmlFor="referralCode" className="flex items-center gap-1.5">
+                <Gift className="w-3.5 h-3.5 text-laro" aria-hidden="true" />
+                {t('referralCodeOptional')}
+              </Label>
+              <Input
+                id="referralCode"
+                type="text"
+                placeholder={t('referralCodePlaceholder')}
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                className="rounded-xl bg-cream-subtle border-transparent focus:border-laro font-mono"
+                autoComplete="off"
+                data-testid="register-referral-code"
+              />
+              <p className="text-xs text-muted-foreground">{t('referralCodeHint')}</p>
+            </div>
+
+            {/* Admin invite code (optional / gatekeeping) */}
             <div className="space-y-2">
               {!showInviteCode ? (
                 <button
@@ -554,15 +717,15 @@ export const Register = () => {
                   onClick={() => setShowInviteCode(true)}
                   className="text-sm text-laro hover:underline"
                 >
-                  Have an invite code?
+                  {t('haveInviteCode')}
                 </button>
               ) : (
                 <>
-                  <Label htmlFor="inviteCode">Invite Code (optional)</Label>
+                  <Label htmlFor="inviteCode">{t('inviteCodeOptional')}</Label>
                   <Input
                     id="inviteCode"
                     type="text"
-                    placeholder="Enter invite code"
+                    placeholder={t('inviteCodePlaceholder')}
                     value={inviteCode}
                     onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                     className="rounded-xl bg-cream-subtle border-transparent focus:border-laro"
@@ -574,37 +737,37 @@ export const Register = () => {
 
             <Button 
               type="submit" 
-              className="w-full rounded-full bg-laro hover:bg-laro-dark h-12"
+              className="w-full rounded-full h-12"
               disabled={loading}
               data-testid="register-submit"
             >
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
-                  <span className="ml-2">Creating account...</span>
+                  <span className="ml-2">{t('creatingAccount')}</span>
                 </>
               ) : (
                 <>
-                  Create Account
+                  {t('createAccount')}
                   <ArrowRight className="w-4 h-4 ml-2" aria-hidden="true" />
                 </>
               )}
             </Button>
           </form>
 
-          <OAuthButtons dividerText="or sign up with" />
+          <OAuthButtons dividerTextKey="orSignUpWith" />
 
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Already have an account?{' '}
+            {t('alreadyHaveAccount')}{' '}
             <Link to="/login" className="text-laro hover:underline font-medium">
-              Sign in
+              {t('signIn')}
             </Link>
           </p>
 
           <p className="text-center text-xs text-muted-foreground mt-4">
-            By creating an account, you agree to our{' '}
+            {t('agreePrivacyPrefix')}{' '}
             <Link to="/privacy-policy" className="text-laro hover:underline">
-              Privacy Policy
+              {t('privacyPolicy')}
             </Link>
           </p>
         </div>

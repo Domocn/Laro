@@ -6,5 +6,5 @@ from . import (
     roles, trusted_devices, recipe_versions, nutrition, seed,
     recipe_import, voice_cooking, cost_tracking, reviews,
     sharing, jobs, debug, remote_access, mobile, friends,
-    api_tokens, cookbooks, pantry, export
+    api_tokens, cookbooks, pantry, export, support
 )

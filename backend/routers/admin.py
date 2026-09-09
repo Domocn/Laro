@@ -643,6 +643,8 @@ class GrantSubscriptionRequest(BaseModel):
     days: int = 30  # Duration in days (0 = lifetime)
     source: str = "admin"  # admin, revenuecat, stripe, etc.
     send_welcome_email: bool = True  # Send welcome email to user
+    # Also grant RevenueCat promotional entitlement (Secret API)
+    sync_revenuecat: bool = True
 
 # Email service import (optional)
 try:
@@ -651,6 +653,38 @@ try:
 except ImportError:
     ADMIN_EMAIL_ENABLED = False
 
+
+async def _sync_rc_grant(user_id: str, status: str, days: int, enabled: bool) -> dict:
+    """Best-effort RC promotional grant; never fails the admin DB write."""
+    if not enabled or status not in ("premium", "trial"):
+        return {"ok": False, "skipped": True}
+    try:
+        from services.revenuecat import grant_promotional_entitlement
+        return await grant_promotional_entitlement(user_id, days=days)
+    except Exception as e:
+        logger.exception("RevenueCat sync grant failed for %s", user_id)
+        return {"ok": False, "error": str(e)[:240]}
+
+
+async def _sync_rc_revoke(user_id: str, previous_source: Optional[str], enabled: bool = True) -> dict:
+    """Revoke RC promotionals for admin/rewards grants; skip paid Play sources."""
+    if not enabled:
+        return {"ok": False, "skipped": True}
+    src = (previous_source or "").lower()
+    if src == "revenuecat":
+        return {
+            "ok": False,
+            "skipped": True,
+            "warning": "Play/App Store entitlement left in RevenueCat (revoke only clears Laro DB)",
+        }
+    try:
+        from services.revenuecat import revoke_promotional_entitlements
+        return await revoke_promotional_entitlements(user_id)
+    except Exception as e:
+        logger.exception("RevenueCat sync revoke failed for %s", user_id)
+        return {"ok": False, "error": str(e)[:240]}
+
+
 @router.post("/subscriptions/grant")
 async def grant_subscription(
     request: Request,
@@ -658,7 +692,7 @@ async def grant_subscription(
     data: GrantSubscriptionRequest,
     admin: dict = Depends(get_admin_user)
 ):
-    """Grant premium subscription to a user (with optional welcome email)"""
+    """Grant premium subscription to a user (with optional welcome email + RC sync)"""
     from datetime import timedelta
 
     # Find the user
@@ -681,6 +715,8 @@ async def grant_subscription(
         "subscription_source": data.source
     })
 
+    revenuecat = await _sync_rc_grant(data.user_id, data.status, data.days, data.sync_revenuecat)
+
     # Send welcome email if requested
     email_sent = False
     if data.send_welcome_email and ADMIN_EMAIL_ENABLED and user.get("email"):
@@ -698,7 +734,13 @@ async def grant_subscription(
         "grant_subscription",
         "user",
         data.user_id,
-        {"status": data.status, "days": data.days, "source": data.source, "email_sent": email_sent},
+        {
+            "status": data.status,
+            "days": data.days,
+            "source": data.source,
+            "email_sent": email_sent,
+            "revenuecat": revenuecat,
+        },
         request.client.host if request.client else None
     )
 
@@ -710,7 +752,8 @@ async def grant_subscription(
         "expires_at": expires_iso,
         "lifetime": data.days == 0,
         "source": data.source,
-        "welcome_email_sent": email_sent
+        "welcome_email_sent": email_sent,
+        "revenuecat": revenuecat,
     }
 
 class GrantSubscriptionByEmailRequest(BaseModel):
@@ -719,6 +762,7 @@ class GrantSubscriptionByEmailRequest(BaseModel):
     days: int = 30  # 0 = lifetime
     source: str = "admin"
     send_welcome_email: bool = True
+    sync_revenuecat: bool = True
 
 @router.post("/subscriptions/grant-by-email")
 async def grant_subscription_by_email(
@@ -752,6 +796,8 @@ async def grant_subscription_by_email(
         "subscription_source": data.source
     })
 
+    revenuecat = await _sync_rc_grant(user_id, data.status, data.days, data.sync_revenuecat)
+
     # Send welcome email
     email_sent = False
     if data.send_welcome_email and ADMIN_EMAIL_ENABLED:
@@ -769,7 +815,12 @@ async def grant_subscription_by_email(
         "grant_subscription_by_email",
         "user",
         user_id,
-        {"email": data.email, "status": data.status, "days": data.days},
+        {
+            "email": data.email,
+            "status": data.status,
+            "days": data.days,
+            "revenuecat": revenuecat,
+        },
         request.client.host if request.client else None
     )
 
@@ -781,7 +832,8 @@ async def grant_subscription_by_email(
         "subscription_status": data.status,
         "expires_at": expires_iso,
         "lifetime": data.days == 0,
-        "welcome_email_sent": email_sent
+        "welcome_email_sent": email_sent,
+        "revenuecat": revenuecat,
     }
 
 
@@ -791,6 +843,7 @@ class BulkGrantRequest(BaseModel):
     days: int = 30
     source: str = "admin"
     send_welcome_email: bool = True
+    sync_revenuecat: bool = True
 
 @router.post("/subscriptions/grant-bulk")
 async def grant_subscription_bulk(
@@ -823,6 +876,8 @@ async def grant_subscription_bulk(
             "subscription_source": data.source
         })
 
+        revenuecat = await _sync_rc_grant(user["id"], data.status, data.days, data.sync_revenuecat)
+
         email_sent = False
         if data.send_welcome_email and ADMIN_EMAIL_ENABLED:
             background_tasks.add_task(
@@ -836,7 +891,8 @@ async def grant_subscription_bulk(
             "email": email,
             "success": True,
             "user_id": user["id"],
-            "welcome_email_sent": email_sent
+            "welcome_email_sent": email_sent,
+            "revenuecat": revenuecat,
         })
 
     # Log bulk action
@@ -864,18 +920,22 @@ async def grant_subscription_bulk(
 async def revoke_subscription(
     request: Request,
     user_id: str,
-    admin: dict = Depends(get_admin_user)
+    admin: dict = Depends(get_admin_user),
+    sync_revenuecat: bool = True,
 ):
-    """Revoke premium subscription from a user"""
+    """Revoke premium subscription from a user (and RC promotionals when applicable)"""
     user = await user_repository.find_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    previous_source = user.get("subscription_source")
     await user_repository.update_user(user_id, {
         "subscription_status": "free",
         "subscription_expires": None,
         "subscription_source": None
     })
+
+    revenuecat = await _sync_rc_revoke(user_id, previous_source, sync_revenuecat)
 
     await log_audit(
         admin["id"],
@@ -883,11 +943,16 @@ async def revoke_subscription(
         "revoke_subscription",
         "user",
         user_id,
-        {},
+        {"previous_source": previous_source, "revenuecat": revenuecat},
         request.client.host if request.client else None
     )
 
-    return {"success": True, "user_id": user_id, "subscription_status": "free"}
+    return {
+        "success": True,
+        "user_id": user_id,
+        "subscription_status": "free",
+        "revenuecat": revenuecat,
+    }
 
 @router.get("/subscriptions")
 async def list_subscriptions(
@@ -896,6 +961,7 @@ async def list_subscriptions(
 ):
     """List all users with their subscription status"""
     from database.connection import get_db
+    from services.revenuecat import is_revenuecat_api_configured
 
     pool = await get_db()
     async with pool.acquire() as conn:
@@ -912,6 +978,7 @@ async def list_subscriptions(
             )
 
     return {
+        "revenuecat_api_configured": is_revenuecat_api_configured(),
         "subscriptions": [
             {
                 "user_id": row["id"],
@@ -924,6 +991,73 @@ async def list_subscriptions(
             for row in rows
         ]
     }
+
+
+@router.get("/subscriptions/{user_id}/revenuecat")
+async def get_user_revenuecat_status(
+    user_id: str,
+    admin: dict = Depends(get_admin_user),
+):
+    """Fetch live RevenueCat subscriber entitlements for a Laro user id."""
+    user = await user_repository.find_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    from services.revenuecat import get_subscriber, is_revenuecat_api_configured, REVENUECAT_ENTITLEMENT_ID
+    snap = await get_subscriber(user_id)
+    return {
+        "user_id": user_id,
+        "email": user.get("email"),
+        "laro_source": user.get("subscription_source"),
+        "laro_status": user.get("subscription_status"),
+        "entitlement_id": REVENUECAT_ENTITLEMENT_ID,
+        "revenuecat_api_configured": is_revenuecat_api_configured(),
+        "revenuecat": snap,
+    }
+
+
+@router.post("/subscriptions/{user_id}/sync-revenuecat")
+async def sync_user_to_revenuecat(
+    user_id: str,
+    admin: dict = Depends(get_admin_user),
+):
+    """
+    Push current Laro Pro/trial into RevenueCat as a promotional entitlement
+    (or revoke promotionals if the user is free).
+    """
+    user = await user_repository.find_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    status = (user.get("subscription_status") or "free").lower()
+    if status in ("premium", "trial"):
+        days = 0
+        expires = user.get("subscription_expires")
+        if expires:
+            try:
+                if isinstance(expires, str):
+                    exp_dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+                else:
+                    exp_dt = expires
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                delta = exp_dt - datetime.now(timezone.utc)
+                days = max(1, int(delta.total_seconds() // 86400) + 1)
+            except Exception:
+                days = 30
+        result = await _sync_rc_grant(user_id, status, days, True)
+    else:
+        result = await _sync_rc_revoke(user_id, user.get("subscription_source"), True)
+
+    await log_audit(
+        admin["id"],
+        admin["email"],
+        "sync_subscription_revenuecat",
+        "user",
+        user_id,
+        {"status": status, "revenuecat": result},
+        None,
+    )
+    return {"success": bool(result.get("ok")), "user_id": user_id, "revenuecat": result}
 
 # =============================================================================
 # BACKUP ENDPOINTS

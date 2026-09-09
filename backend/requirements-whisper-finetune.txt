@@ -1,0 +1,13 @@
+# Optional deps for fine-tuning cooking-reel Whisper (not needed at runtime).
+# pip install -r requirements-whisper-finetune.txt
+torch>=2.1.0
+transformers>=4.40.0
+datasets>=2.18.0
+accelerate>=0.28.0
+soundfile>=0.12.1
+librosa>=0.10.0
+evaluate>=0.4.0
+jiwer>=3.0.0
+# After HF training, convert for faster-whisper:
+#   pip install ctranslate2
+#   ct2-transformers-converter --model …/hf-cooking --output_dir …/ct2-cooking --quantization int8

@@ -64,7 +64,9 @@ async def log_user_activity(
         pool = await get_db()
 
         log_id = str(uuid.uuid4())
-        timestamp = datetime.now(timezone.utc)
+        # audit_logs.timestamp is TIMESTAMP WITHOUT TIME ZONE — asyncpg rejects
+        # aware datetimes against naive columns ("can't subtract offset-naive...").
+        timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
         details_json = json.dumps(details) if details else None
 
         async with pool.acquire() as conn:

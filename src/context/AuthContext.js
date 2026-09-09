@@ -88,6 +88,22 @@ export const AuthProvider = ({ children }) => {
       setUser(res.data.user);
       authLogger.info('Login successful', { userId: res.data.user.id, role: res.data.user.role });
 
+      // Re-fetch /auth/me so Pro/owner/lifetime flags always match backend
+      // (covers stale clients and keeps Settings Laro Pro seamless).
+      try {
+        const meRes = await authApi.me();
+        if (meRes?.data?.id) {
+          localStorage.setItem('user', JSON.stringify(meRes.data));
+          setUser(meRes.data);
+          authLogger.debug('Auth me refreshed after login', {
+            is_pro: meRes.data.is_pro,
+            is_owner: meRes.data.is_owner,
+          });
+        }
+      } catch (meErr) {
+        authLogger.warn('Post-login /auth/me refresh failed', { error: meErr.message });
+      }
+
       // Check if user needs to update their name (garbage/fake name detected)
       if (res.data.user.name_update_required) {
         setNameUpdateRequired(true);
@@ -118,9 +134,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (name, email, password, role = null, inviteCode = null) => {
+  const register = async (name, email, password, role = null, inviteCode = null, locale = null, referralCode = null) => {
     authLogger.info('Registration attempt', { email: email.substring(0, 3) + '***' });
-    const res = await authApi.register({ name, email, password, role, invite_code: inviteCode });
+    const payload = { name, email, password, role, invite_code: inviteCode };
+    if (locale?.language) payload.language = locale.language;
+    if (locale?.country) payload.country = locale.country;
+    if (referralCode) payload.referral_code = String(referralCode).trim().toUpperCase();
+    const res = await authApi.register(payload);
 
     // Check if email verification is required
     if (res.data.requires_verification) {

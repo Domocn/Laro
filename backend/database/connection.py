@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
     household_id VARCHAR(255),
     favorites TEXT DEFAULT '[]',
     allergies TEXT DEFAULT '[]',
+    friends TEXT DEFAULT '[]',
     created_at TIMESTAMP NOT NULL,
     last_login TIMESTAMP,
     totp_enabled BOOLEAN DEFAULT FALSE,
@@ -51,9 +52,18 @@ CREATE TABLE IF NOT EXISTS users (
     referral_trial_end TIMESTAMP,
     referral_count INTEGER DEFAULT 0,
     pending_referral_rewards TEXT DEFAULT '[]',
+    referral_reward_granted BOOLEAN DEFAULT FALSE,
     subscription_status VARCHAR(50) DEFAULT 'free',
     subscription_expires TIMESTAMP,
     subscription_source VARCHAR(50),
+    ai_uses_count INTEGER DEFAULT 0,
+    reward_points INTEGER DEFAULT 0,
+    ai_bonus_uses INTEGER DEFAULT 0,
+    recipe_bonus_slots INTEGER DEFAULT 0,
+    friend_bonus_slots INTEGER DEFAULT 0,
+    share_bonus_weekly INTEGER DEFAULT 0,
+    cookbook_bonus_slots INTEGER DEFAULT 0,
+    household_bonus_members INTEGER DEFAULT 0,
     email_verified BOOLEAN DEFAULT FALSE,
     email_verification_token VARCHAR(255),
     email_verification_expires TIMESTAMP,
@@ -87,6 +97,14 @@ CREATE TABLE IF NOT EXISTS recipes (
     nutrition_fiber INTEGER DEFAULT NULL,
     nutrition_sugar INTEGER DEFAULT NULL,
     nutrition_sodium INTEGER DEFAULT NULL,
+    cost_total DOUBLE PRECISION DEFAULT NULL,
+    cost_per_serving DOUBLE PRECISION DEFAULT NULL,
+    cost_calculated_at TIMESTAMP DEFAULT NULL,
+    cost_currency VARCHAR(10) DEFAULT NULL,
+    last_cooked_at TIMESTAMP DEFAULT NULL,
+    rating_average DOUBLE PRECISION DEFAULT NULL,
+    rating_count INTEGER DEFAULT 0,
+    would_make_again_percent INTEGER DEFAULT NULL,
     FOREIGN KEY (author_id) REFERENCES users(id)
 );
 
@@ -115,16 +133,52 @@ CREATE TABLE IF NOT EXISTS households (
     FOREIGN KEY (owner_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS household_invites (
+    id VARCHAR(255) PRIMARY KEY,
+    household_id VARCHAR(255) NOT NULL,
+    inviter_id VARCHAR(255) NOT NULL,
+    invitee_id VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    responded_at TIMESTAMP,
+    FOREIGN KEY (household_id) REFERENCES households(id),
+    FOREIGN KEY (inviter_id) REFERENCES users(id),
+    FOREIGN KEY (invitee_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS friend_requests (
+    id VARCHAR(255) PRIMARY KEY,
+    from_user_id VARCHAR(255) NOT NULL,
+    to_user_id VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP NOT NULL,
+    responded_at TIMESTAMP,
+    FOREIGN KEY (from_user_id) REFERENCES users(id),
+    FOREIGN KEY (to_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS reward_ledger (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    delta INTEGER NOT NULL,
+    reason VARCHAR(255) NOT NULL UNIQUE,
+    meta TEXT DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS meal_plans (
     id VARCHAR(255) PRIMARY KEY,
     date VARCHAR(50) NOT NULL,
     meal_type VARCHAR(50) NOT NULL,
-    recipe_id VARCHAR(255) NOT NULL,
+    recipe_id VARCHAR(255),  -- nullable for note/leftover entries
     recipe_title VARCHAR(500) NOT NULL,
     notes TEXT DEFAULT '',
+    adult_boost TEXT DEFAULT '',  -- "For adults: …" upgrade tip (family one-meal)
+    entry_type VARCHAR(50) DEFAULT 'recipe',  -- recipe | note | leftover
     household_id VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-    FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+    created_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS shopping_lists (
@@ -134,6 +188,17 @@ CREATE TABLE IF NOT EXISTS shopping_lists (
     household_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
+);
+
+-- Learned grocery aisle placements (AnyList / Paprika "teach aisle")
+CREATE TABLE IF NOT EXISTS aisle_overrides (
+    id VARCHAR(255) PRIMARY KEY,
+    household_id VARCHAR(255) NOT NULL,
+    ingredient_key VARCHAR(255) NOT NULL,
+    aisle VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    UNIQUE(household_id, ingredient_key)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -272,6 +337,22 @@ CREATE TABLE IF NOT EXISTS recipe_feedback (
     UNIQUE(user_id, recipe_id)
 );
 
+CREATE TABLE IF NOT EXISTS import_feedback (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    import_id VARCHAR(64),
+    source_url TEXT,
+    import_mode VARCHAR(40),
+    recipe_id VARCHAR(255),
+    rating VARCHAR(20) NOT NULL,
+    note TEXT DEFAULT '',
+    original_recipe JSONB,
+    corrected_recipe JSONB,
+    platform VARCHAR(40),
+    created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS cook_sessions (
     id VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
@@ -279,8 +360,60 @@ CREATE TABLE IF NOT EXISTS cook_sessions (
     started_at TIMESTAMP NOT NULL,
     completed_at TIMESTAMP,
     feedback TEXT,
+    notes TEXT DEFAULT '',
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+);
+
+CREATE TABLE IF NOT EXISTS support_tickets (
+    id VARCHAR(255) PRIMARY KEY,
+    ticket_number VARCHAR(32) UNIQUE NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    category VARCHAR(50) NOT NULL DEFAULT 'support',
+    subject VARCHAR(300) NOT NULL,
+    description TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'open',
+    priority VARCHAR(50) NOT NULL DEFAULT 'normal',
+    app_version VARCHAR(50),
+    platform VARCHAR(50),
+    device_info TEXT,
+    admin_notes TEXT,
+    resolution TEXT,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    resolved_at TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS support_ticket_messages (
+    id VARCHAR(255) PRIMARY KEY,
+    ticket_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    is_staff BOOLEAN NOT NULL DEFAULT FALSE,
+    body TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (ticket_id) REFERENCES support_tickets(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    title VARCHAR(200) NOT NULL DEFAULT 'New chat',
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_chat_messages (
+    id VARCHAR(255) PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES ai_chat_sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -296,7 +429,17 @@ CREATE TABLE IF NOT EXISTS notification_settings (
     enabled BOOLEAN DEFAULT TRUE,
     meal_reminders BOOLEAN DEFAULT TRUE,
     reminder_time INTEGER DEFAULT 30,
+    shopping_reminders BOOLEAN DEFAULT TRUE,
+    weekly_plan_reminder BOOLEAN DEFAULT TRUE,
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS reminder_dispatch_log (
+    user_id VARCHAR(255) NOT NULL,
+    kind VARCHAR(50) NOT NULL,
+    target_key VARCHAR(100) NOT NULL,
+    sent_at TIMESTAMP NOT NULL,
+    PRIMARY KEY (user_id, kind, target_key)
 );
 
 CREATE TABLE IF NOT EXISTS llm_settings (
@@ -304,6 +447,8 @@ CREATE TABLE IF NOT EXISTS llm_settings (
     provider VARCHAR(50) NOT NULL,
     ollama_url VARCHAR(255) DEFAULT 'http://localhost:11434',
     ollama_model VARCHAR(100) DEFAULT 'llama3',
+    openai_base_url TEXT,
+    openai_model VARCHAR(100) DEFAULT 'gpt-4o',
     updated_at TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
@@ -338,9 +483,15 @@ CREATE TABLE IF NOT EXISTS reviews (
     id VARCHAR(255) PRIMARY KEY,
     recipe_id VARCHAR(255) NOT NULL,
     user_id VARCHAR(255) NOT NULL,
+    user_name VARCHAR(255),
     rating INTEGER NOT NULL,
+    title VARCHAR(255),
     content TEXT,
+    comment TEXT,
+    would_make_again BOOLEAN,
+    difficulty_rating INTEGER,
     tags TEXT DEFAULT '[]',
+    helpful_count INTEGER DEFAULT 0,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP,
     FOREIGN KEY (recipe_id) REFERENCES recipes(id),
@@ -352,7 +503,8 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     -- Legacy fields
     dietary TEXT DEFAULT '[]',
     units VARCHAR(20) DEFAULT 'metric',
-    language VARCHAR(10) DEFAULT 'en',
+    language VARCHAR(20) DEFAULT 'en-GB',
+    country VARCHAR(10) DEFAULT 'GB',
     -- General preferences
     theme VARCHAR(20) DEFAULT 'system',
     "defaultServings" INTEGER DEFAULT 4,
@@ -360,7 +512,25 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     "dietaryRestrictions" TEXT DEFAULT '[]',
     "allergens" TEXT DEFAULT '[]',
     "dislikedIngredients" TEXT DEFAULT '[]',
+    "kidVetoIngredients" TEXT DEFAULT '[]',
     "favoriteCuisines" TEXT DEFAULT '[]',
+    "preferredRecipeSites" TEXT DEFAULT '[]',
+    "dailyProteinTarget" DOUBLE PRECISION,
+    "dailyCalorieTarget" DOUBLE PRECISION,
+    "dailyCarbTarget" DOUBLE PRECISION,
+    "dailyFatTarget" DOUBLE PRECISION,
+    "hasChildren" BOOLEAN DEFAULT FALSE,
+    "kidFriendlyMeals" BOOLEAN,
+    "familyOneMeal" BOOLEAN,
+    "worksFromHome" BOOLEAN DEFAULT FALSE,
+    "wfhDays" TEXT DEFAULT '[]',
+    "hasGymRoutine" BOOLEAN DEFAULT FALSE,
+    "gymDays" TEXT DEFAULT '[]',
+    "dinnerHeadcount" INTEGER,
+    "calendarIcsUrl" TEXT,
+    "useCalendarForMealDifficulty" BOOLEAN DEFAULT FALSE,
+    "googleCalendarConnected" BOOLEAN DEFAULT FALSE,
+    "calendarTimezone" VARCHAR(64),
     "showNutrition" BOOLEAN DEFAULT TRUE,
     "compactView" BOOLEAN DEFAULT FALSE,
     "weekStartsOn" VARCHAR(20) DEFAULT 'monday',
@@ -447,6 +617,27 @@ CREATE TABLE IF NOT EXISTS ingredient_costs (
     UNIQUE(household_id, ingredient_name)
 );
 
+-- Crowdsourced UK supermarket prices (Open Food Facts — Open Prices, ODbL)
+-- Synced regularly so cost estimates work offline / without a live API call.
+CREATE TABLE IF NOT EXISTS uk_open_prices (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(500) NOT NULL,
+    name_norm VARCHAR(500) NOT NULL,
+    price DOUBLE PRECISION NOT NULL,
+    currency VARCHAR(10) DEFAULT 'GBP',
+    store VARCHAR(255),
+    observed_date VARCHAR(20),
+    product_code VARCHAR(64),
+    quantity DOUBLE PRECISION,
+    quantity_unit VARCHAR(20),
+    price_per VARCHAR(20),
+    per_kg DOUBLE PRECISION,
+    entry_type VARCHAR(20) DEFAULT 'PRODUCT',
+    synced_at TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_uk_open_prices_name_norm ON uk_open_prices (name_norm);
+CREATE INDEX IF NOT EXISTS idx_uk_open_prices_synced ON uk_open_prices (synced_at);
+
 -- API Tokens for integrations (e.g., Home Assistant)
 CREATE TABLE IF NOT EXISTS api_tokens (
     id VARCHAR(255) PRIMARY KEY,
@@ -520,6 +711,7 @@ CREATE TABLE IF NOT EXISTS mobile_notification_settings (
     shopping_reminders BOOLEAN DEFAULT TRUE,
     -- App notifications
     meal_reminders BOOLEAN DEFAULT TRUE,
+    weekly_plan_reminder BOOLEAN DEFAULT TRUE,
     expiry_alerts BOOLEAN DEFAULT TRUE,
     import_complete BOOLEAN DEFAULT TRUE,
     ai_complete BOOLEAN DEFAULT TRUE,
@@ -603,12 +795,53 @@ CREATE TABLE IF NOT EXISTS relay_connections (
     client_ip VARCHAR(100),
     FOREIGN KEY (instance_id) REFERENCES remote_instances(instance_id)
 );
+
+-- Google Health API (Fitbit / cloud nutrition write)
+CREATE TABLE IF NOT EXISTS google_health_links (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) UNIQUE NOT NULL,
+    google_sub VARCHAR(255),
+    access_token_enc TEXT NOT NULL,
+    refresh_token_enc TEXT NOT NULL,
+    token_expires_at TIMESTAMP,
+    scopes TEXT,
+    sync_on_cook BOOLEAN DEFAULT TRUE,
+    linked_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS google_health_oauth_states (
+    id VARCHAR(255) PRIMARY KEY,
+    state VARCHAR(255) UNIQUE NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS google_health_nutrition_logs (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    recipe_id VARCHAR(255),
+    cook_session_id VARCHAR(255),
+    data_point_name TEXT NOT NULL,
+    food_display_name TEXT,
+    calories INTEGER,
+    created_at TIMESTAMP NOT NULL,
+    deleted_at TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
 """
 
 # Indices for performance
 INDICES = """
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_household ON users(household_id);
+CREATE INDEX IF NOT EXISTS idx_household_invites_invitee ON household_invites(invitee_id);
+CREATE INDEX IF NOT EXISTS idx_household_invites_household ON household_invites(household_id);
+CREATE INDEX IF NOT EXISTS idx_friend_requests_to ON friend_requests(to_user_id);
+CREATE INDEX IF NOT EXISTS idx_friend_requests_from ON friend_requests(from_user_id);
 CREATE INDEX IF NOT EXISTS idx_recipes_author ON recipes(author_id);
 CREATE INDEX IF NOT EXISTS idx_recipes_household ON recipes(household_id);
 CREATE INDEX IF NOT EXISTS idx_meal_plans_household ON meal_plans(household_id);
@@ -622,7 +855,16 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_recipe_feedback_user ON recipe_feedback(user_id);
 CREATE INDEX IF NOT EXISTS idx_recipe_feedback_recipe ON recipe_feedback(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_import_feedback_user ON import_feedback(user_id);
+CREATE INDEX IF NOT EXISTS idx_import_feedback_import ON import_feedback(import_id);
+CREATE INDEX IF NOT EXISTS idx_import_feedback_created ON import_feedback(created_at);
 CREATE INDEX IF NOT EXISTS idx_cook_sessions_user ON cook_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_number ON support_tickets(ticket_number);
+CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_ai_chat_sessions_user ON ai_chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_session ON ai_chat_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_recipe_shares_recipe ON recipe_shares(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_recipe_shares_code ON recipe_shares(share_code);
 CREATE INDEX IF NOT EXISTS idx_recipe_shares_user ON recipe_shares(user_id);
@@ -644,13 +886,30 @@ CREATE INDEX IF NOT EXISTS idx_remote_instances_instance_id ON remote_instances(
 CREATE INDEX IF NOT EXISTS idx_remote_instances_linking_code ON remote_instances(linking_code);
 CREATE INDEX IF NOT EXISTS idx_relay_connections_instance ON relay_connections(instance_id);
 CREATE INDEX IF NOT EXISTS idx_relay_connections_token ON relay_connections(connection_token);
+CREATE INDEX IF NOT EXISTS idx_google_health_links_user ON google_health_links(user_id);
+CREATE INDEX IF NOT EXISTS idx_google_health_oauth_states_state ON google_health_oauth_states(state);
+CREATE INDEX IF NOT EXISTS idx_google_health_logs_user ON google_health_nutrition_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_google_health_logs_session ON google_health_nutrition_logs(cook_session_id);
 """
 
 # Database migrations for schema updates
 MIGRATIONS = """
 -- Add missing columns to user_preferences table (for existing databases)
 DO $$
+DECLARE
+    r RECORD;
 BEGIN
+    -- Locale / region
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='country') THEN
+        ALTER TABLE user_preferences ADD COLUMN country VARCHAR(10) DEFAULT 'GB';
+    END IF;
+    -- Widen language for codes like en-US / en-GB
+    BEGIN
+        ALTER TABLE user_preferences ALTER COLUMN language TYPE VARCHAR(20);
+    EXCEPTION WHEN others THEN
+        NULL;
+    END;
+
     -- General preferences
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='defaultServings') THEN
         ALTER TABLE user_preferences ADD COLUMN "defaultServings" INTEGER DEFAULT 4;
@@ -667,8 +926,62 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='dislikedIngredients') THEN
         ALTER TABLE user_preferences ADD COLUMN "dislikedIngredients" TEXT DEFAULT '[]';
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='kidVetoIngredients') THEN
+        ALTER TABLE user_preferences ADD COLUMN "kidVetoIngredients" TEXT DEFAULT '[]';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='favoriteCuisines') THEN
         ALTER TABLE user_preferences ADD COLUMN "favoriteCuisines" TEXT DEFAULT '[]';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='preferredRecipeSites') THEN
+        ALTER TABLE user_preferences ADD COLUMN "preferredRecipeSites" TEXT DEFAULT '[]';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='dailyProteinTarget') THEN
+        ALTER TABLE user_preferences ADD COLUMN "dailyProteinTarget" DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='dailyCalorieTarget') THEN
+        ALTER TABLE user_preferences ADD COLUMN "dailyCalorieTarget" DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='dailyCarbTarget') THEN
+        ALTER TABLE user_preferences ADD COLUMN "dailyCarbTarget" DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='dailyFatTarget') THEN
+        ALTER TABLE user_preferences ADD COLUMN "dailyFatTarget" DOUBLE PRECISION;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='hasChildren') THEN
+        ALTER TABLE user_preferences ADD COLUMN "hasChildren" BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='kidFriendlyMeals') THEN
+        ALTER TABLE user_preferences ADD COLUMN "kidFriendlyMeals" BOOLEAN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='familyOneMeal') THEN
+        ALTER TABLE user_preferences ADD COLUMN "familyOneMeal" BOOLEAN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='worksFromHome') THEN
+        ALTER TABLE user_preferences ADD COLUMN "worksFromHome" BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='wfhDays') THEN
+        ALTER TABLE user_preferences ADD COLUMN "wfhDays" TEXT DEFAULT '[]';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='hasGymRoutine') THEN
+        ALTER TABLE user_preferences ADD COLUMN "hasGymRoutine" BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='gymDays') THEN
+        ALTER TABLE user_preferences ADD COLUMN "gymDays" TEXT DEFAULT '[]';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='dinnerHeadcount') THEN
+        ALTER TABLE user_preferences ADD COLUMN "dinnerHeadcount" INTEGER;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='calendarIcsUrl') THEN
+        ALTER TABLE user_preferences ADD COLUMN "calendarIcsUrl" TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='useCalendarForMealDifficulty') THEN
+        ALTER TABLE user_preferences ADD COLUMN "useCalendarForMealDifficulty" BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='googleCalendarConnected') THEN
+        ALTER TABLE user_preferences ADD COLUMN "googleCalendarConnected" BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='calendarTimezone') THEN
+        ALTER TABLE user_preferences ADD COLUMN "calendarTimezone" VARCHAR(64);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='showNutrition') THEN
         ALTER TABLE user_preferences ADD COLUMN "showNutrition" BOOLEAN DEFAULT TRUE;
@@ -756,6 +1069,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='source_url') THEN
         ALTER TABLE recipes ADD COLUMN source_url TEXT;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='source_author') THEN
+        ALTER TABLE recipes ADD COLUMN source_author TEXT;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cookbook_id') THEN
         ALTER TABLE recipes ADD COLUMN cookbook_id VARCHAR(255);
     END IF;
@@ -763,9 +1079,56 @@ BEGIN
         ALTER TABLE recipes ADD COLUMN cookbook_page INTEGER;
     END IF;
 
+    -- Feature-parity / cost columns on recipes (older DBs used CREATE TABLE IF NOT EXISTS
+    -- and never picked up columns added to the CREATE statement later)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='dietary_tags') THEN
+        ALTER TABLE recipes ADD COLUMN dietary_tags TEXT DEFAULT '[]';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='difficulty') THEN
+        ALTER TABLE recipes ADD COLUMN difficulty VARCHAR(50) DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='nutrition_calories') THEN
+        ALTER TABLE recipes ADD COLUMN nutrition_calories INTEGER DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='nutrition_protein') THEN
+        ALTER TABLE recipes ADD COLUMN nutrition_protein INTEGER DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='nutrition_carbs') THEN
+        ALTER TABLE recipes ADD COLUMN nutrition_carbs INTEGER DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='nutrition_fat') THEN
+        ALTER TABLE recipes ADD COLUMN nutrition_fat INTEGER DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='nutrition_fiber') THEN
+        ALTER TABLE recipes ADD COLUMN nutrition_fiber INTEGER DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='nutrition_sugar') THEN
+        ALTER TABLE recipes ADD COLUMN nutrition_sugar INTEGER DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='nutrition_sodium') THEN
+        ALTER TABLE recipes ADD COLUMN nutrition_sodium INTEGER DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_total') THEN
+        ALTER TABLE recipes ADD COLUMN cost_total DOUBLE PRECISION DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_per_serving') THEN
+        ALTER TABLE recipes ADD COLUMN cost_per_serving DOUBLE PRECISION DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_calculated_at') THEN
+        ALTER TABLE recipes ADD COLUMN cost_calculated_at TIMESTAMP DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cost_currency') THEN
+        ALTER TABLE recipes ADD COLUMN cost_currency VARCHAR(10) DEFAULT NULL;
+    END IF;
+
     -- Add Supabase auth column to users table
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='supabase_id') THEN
         ALTER TABLE users ADD COLUMN supabase_id VARCHAR(255) UNIQUE;
+    END IF;
+
+    -- Friends list (JSON array of user IDs) used by /friends router
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='friends') THEN
+        ALTER TABLE users ADD COLUMN friends TEXT DEFAULT '[]';
     END IF;
 
     -- Add referral system columns to users table
@@ -784,6 +1147,43 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='pending_referral_rewards') THEN
         ALTER TABLE users ADD COLUMN pending_referral_rewards TEXT DEFAULT '[]';
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='referral_reward_granted') THEN
+        ALTER TABLE users ADD COLUMN referral_reward_granted BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='reward_points') THEN
+        ALTER TABLE users ADD COLUMN reward_points INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='ai_bonus_uses') THEN
+        ALTER TABLE users ADD COLUMN ai_bonus_uses INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='recipe_bonus_slots') THEN
+        ALTER TABLE users ADD COLUMN recipe_bonus_slots INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='friend_bonus_slots') THEN
+        ALTER TABLE users ADD COLUMN friend_bonus_slots INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='share_bonus_weekly') THEN
+        ALTER TABLE users ADD COLUMN share_bonus_weekly INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='cookbook_bonus_slots') THEN
+        ALTER TABLE users ADD COLUMN cookbook_bonus_slots INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='household_bonus_members') THEN
+        ALTER TABLE users ADD COLUMN household_bonus_members INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='reward_ledger'
+    ) THEN
+        CREATE TABLE reward_ledger (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL,
+            delta INTEGER NOT NULL,
+            reason VARCHAR(255) NOT NULL UNIQUE,
+            meta TEXT DEFAULT '{}',
+            created_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    END IF;
 
     -- Add updated_at column to llm_settings table
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='llm_settings' AND column_name='updated_at') THEN
@@ -799,6 +1199,11 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='subscription_source') THEN
         ALTER TABLE users ADD COLUMN subscription_source VARCHAR(50);
+    END IF;
+
+    -- Free-tier AI LLM usage counter (schema/JSON-LD imports do not increment this)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='ai_uses_count') THEN
+        ALTER TABLE users ADD COLUMN ai_uses_count INTEGER DEFAULT 0;
     END IF;
 
     -- Add email verification fields to users table
@@ -818,6 +1223,292 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password_reset_expires') THEN
         ALTER TABLE users ADD COLUMN password_reset_expires TIMESTAMP;
+    END IF;
+
+    -- Meal plan note/leftover entries (Mealie-style): nullable recipe_id + entry_type
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='meal_plans' AND column_name='recipe_id' AND is_nullable='NO'
+    ) THEN
+        ALTER TABLE meal_plans ALTER COLUMN recipe_id DROP NOT NULL;
+    END IF;
+    -- Drop FK so note/leftover rows can omit recipe_id
+    FOR r IN (
+        SELECT c.conname
+        FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        WHERE t.relname = 'meal_plans'
+          AND c.contype = 'f'
+          AND pg_get_constraintdef(c.oid) LIKE '%recipe_id%'
+    ) LOOP
+        EXECUTE format('ALTER TABLE meal_plans DROP CONSTRAINT %I', r.conname);
+    END LOOP;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meal_plans' AND column_name='entry_type') THEN
+        ALTER TABLE meal_plans ADD COLUMN entry_type VARCHAR(50) DEFAULT 'recipe';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meal_plans' AND column_name='adult_boost') THEN
+        ALTER TABLE meal_plans ADD COLUMN adult_boost TEXT DEFAULT '';
+    END IF;
+
+    -- Track when a recipe was last cooked
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='last_cooked_at') THEN
+        ALTER TABLE recipes ADD COLUMN last_cooked_at TIMESTAMP DEFAULT NULL;
+    END IF;
+
+    -- Optional cook-session notes ("too salty", "kids loved it")
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cook_sessions' AND column_name='notes') THEN
+        ALTER TABLE cook_sessions ADD COLUMN notes TEXT DEFAULT '';
+    END IF;
+
+    -- Ensure aisle_overrides exists on older DBs (CREATE TABLE IF NOT EXISTS also runs above)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='aisle_overrides') THEN
+        CREATE TABLE aisle_overrides (
+            id VARCHAR(255) PRIMARY KEY,
+            household_id VARCHAR(255) NOT NULL,
+            ingredient_key VARCHAR(255) NOT NULL,
+            aisle VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            UNIQUE(household_id, ingredient_key)
+        );
+    END IF;
+
+    -- OpenAI-compatible / LM Studio settings
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='llm_settings' AND column_name='openai_base_url'
+    ) THEN
+        ALTER TABLE llm_settings ADD COLUMN openai_base_url TEXT;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='llm_settings' AND column_name='openai_model'
+    ) THEN
+        ALTER TABLE llm_settings ADD COLUMN openai_model VARCHAR(100) DEFAULT 'gpt-4o';
+    END IF;
+
+    -- Web notification reminder toggles
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='notification_settings' AND column_name='shopping_reminders'
+    ) THEN
+        ALTER TABLE notification_settings ADD COLUMN shopping_reminders BOOLEAN DEFAULT TRUE;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='notification_settings' AND column_name='weekly_plan_reminder'
+    ) THEN
+        ALTER TABLE notification_settings ADD COLUMN weekly_plan_reminder BOOLEAN DEFAULT TRUE;
+    END IF;
+
+    -- Mobile weekly plan reminder toggle
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='mobile_notification_settings' AND column_name='weekly_plan_reminder'
+    ) THEN
+        ALTER TABLE mobile_notification_settings ADD COLUMN weekly_plan_reminder BOOLEAN DEFAULT TRUE;
+    END IF;
+
+    -- Dedup log for scheduled reminders
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='reminder_dispatch_log'
+    ) THEN
+        CREATE TABLE reminder_dispatch_log (
+            user_id VARCHAR(255) NOT NULL,
+            kind VARCHAR(50) NOT NULL,
+            target_key VARCHAR(100) NOT NULL,
+            sent_at TIMESTAMP NOT NULL,
+            PRIMARY KEY (user_id, kind, target_key)
+        );
+    END IF;
+
+    -- Consent-based household invites / friend requests (existing DBs)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='household_invites'
+    ) THEN
+        CREATE TABLE household_invites (
+            id VARCHAR(255) PRIMARY KEY,
+            household_id VARCHAR(255) NOT NULL,
+            inviter_id VARCHAR(255) NOT NULL,
+            invitee_id VARCHAR(255) NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            responded_at TIMESTAMP,
+            FOREIGN KEY (household_id) REFERENCES households(id),
+            FOREIGN KEY (inviter_id) REFERENCES users(id),
+            FOREIGN KEY (invitee_id) REFERENCES users(id)
+        );
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='friend_requests'
+    ) THEN
+        CREATE TABLE friend_requests (
+            id VARCHAR(255) PRIMARY KEY,
+            from_user_id VARCHAR(255) NOT NULL,
+            to_user_id VARCHAR(255) NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP NOT NULL,
+            responded_at TIMESTAMP,
+            FOREIGN KEY (from_user_id) REFERENCES users(id),
+            FOREIGN KEY (to_user_id) REFERENCES users(id)
+        );
+    END IF;
+
+    -- In-app support tickets
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='support_tickets'
+    ) THEN
+        CREATE TABLE support_tickets (
+            id VARCHAR(255) PRIMARY KEY,
+            ticket_number VARCHAR(32) UNIQUE NOT NULL,
+            user_id VARCHAR(255) NOT NULL,
+            category VARCHAR(50) NOT NULL DEFAULT 'support',
+            subject VARCHAR(300) NOT NULL,
+            description TEXT NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'open',
+            priority VARCHAR(50) NOT NULL DEFAULT 'normal',
+            app_version VARCHAR(50),
+            platform VARCHAR(50),
+            device_info TEXT,
+            admin_notes TEXT,
+            resolution TEXT,
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            resolved_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='support_ticket_messages'
+    ) THEN
+        CREATE TABLE support_ticket_messages (
+            id VARCHAR(255) PRIMARY KEY,
+            ticket_id VARCHAR(255) NOT NULL,
+            user_id VARCHAR(255) NOT NULL,
+            is_staff BOOLEAN NOT NULL DEFAULT FALSE,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (ticket_id) REFERENCES support_tickets(id),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    END IF;
+
+    -- AI chat memory (review past chats + attach to bug reports)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='ai_chat_sessions'
+    ) THEN
+        CREATE TABLE ai_chat_sessions (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL,
+            title VARCHAR(200) NOT NULL DEFAULT 'New chat',
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='ai_chat_messages'
+    ) THEN
+        CREATE TABLE ai_chat_messages (
+            id VARCHAR(255) PRIMARY KEY,
+            session_id VARCHAR(255) NOT NULL,
+            user_id VARCHAR(255) NOT NULL,
+            role VARCHAR(20) NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (session_id) REFERENCES ai_chat_sessions(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    END IF;
+
+    -- Recipe reviews: align table with Reviews router / web UI (E-RR001)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='user_name'
+    ) THEN
+        ALTER TABLE reviews ADD COLUMN user_name VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='title'
+    ) THEN
+        ALTER TABLE reviews ADD COLUMN title VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='comment'
+    ) THEN
+        ALTER TABLE reviews ADD COLUMN comment TEXT;
+        UPDATE reviews SET comment = content WHERE comment IS NULL AND content IS NOT NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='would_make_again'
+    ) THEN
+        ALTER TABLE reviews ADD COLUMN would_make_again BOOLEAN;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='difficulty_rating'
+    ) THEN
+        ALTER TABLE reviews ADD COLUMN difficulty_rating INTEGER;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='helpful_count'
+    ) THEN
+        ALTER TABLE reviews ADD COLUMN helpful_count INTEGER DEFAULT 0;
+    END IF;
+
+    -- Aggregated recipe ratings used by update_recipe_rating()
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='rating_average'
+    ) THEN
+        ALTER TABLE recipes ADD COLUMN rating_average DOUBLE PRECISION DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='rating_count'
+    ) THEN
+        ALTER TABLE recipes ADD COLUMN rating_count INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='would_make_again_percent'
+    ) THEN
+        ALTER TABLE recipes ADD COLUMN would_make_again_percent INTEGER DEFAULT NULL;
+    END IF;
+END $$;
+
+-- Import quality feedback (thumbs + corrections tied to import_id)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='import_feedback'
+    ) THEN
+        CREATE TABLE import_feedback (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL,
+            import_id VARCHAR(64),
+            source_url TEXT,
+            import_mode VARCHAR(40),
+            recipe_id VARCHAR(255),
+            rating VARCHAR(20) NOT NULL,
+            note TEXT DEFAULT '',
+            original_recipe JSONB,
+            corrected_recipe JSONB,
+            platform VARCHAR(40),
+            created_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE indexname='idx_import_feedback_user'
+    ) THEN
+        CREATE INDEX idx_import_feedback_user ON import_feedback(user_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE indexname='idx_import_feedback_import'
+    ) THEN
+        CREATE INDEX idx_import_feedback_import ON import_feedback(import_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE indexname='idx_import_feedback_created'
+    ) THEN
+        CREATE INDEX idx_import_feedback_created ON import_feedback(created_at);
     END IF;
 END $$;
 """

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { adminApi } from '../lib/api';
+import { adminApi, supportApi } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -42,13 +42,17 @@ import {
   Globe,
   Mail,
   Bell,
-  Crown
+  Crown,
+  MessageSquare,
+  CreditCard,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { RolesManager } from '../components/RolesManager';
 
 const tabs = [
   { id: 'users', label: 'Users', icon: Users },
+  { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
+  { id: 'tickets', label: 'Tickets', icon: MessageSquare },
   { id: 'roles', label: 'Roles', icon: Crown },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'settings', label: 'Settings', icon: Settings },
@@ -128,9 +132,31 @@ export const AdminDashboard = () => {
   const [testEmailAddress, setTestEmailAddress] = useState('');
   const [sendingTestEmails, setSendingTestEmails] = useState(false);
 
+  // Support tickets (admin)
+  const [adminTickets, setAdminTickets] = useState([]);
+  const [ticketFilter, setTicketFilter] = useState('open');
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [ticketReply, setTicketReply] = useState('');
+  const [ticketBusy, setTicketBusy] = useState(false);
+
+  // Subscriptions (admin grant / revoke)
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [subFilter, setSubFilter] = useState('all'); // all | premium | trial | free
+  const [rcApiConfigured, setRcApiConfigured] = useState(false);
+  const [grantForm, setGrantForm] = useState({
+    email: '',
+    status: 'premium',
+    days: 30,
+    send_welcome_email: true,
+    sync_revenuecat: true,
+  });
+  const [grantingSub, setGrantingSub] = useState(false);
+  const [revokingUserId, setRevokingUserId] = useState(null);
+  const [rcBusyUserId, setRcBusyUserId] = useState(null);
+
   useEffect(() => {
     // Check admin access
-    if (user && user.role !== 'admin') {
+    if (user && !['admin', 'super_admin'].includes(user.role)) {
       toast.error('Admin access required');
       navigate('/dashboard');
       return;
@@ -146,6 +172,12 @@ export const AdminDashboard = () => {
   }, [userPage, userSearch]);
 
   useEffect(() => {
+    if (activeTab === 'subscriptions') {
+      loadSubscriptions();
+    }
+  }, [subFilter]);
+
+  useEffect(() => {
     if (activeTab === 'audit') {
       loadAuditLogs();
     }
@@ -157,6 +189,12 @@ export const AdminDashboard = () => {
       switch (activeTab) {
         case 'users':
           await loadUsers();
+          break;
+        case 'subscriptions':
+          await loadSubscriptions();
+          break;
+        case 'tickets':
+          await loadAdminTickets();
           break;
         case 'settings':
           await loadSettings();
@@ -192,6 +230,175 @@ export const AdminDashboard = () => {
       setUserTotal(res.data.total);
     } catch (error) {
       console.error('Failed to load users:', error);
+    }
+  };
+
+  const loadSubscriptions = async () => {
+    try {
+      const params = {};
+      if (subFilter && subFilter !== 'all') params.status = subFilter;
+      const res = await adminApi.listSubscriptions(params);
+      setSubscriptions(res.data?.subscriptions || []);
+      setRcApiConfigured(!!res.data?.revenuecat_api_configured);
+    } catch (error) {
+      console.error('Failed to load subscriptions:', error);
+      toast.error(error.response?.data?.detail || "Couldn't load subscriptions.");
+    }
+  };
+
+  const handleGrantSubscription = async (e) => {
+    e?.preventDefault?.();
+    const email = (grantForm.email || '').trim();
+    if (!email) {
+      toast.error('Enter a user email');
+      return;
+    }
+    setGrantingSub(true);
+    try {
+      const days = Number(grantForm.days);
+      const res = await adminApi.grantSubscriptionByEmail({
+        email,
+        status: grantForm.status || 'premium',
+        days: Number.isFinite(days) ? days : 30,
+        source: 'admin',
+        send_welcome_email: !!grantForm.send_welcome_email,
+        sync_revenuecat: !!grantForm.sync_revenuecat,
+      });
+      const lifetime = res.data?.lifetime;
+      const rc = res.data?.revenuecat;
+      let msg = lifetime
+        ? `Granted lifetime ${res.data.subscription_status} to ${res.data.user_email}`
+        : `Granted ${res.data.subscription_status} to ${res.data.user_email}`;
+      if (rc?.ok) msg += ' · synced to RevenueCat';
+      else if (grantForm.sync_revenuecat && rc && !rc.skipped && !rc.ok) {
+        msg += ` · RevenueCat sync failed: ${rc.error || rc.detail || 'unknown'}`;
+      } else if (rc?.skipped && rc?.error) {
+        msg += ' · RevenueCat Secret API key not configured';
+      }
+      toast.success(msg);
+      setGrantForm((prev) => ({ ...prev, email: '' }));
+      await loadSubscriptions();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't grant subscription.");
+    } finally {
+      setGrantingSub(false);
+    }
+  };
+
+  const handleRevokeSubscription = async (userId, email) => {
+    if (!window.confirm(`Revoke Pro / premium for ${email || userId}?`)) return;
+    setRevokingUserId(userId);
+    try {
+      const res = await adminApi.revokeSubscription(userId, { sync_revenuecat: true });
+      const rc = res.data?.revenuecat;
+      let msg = `Revoked subscription for ${email || userId}`;
+      if (rc?.ok) msg += ' · RevenueCat promotional cleared';
+      else if (rc?.warning) msg += ` · ${rc.warning}`;
+      toast.success(msg);
+      await loadSubscriptions();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't revoke subscription.");
+    } finally {
+      setRevokingUserId(null);
+    }
+  };
+
+  const handleCheckRevenueCat = async (userId, email) => {
+    setRcBusyUserId(userId);
+    try {
+      const res = await adminApi.getUserRevenueCat(userId);
+      const rc = res.data?.revenuecat || {};
+      if (!res.data?.revenuecat_api_configured) {
+        toast.error('Set REVENUECAT_SECRET_API_KEY on the server to link RevenueCat');
+        return;
+      }
+      if (rc.has_laro_pro) {
+        const ent = rc.entitlements?.['Laro Pro'] || {};
+        toast.success(
+          `${email || userId}: RevenueCat Laro Pro active` +
+            (ent.expires_date ? ` until ${ent.expires_date}` : ' (lifetime)') +
+            (ent.product_identifier ? ` · ${ent.product_identifier}` : '')
+        );
+      } else if (rc.ok) {
+        toast.message(`${email || userId}: no active Laro Pro in RevenueCat`);
+      } else {
+        toast.error(rc.error || rc.detail || "Couldn't read RevenueCat");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't read RevenueCat");
+    } finally {
+      setRcBusyUserId(null);
+    }
+  };
+
+  const handleSyncRevenueCat = async (userId, email) => {
+    setRcBusyUserId(userId);
+    try {
+      const res = await adminApi.syncUserRevenueCat(userId);
+      const rc = res.data?.revenuecat || {};
+      if (rc.ok) toast.success(`Synced ${email || userId} → RevenueCat`);
+      else if (rc.skipped) toast.error(rc.error || 'RevenueCat Secret API key not configured');
+      else toast.error(rc.error || rc.detail || 'RevenueCat sync failed');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't sync RevenueCat");
+    } finally {
+      setRcBusyUserId(null);
+    }
+  };
+
+  const loadAdminTickets = async () => {
+    try {
+      const params = {};
+      if (ticketFilter && ticketFilter !== 'all') params.status = ticketFilter;
+      const res = await supportApi.adminList(params);
+      setAdminTickets(res.data?.tickets || []);
+    } catch (error) {
+      console.error('Failed to load tickets:', error);
+      toast.error(error.response?.data?.detail || "Couldn't load tickets.");
+    }
+  };
+
+  const openAdminTicket = async (id) => {
+    setTicketBusy(true);
+    try {
+      const res = await supportApi.get(id);
+      setSelectedTicket(res.data);
+      setTicketReply('');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't open ticket.");
+    } finally {
+      setTicketBusy(false);
+    }
+  };
+
+  const sendAdminTicketReply = async () => {
+    if (!selectedTicket || !ticketReply.trim()) return;
+    setTicketBusy(true);
+    try {
+      await supportApi.addMessage(selectedTicket.id, ticketReply.trim());
+      setTicketReply('');
+      await openAdminTicket(selectedTicket.id);
+      await loadAdminTickets();
+      toast.success('Reply sent');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't send reply.");
+    } finally {
+      setTicketBusy(false);
+    }
+  };
+
+  const updateAdminTicketStatus = async (status) => {
+    if (!selectedTicket) return;
+    setTicketBusy(true);
+    try {
+      await supportApi.update(selectedTicket.id, { status });
+      await openAdminTicket(selectedTicket.id);
+      await loadAdminTickets();
+      toast.success(`Marked ${status}`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't update ticket.");
+    } finally {
+      setTicketBusy(false);
     }
   };
 
@@ -659,9 +866,9 @@ export const AdminDashboard = () => {
                               </td>
                               <td className="p-4">
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  u.role === 'admin' 
-                                    ? 'bg-laro/20 text-laro' 
-                                    : 'bg-gray-100 text-gray-600'
+                                  u.role === 'admin'
+                                    ? 'bg-laro/20 text-laro'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'
                                 }`}>
                                   {u.role}
                                 </span>
@@ -669,10 +876,10 @@ export const AdminDashboard = () => {
                               <td className="p-4">
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                   u.status === 'active'
-                                    ? 'bg-green-100 text-green-700'
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-500/25 dark:text-green-200'
                                     : u.status === 'suspended'
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-gray-100 text-gray-600'
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-500/25 dark:text-red-200'
+                                    : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'
                                 }`}>
                                   {u.status || 'active'}
                                 </span>
@@ -737,6 +944,345 @@ export const AdminDashboard = () => {
                         </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Subscriptions Tab */}
+              {activeTab === 'subscriptions' && (
+                <div className="space-y-4">
+                  <div className="bg-white dark:bg-card rounded-xl border border-border/60 p-4 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Crown className="w-5 h-5 text-laro" />
+                        <h3 className="font-semibold">Grant subscription</h3>
+                      </div>
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full ${
+                          rcApiConfigured
+                            ? 'bg-laro/15 text-laro'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {rcApiConfigured
+                          ? 'RevenueCat Secret API linked'
+                          : 'RevenueCat Secret API key missing'}
+                      </span>
+                    </div>
+                    <form onSubmit={handleGrantSubscription} className="grid gap-4 md:grid-cols-4">
+                      <div className="md:col-span-2">
+                        <Label htmlFor="grant-email">User email</Label>
+                        <Input
+                          id="grant-email"
+                          type="email"
+                          placeholder="user@example.com"
+                          value={grantForm.email}
+                          onChange={(e) => setGrantForm({ ...grantForm, email: e.target.value })}
+                          className="mt-1 rounded-xl"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label>Status</Label>
+                        <Select
+                          value={grantForm.status}
+                          onValueChange={(v) => setGrantForm({ ...grantForm, status: v })}
+                        >
+                          <SelectTrigger className="mt-1 rounded-xl">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="premium">Premium</SelectItem>
+                            <SelectItem value="trial">Trial</SelectItem>
+                            <SelectItem value="free">Free</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="grant-days">Days (0 = lifetime)</Label>
+                        <Input
+                          id="grant-days"
+                          type="number"
+                          min={0}
+                          value={grantForm.days}
+                          onChange={(e) => setGrantForm({ ...grantForm, days: parseInt(e.target.value, 10) || 0 })}
+                          className="mt-1 rounded-xl"
+                        />
+                      </div>
+                      <div className="md:col-span-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap gap-4">
+                          <label className="flex items-center gap-2 text-sm">
+                            <Switch
+                              checked={grantForm.send_welcome_email}
+                              onCheckedChange={(checked) =>
+                                setGrantForm({ ...grantForm, send_welcome_email: checked })
+                              }
+                            />
+                            Send welcome email
+                          </label>
+                          <label className="flex items-center gap-2 text-sm">
+                            <Switch
+                              checked={grantForm.sync_revenuecat}
+                              onCheckedChange={(checked) =>
+                                setGrantForm({ ...grantForm, sync_revenuecat: checked })
+                              }
+                            />
+                            Sync to RevenueCat
+                          </label>
+                        </div>
+                        <Button
+                          type="submit"
+                          disabled={grantingSub}
+                          className="rounded-full bg-laro hover:bg-laro-dark"
+                        >
+                          {grantingSub ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Crown className="w-4 h-4 mr-2" />
+                          )}
+                          Grant
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 items-center justify-between">
+                    <div className="flex gap-2 flex-wrap">
+                      {['all', 'premium', 'trial', 'free'].map((s) => (
+                        <Button
+                          key={s}
+                          size="sm"
+                          variant={subFilter === s ? 'default' : 'outline'}
+                          className={subFilter === s ? 'rounded-full bg-laro hover:bg-laro-dark' : 'rounded-full'}
+                          onClick={() => setSubFilter(s)}
+                        >
+                          {s === 'all' ? 'Active (non-free)' : s}
+                        </Button>
+                      ))}
+                    </div>
+                    <Button variant="outline" size="sm" className="rounded-full" onClick={loadSubscriptions}>
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  <div className="bg-white dark:bg-card rounded-xl border border-border/60 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-cream-subtle">
+                          <tr>
+                            <th className="text-left p-4 font-medium text-sm">User</th>
+                            <th className="text-left p-4 font-medium text-sm">Status</th>
+                            <th className="text-left p-4 font-medium text-sm">Expires</th>
+                            <th className="text-left p-4 font-medium text-sm">Source</th>
+                            <th className="text-right p-4 font-medium text-sm">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {subscriptions.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                                No subscriptions in this filter
+                              </td>
+                            </tr>
+                          ) : (
+                            subscriptions.map((sub) => (
+                              <tr key={sub.user_id} className="hover:bg-cream-subtle/50">
+                                <td className="p-4">
+                                  <div>
+                                    <p className="font-medium">{sub.name || '—'}</p>
+                                    <p className="text-sm text-muted-foreground">{sub.email}</p>
+                                  </div>
+                                </td>
+                                <td className="p-4">
+                                  <span
+                                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                      sub.status === 'premium'
+                                        ? 'bg-laro/20 text-laro'
+                                        : sub.status === 'trial'
+                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/25 dark:text-amber-200'
+                                        : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'
+                                    }`}
+                                  >
+                                    {sub.status}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-sm text-muted-foreground">
+                                  {sub.expires ? formatDate(sub.expires) : 'Lifetime'}
+                                </td>
+                                <td className="p-4 text-sm text-muted-foreground">
+                                  {sub.source || '—'}
+                                </td>
+                                <td className="p-4 text-right">
+                                  <div className="inline-flex items-center gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleCheckRevenueCat(sub.user_id, sub.email)}
+                                      disabled={rcBusyUserId === sub.user_id}
+                                      title="Check RevenueCat entitlement"
+                                    >
+                                      {rcBusyUserId === sub.user_id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <CreditCard className="w-4 h-4 text-laro" />
+                                      )}
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleSyncRevenueCat(sub.user_id, sub.email)}
+                                      disabled={rcBusyUserId === sub.user_id}
+                                      title="Push Laro status → RevenueCat"
+                                    >
+                                      <RefreshCw className="w-4 h-4" />
+                                    </Button>
+                                    {sub.status !== 'free' && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleRevokeSubscription(sub.user_id, sub.email)}
+                                        disabled={revokingUserId === sub.user_id}
+                                        title="Revoke to free"
+                                      >
+                                        {revokingUserId === sub.user_id ? (
+                                          <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                          <Ban className="w-4 h-4 text-red-500" />
+                                        )}
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Support Tickets Tab */}
+              {activeTab === 'tickets' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2 items-center justify-between">
+                    <div className="flex gap-2">
+                      {['open', 'in_progress', 'waiting_on_user', 'resolved', 'closed', 'all'].map((s) => (
+                        <Button
+                          key={s}
+                          size="sm"
+                          variant={ticketFilter === s ? 'default' : 'outline'}
+                          className={ticketFilter === s ? 'rounded-full bg-laro hover:bg-laro-dark' : 'rounded-full'}
+                          onClick={async () => {
+                            setTicketFilter(s);
+                            setSelectedTicket(null);
+                            setLoading(true);
+                            try {
+                              const params = {};
+                              if (s !== 'all') params.status = s;
+                              const res = await supportApi.adminList(params);
+                              setAdminTickets(res.data?.tickets || []);
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          {s.replace(/_/g, ' ')}
+                        </Button>
+                      ))}
+                    </div>
+                    <Button variant="outline" size="sm" className="rounded-full" onClick={loadAdminTickets}>
+                      <RefreshCw className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="bg-white dark:bg-card rounded-xl border border-border/60 divide-y divide-border/60 max-h-[70vh] overflow-y-auto">
+                      {adminTickets.length === 0 ? (
+                        <p className="p-6 text-sm text-muted-foreground text-center">No tickets in this filter.</p>
+                      ) : (
+                        adminTickets.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => openAdminTicket(t.id)}
+                            className={`w-full text-left p-4 hover:bg-cream-subtle transition-colors ${
+                              selectedTicket?.id === t.id ? 'bg-laro/5' : ''
+                            }`}
+                          >
+                            <div className="flex justify-between gap-2 text-xs mb-1">
+                              <span className="font-mono text-laro">{t.ticket_number}</span>
+                              <span className="text-muted-foreground">{t.status}</span>
+                            </div>
+                            <p className="font-medium text-sm truncate">{t.subject}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {t.user?.email || t.user_id}
+                            </p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="bg-white dark:bg-card rounded-xl border border-border/60 p-4 min-h-[320px]">
+                      {!selectedTicket ? (
+                        <p className="text-sm text-muted-foreground text-center py-16">Select a ticket</p>
+                      ) : ticketBusy && !selectedTicket.messages ? (
+                        <div className="flex justify-center py-16">
+                          <Loader2 className="w-6 h-6 animate-spin text-laro" />
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div>
+                            <p className="font-mono text-xs text-laro mb-1">{selectedTicket.ticket_number}</p>
+                            <h3 className="font-heading font-semibold">{selectedTicket.subject}</h3>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedTicket.user?.email} · {selectedTicket.category} · {selectedTicket.status}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {['in_progress', 'waiting_on_user', 'resolved', 'closed'].map((s) => (
+                              <Button
+                                key={s}
+                                size="sm"
+                                variant="outline"
+                                className="rounded-full text-xs"
+                                disabled={ticketBusy}
+                                onClick={() => updateAdminTicketStatus(s)}
+                              >
+                                {s.replace(/_/g, ' ')}
+                              </Button>
+                            ))}
+                          </div>
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {(selectedTicket.messages || []).map((m) => (
+                              <div
+                                key={m.id}
+                                className={`rounded-lg p-2 text-sm ${m.is_staff ? 'bg-laro/10' : 'bg-cream-subtle'}`}
+                              >
+                                <p className="text-xs text-muted-foreground mb-1">
+                                  {m.is_staff ? 'Staff' : 'User'}
+                                </p>
+                                <p className="whitespace-pre-wrap">{m.body}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <textarea
+                            className="w-full min-h-[80px] rounded-xl border border-border/60 p-3 text-sm"
+                            placeholder="Staff reply…"
+                            value={ticketReply}
+                            onChange={(e) => setTicketReply(e.target.value)}
+                          />
+                          <Button
+                            className="rounded-full bg-laro hover:bg-laro-dark"
+                            disabled={ticketBusy || !ticketReply.trim()}
+                            onClick={sendAdminTicketReply}
+                          >
+                            Send reply
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1656,7 +2202,7 @@ export const AdminDashboard = () => {
                   <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
                   <div className="flex gap-2 mt-2">
                     <span className={`px-2 py-0.5 rounded text-xs ${
-                      selectedUser.role === 'admin' ? 'bg-laro/20 text-laro' : 'bg-gray-100'
+                      selectedUser.role === 'admin' ? 'bg-laro/20 text-laro' : 'bg-gray-100 dark:bg-white/10'
                     }`}>
                       {selectedUser.role}
                     </span>

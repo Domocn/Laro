@@ -64,26 +64,226 @@ async def get_household_members(user: dict = Depends(get_current_user)):
 
 @router.post("/invite")
 async def invite_to_household(data: HouseholdInvite, user: dict = Depends(get_current_user)):
+    """Send a pending household invite — invitee must accept before joining."""
     if not user.get("household_id"):
         raise HTTPException(status_code=400, detail="You must be in a household")
 
     invitee = await user_repository.find_by_email(data.email)
     if not invitee:
         raise HTTPException(status_code=404, detail="User not found")
+    if invitee["id"] == user["id"]:
+        raise HTTPException(status_code=400, detail="You cannot invite yourself")
     if invitee.get("household_id"):
         raise HTTPException(status_code=400, detail="User already in a household")
 
-    await user_repository.update_user(invitee["id"], {"household_id": user["household_id"]})
-    await household_repository.add_member(user["household_id"], invitee["id"])
+    household = await household_repository.find_by_id(user["household_id"])
+    if not household:
+        raise HTTPException(status_code=404, detail="Household not found")
 
-    # Broadcast member joined event
-    await ws_manager.broadcast_to_household(
-        household_id=user["household_id"],
-        event_type=EventType.HOUSEHOLD_MEMBER_JOINED,
-        data={"user_id": invitee["id"], "name": invitee["name"], "email": invitee["email"]}
+    from utils.free_limits import assert_can_add_household_member
+    await assert_can_add_household_member(user, household)
+
+    from database.connection import get_db
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            """
+            SELECT id FROM household_invites
+            WHERE household_id = $1 AND invitee_id = $2 AND status = 'pending'
+              AND expires_at > NOW()
+            """,
+            user["household_id"],
+            invitee["id"],
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail="Invite already pending for this user")
+
+        invite_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        expires = now + timedelta(days=7)
+        await conn.execute(
+            """
+            INSERT INTO household_invites
+                (id, household_id, inviter_id, invitee_id, status, created_at, expires_at)
+            VALUES ($1, $2, $3, $4, 'pending', $5, $6)
+            """,
+            invite_id,
+            user["household_id"],
+            user["id"],
+            invitee["id"],
+            now,
+            expires,
+        )
+
+    try:
+        from services.notifications import notify_user, NotificationType
+        await notify_user(
+            user_id=invitee["id"],
+            notification_type=NotificationType.HOUSEHOLD_INVITE,
+            data={
+                "inviter_name": user.get("name", "Someone"),
+                "household_name": household.get("name", "a household"),
+                "invite_id": invite_id,
+            },
+        )
+    except Exception:
+        pass
+
+    return {
+        "message": "Invite sent — they must accept before joining",
+        "invite_id": invite_id,
+        "pending": True,
+    }
+
+
+@router.get("/invites")
+async def list_my_household_invites(user: dict = Depends(get_current_user)):
+    """List pending household invites for the current user."""
+    from database.connection import get_db, dict_from_row
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT hi.id, hi.household_id, hi.inviter_id, hi.created_at, hi.expires_at,
+                   h.name AS household_name, u.name AS inviter_name, u.email AS inviter_email
+            FROM household_invites hi
+            JOIN households h ON h.id = hi.household_id
+            JOIN users u ON u.id = hi.inviter_id
+            WHERE hi.invitee_id = $1 AND hi.status = 'pending' AND hi.expires_at > NOW()
+            ORDER BY hi.created_at DESC
+            """,
+            user["id"],
+        )
+    invites = []
+    for row in rows:
+        d = dict_from_row(row)
+        for key in ("created_at", "expires_at"):
+            if d.get(key) is not None and hasattr(d[key], "isoformat"):
+                d[key] = d[key].isoformat()
+        invites.append(d)
+    return {"invites": invites, "total": len(invites)}
+
+
+@router.post("/invites/{invite_id}/accept")
+async def accept_household_invite(
+    invite_id: str, request: Request, user: dict = Depends(get_current_user)
+):
+    """Accept a pending household invite."""
+    if user.get("household_id"):
+        raise HTTPException(status_code=400, detail="Already in a household")
+
+    from database.connection import get_db, dict_from_row
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT * FROM household_invites
+            WHERE id = $1 AND invitee_id = $2 AND status = 'pending'
+            """,
+            invite_id,
+            user["id"],
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Invite not found")
+        invite = dict_from_row(row)
+        expires = invite.get("expires_at")
+        if expires is not None:
+            now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+            if isinstance(expires, str):
+                expires = datetime.fromisoformat(expires.replace("Z", "+00:00")).replace(tzinfo=None)
+            elif getattr(expires, "tzinfo", None) is not None:
+                expires = expires.replace(tzinfo=None)
+            if now_naive > expires:
+                await conn.execute(
+                    "UPDATE household_invites SET status = 'expired' WHERE id = $1",
+                    invite_id,
+                )
+                raise HTTPException(status_code=400, detail="Invite has expired")
+
+        household = await household_repository.find_by_id(invite["household_id"])
+        if not household:
+            raise HTTPException(status_code=404, detail="Household no longer exists")
+
+        owner = await user_repository.find_by_id(household.get("owner_id"))
+        from utils.free_limits import assert_can_add_household_member
+        await assert_can_add_household_member(owner or user, household)
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        await conn.execute(
+            """
+            UPDATE household_invites
+            SET status = 'accepted', responded_at = $1
+            WHERE id = $2
+            """,
+            now,
+            invite_id,
+        )
+
+    await user_repository.update_user(user["id"], {"household_id": invite["household_id"]})
+    await household_repository.add_member(invite["household_id"], user["id"])
+
+    await log_action(
+        user,
+        "household_joined",
+        request,
+        target_type="household",
+        target_id=invite["household_id"],
+        details={"household_name": household.get("name"), "via": "invite"},
     )
 
-    return {"message": "User added to household"}
+    await ws_manager.broadcast_to_household(
+        household_id=invite["household_id"],
+        event_type=EventType.HOUSEHOLD_MEMBER_JOINED,
+        data={"user_id": user["id"], "name": user["name"], "email": user["email"]},
+    )
+
+    try:
+        from services.notifications import notify_user, NotificationType
+        await notify_user(
+            user_id=invite["inviter_id"],
+            notification_type=NotificationType.HOUSEHOLD_JOINED,
+            data={"member_name": user.get("name", "Someone")},
+        )
+    except Exception:
+        pass
+
+    return {
+        "message": f"Joined household: {household.get('name')}",
+        "household_id": invite["household_id"],
+    }
+
+
+@router.post("/invites/{invite_id}/decline")
+async def decline_household_invite(invite_id: str, user: dict = Depends(get_current_user)):
+    """Decline a pending household invite."""
+    from database.connection import get_db
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id FROM household_invites
+            WHERE id = $1 AND invitee_id = $2 AND status = 'pending'
+            """,
+            invite_id,
+            user["id"],
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Invite not found")
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        await conn.execute(
+            """
+            UPDATE household_invites
+            SET status = 'declined', responded_at = $1
+            WHERE id = $2
+            """,
+            now,
+            invite_id,
+        )
+    return {"message": "Invite declined"}
 
 
 @router.post("/leave")
@@ -172,6 +372,10 @@ async def join_with_code(data: JoinHouseholdRequest, request: Request, user: dic
     household = await household_repository.find_by_join_code(data.join_code.upper())
     if not household:
         raise HTTPException(status_code=404, detail="Invalid join code")
+
+    owner = await user_repository.find_by_id(household.get("owner_id"))
+    from utils.free_limits import assert_can_add_household_member
+    await assert_can_add_household_member(owner or user, household)
 
     # Check if code is expired
     if household.get("join_code_expires"):

@@ -19,6 +19,8 @@ COPY . .
 # Build argument for backend URL - use placeholder for runtime injection
 ARG REACT_APP_BACKEND_URL=%REACT_APP_BACKEND_URL%
 ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
+# Never ship source maps publicly — they expand attack surface and scanner noise
+ENV GENERATE_SOURCEMAP=false
 
 # Build the app
 RUN yarn build

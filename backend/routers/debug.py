@@ -47,6 +47,7 @@ def is_debug_enabled():
     """Check if debug mode is enabled"""
     return (
         os.getenv("LARO_HA_ADDON") == "true" or
+        os.getenv("MISE_HA_ADDON") == "true" or  # legacy alias
         os.getenv("DEBUG_MODE", "false").lower() == "true"
     )
 
@@ -153,7 +154,7 @@ async def debug_status(user: dict = Depends(get_current_user)):
         "log_level": os.getenv("LOG_LEVEL", "INFO"),
         "uvicorn_log_level": os.getenv("UVICORN_LOG_LEVEL", "info"),
         "celery_log_level": os.getenv("CELERY_LOG_LEVEL", "info"),
-        "is_ha_addon": os.getenv("LARO_HA_ADDON") == "true",
+        "is_ha_addon": os.getenv("LARO_HA_ADDON") == "true" or os.getenv("MISE_HA_ADDON") == "true",
         "log_directory": str(LOG_DIR),
         "python_version": os.sys.version,
         "environment": {
@@ -201,7 +202,7 @@ async def get_bug_report(user: dict = Depends(get_current_user)):
             "python_version": os.sys.version.split()[0],
             "debug_mode": settings.debug_mode,
             "log_level": settings.log_level,
-            "is_ha_addon": os.getenv("LARO_HA_ADDON") == "true",
+            "is_ha_addon": os.getenv("LARO_HA_ADDON") == "true" or os.getenv("MISE_HA_ADDON") == "true",
             "llm_provider": settings.llm_provider,
             "redis_enabled": settings.redis_pubsub_enabled,
         },

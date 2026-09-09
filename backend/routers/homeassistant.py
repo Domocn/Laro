@@ -69,11 +69,17 @@ async def homeassistant_all(user: dict = Depends(get_current_user)):
         author_id=user_id, household_id=household_id, limit=1000
     )
     recipe_count = len(recipes)
+    recipes_by_id = {r["id"]: r for r in recipes if r.get("id")}
 
     # Get meal plans for the week
     meal_plans = await meal_plan_repository.find_by_household(
         household_id, start_date=today_str, end_date=week_end
     )
+    # Normalize title field for HA clients (API uses recipe_title)
+    for mp in meal_plans:
+        title = mp.get("recipe_title") or mp.get("recipe_name") or mp.get("notes") or "Meal"
+        mp["recipe_name"] = title
+        mp["recipe_title"] = title
 
     # Get today's meals
     today_meals = [
@@ -92,7 +98,7 @@ async def homeassistant_all(user: dict = Depends(get_current_user)):
         total_items += len(items)
         unchecked_items += sum(1 for item in items if not item.get("checked", False))
 
-    # Get favorites (stored as JSON array in user object)
+    # Get favorites (stored as JSON array in user object) — may be IDs
     favorites_raw = user.get("favorites", "[]")
     if isinstance(favorites_raw, str):
         try:
@@ -102,6 +108,44 @@ async def homeassistant_all(user: dict = Depends(get_current_user)):
     else:
         favorites = favorites_raw if favorites_raw else []
     favorite_count = len(favorites)
+    favorite_recipes = []
+    for fav in favorites[:20]:
+        if isinstance(fav, dict):
+            favorite_recipes.append({
+                "id": fav.get("id"),
+                "name": fav.get("title") or fav.get("name") or "Recipe",
+            })
+        else:
+            recipe = recipes_by_id.get(fav)
+            favorite_recipes.append({
+                "id": fav,
+                "name": (recipe or {}).get("title") or "Recipe",
+            })
+
+    # Tonight: planned dinner first, else up to 3 quick recipes
+    tonight_suggestions = []
+    dinner_plan = next(
+        (m for m in today_meals if str(m.get("meal_type", "")).lower() == "dinner"),
+        None,
+    )
+    if dinner_plan and dinner_plan.get("recipe_id") and dinner_plan["recipe_id"] in recipes_by_id:
+        r = recipes_by_id[dinner_plan["recipe_id"]]
+        tonight_suggestions.append({
+            "id": r["id"],
+            "name": r.get("title") or dinner_plan.get("recipe_title") or "Dinner",
+            "title": r.get("title"),
+            "reason": "Planned for tonight",
+            "planned": True,
+        })
+    elif recipes:
+        for r in recipes[:3]:
+            tonight_suggestions.append({
+                "id": r["id"],
+                "name": r.get("title") or "Recipe",
+                "title": r.get("title"),
+                "reason": "From your collection",
+                "planned": False,
+            })
 
     # Find next meal
     current_hour = today.hour
@@ -112,8 +156,26 @@ async def homeassistant_all(user: dict = Depends(get_current_user)):
             next_meal = plan
             break
 
+    # AI quota (free-tier remaining uses) for HA sensors
+    try:
+        from utils.ai_quota import get_quota_status
+
+        ai_quota = await get_quota_status(user)
+    except Exception:
+        ai_quota = {
+            "premium": False,
+            "used": 0,
+            "limit": 0,
+            "remaining": None,
+            "unlimited": False,
+        }
+
     return {
         "recipe_count": recipe_count,
+        "recipes": [
+            {"id": r.get("id"), "name": r.get("title"), "title": r.get("title")}
+            for r in recipes[:50]
+        ],
         "meal_plans": meal_plans,
         "today_meals": today_meals,
         "next_meal": next_meal,
@@ -121,8 +183,12 @@ async def homeassistant_all(user: dict = Depends(get_current_user)):
         "shopping_list_count": len(shopping_lists),
         "shopping_items_total": total_items,
         "shopping_items_unchecked": unchecked_items,
-        "favorites": favorites,
+        "favorites": favorite_recipes,
         "favorite_count": favorite_count,
+        "tonight_suggestions": tonight_suggestions,
+        "ai_quota": ai_quota,
+        "ai_remaining": ai_quota.get("remaining"),
+        "ai_unlimited": bool(ai_quota.get("unlimited") or ai_quota.get("premium")),
         "user": {
             "id": user["id"],
             "email": user.get("email"),
@@ -141,16 +207,29 @@ async def homeassistant_today(user: dict = Depends(get_current_user)):
         household_id, start_date=today, end_date=today
     )
 
-    # Find next meal
+    # Normalize titles for HA clients (API uses recipe_title)
+    for plan in plans:
+        title = plan.get("recipe_title") or plan.get("recipe_name") or plan.get("notes") or "Meal"
+        plan["recipe_name"] = title
+        plan["recipe_title"] = title
+
+    # Find next meal — meal_type is stored lowercase in the DB
     current_hour = datetime.now(timezone.utc).hour
-    meal_order = {"Breakfast": 8, "Lunch": 12, "Dinner": 18, "Snack": 15}
+    meal_order = {"breakfast": 8, "lunch": 12, "dinner": 18, "snack": 15}
     next_meal = None
-    for plan in sorted(plans, key=lambda x: meal_order.get(x.get("meal_type", ""), 12)):
-        if meal_order.get(plan.get("meal_type", ""), 12) > current_hour:
+    for plan in sorted(
+        plans, key=lambda x: meal_order.get(str(x.get("meal_type", "")).lower(), 12)
+    ):
+        if meal_order.get(str(plan.get("meal_type", "")).lower(), 12) > current_hour:
             next_meal = plan
             break
 
-    meals_summary = ", ".join([f"{p.get('meal_type', '')}: {p.get('recipe_title', '')}" for p in plans])
+    meals_summary = ", ".join(
+        [
+            f"{p.get('meal_type', '')}: {p.get('recipe_title') or p.get('recipe_name') or ''}"
+            for p in plans
+        ]
+    )
 
     return {
         "date": today,
@@ -229,8 +308,10 @@ async def homeassistant_recipes(
         "recipes": [
             {
                 "id": r.get("id"),
-                "name": r.get("name"),
-                "description": r.get("description", "")[:100],
+                # Recipes use `title`; expose both for older HA clients
+                "name": r.get("title") or r.get("name"),
+                "title": r.get("title") or r.get("name"),
+                "description": (r.get("description") or "")[:100],
                 "prep_time": r.get("prep_time"),
                 "cook_time": r.get("cook_time"),
                 "servings": r.get("servings"),

@@ -389,10 +389,13 @@ class WebSocketManager:
     ):
         """
         Broadcast to household if user is in one, otherwise to user only.
-        This is the main method for data updates that should be shared within households.
+        Always also notify the acting user so other devices/tabs (web vs app)
+        update even if household registration differs between connections.
         """
         if household_id:
             await self.broadcast_to_household(household_id, event_type, data, exclude_connection)
+            # Ensure the actor's other sessions get the event too (dedupe by connection id)
+            await self.broadcast_to_user(user_id, event_type, data, exclude_connection)
         else:
             await self.broadcast_to_user(user_id, event_type, data, exclude_connection)
 

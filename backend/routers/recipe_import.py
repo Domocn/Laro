@@ -183,8 +183,44 @@ def parse_recipe_object(data: dict) -> dict:
         "author": data.get("author", {}).get("name", "") if isinstance(data.get("author"), dict) else str(data.get("author", "")),
     }
 
+def _meal_pack_recipe_from_html(html: str, url: str) -> Optional[dict]:
+    """
+    Huel RTD / shakes / pouches are still first-class Recipes (category Meal Pack).
+    Strips client-only flags before persistence.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        from services.meal_product_import import (
+            enrich_products_with_page_macros,
+            extract_products_from_html,
+            normalize_product,
+            product_to_recipe,
+        )
+
+        products = [
+            p for p in (normalize_product(x) for x in extract_products_from_html(html)) if p
+        ]
+        if not products:
+            return None
+        soup = BeautifulSoup(html, "html.parser")
+        for element in soup(["script", "style", "nav", "footer", "header"]):
+            element.decompose()
+        page_text = soup.get_text(separator="\n", strip=True)[:20000]
+        products = enrich_products_with_page_macros(products, page_text)
+        recipe = product_to_recipe(products[0])
+        for key in ("is_meal_pack", "needs_macros", "kind"):
+            recipe.pop(key, None)
+        recipe["source_url"] = url
+        recipe["category"] = recipe.get("category") or "Meal Pack"
+        recipe["imported_as"] = "meal_pack"
+        return recipe
+    except Exception as e:
+        logger.warning(f"Meal-pack recipe fallback failed for {url}: {e}")
+        return None
+
+
 async def fetch_recipe_from_url(url: str, http_client) -> dict:
-    """Fetch and parse recipe from URL"""
+    """Fetch and parse recipe from URL (includes RTD/meal-pack → Recipes)."""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -194,9 +230,36 @@ async def fetch_recipe_from_url(url: str, http_client) -> dict:
 
         html = response.text
         recipe_data = parse_recipe_schema(html)
+        has_full_recipe = bool(
+            recipe_data
+            and recipe_data.get("ingredients")
+            and recipe_data.get("instructions")
+        )
+
+        url_l = (url or "").lower()
+        productish = any(
+            k in url_l
+            for k in (
+                "huel",
+                "/products/",
+                "/product/",
+                "ready-to-drink",
+                "rtd",
+                "hot-and-savoury",
+                "hot-savoury",
+            )
+        )
+
+        # Product / RTD pages → Recipes under Meal Pack (even with no cook steps)
+        if productish or not has_full_recipe:
+            pack = _meal_pack_recipe_from_html(html, url)
+            if pack:
+                return pack
 
         if recipe_data:
             recipe_data["source_url"] = url
+            if not recipe_data.get("category"):
+                recipe_data["category"] = "Other"
             return recipe_data
 
         return None
@@ -243,6 +306,23 @@ async def import_from_url(
     if not is_safe:
         raise HTTPException(status_code=400, detail=error)
 
+    # Instagram / TikTok / Facebook need the AI path (same as Android POST /ai/import-url).
+    try:
+        from services.socialfetch_media import detect_social_platform
+
+        if detect_social_platform(url):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Instagram, TikTok, and Facebook links use AI import "
+                    "(same as the Android app). Open Import Recipe or POST /ai/import-url."
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     domain = extract_domain(url)
     platform_info = None
 
@@ -258,6 +338,9 @@ async def import_from_url(
             status_code=400,
             detail="Could not parse recipe from URL. Make sure it's a valid recipe page."
         )
+
+    from utils.subscription import assert_can_create_recipes
+    await assert_can_create_recipes(user, recipe_repository, 1)
 
     now = datetime.now(timezone.utc).isoformat()
     recipe = {
@@ -326,6 +409,9 @@ async def bulk_import(
             recipe_data = await fetch_recipe_from_url(url, request.app.state.http_client)
 
             if recipe_data:
+                from utils.subscription import assert_can_create_recipes
+                await assert_can_create_recipes(user, recipe_repository, 1)
+
                 now = datetime.now(timezone.utc).isoformat()
                 recipe = {
                     "id": str(uuid.uuid4()),
@@ -376,8 +462,8 @@ async def import_from_text(
     data: ImportFromTextRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Parse recipe from plain text using AI"""
-    from routers.ai import call_llm
+    """Parse recipe from plain text using AI (counts against free AI quota)."""
+    from routers.ai import call_llm_metered
 
     system_prompt = """You are a recipe parser. Extract recipe information from the given text and return a JSON object with these fields:
 - title: string
@@ -392,11 +478,11 @@ async def import_from_text(
 Return ONLY valid JSON, no other text."""
 
     try:
-        result = await call_llm(
+        result = await call_llm_metered(
             request.app.state.http_client,
             system_prompt,
             data.text,
-            user["id"]
+            user,
         )
 
         result = result.strip()
@@ -408,6 +494,9 @@ Return ONLY valid JSON, no other text."""
 
         if data.title:
             recipe_data["title"] = data.title
+
+        from utils.subscription import assert_can_create_recipes
+        await assert_can_create_recipes(user, recipe_repository, 1)
 
         now = datetime.now(timezone.utc).isoformat()
         recipe = {

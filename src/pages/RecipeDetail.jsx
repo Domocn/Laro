@@ -7,10 +7,23 @@ import { NutritionCalculator } from '../components/NutritionCalculator';
 import { RecipeVersions } from '../components/RecipeVersions';
 import { RecipeReviews } from '../components/RecipeReviews';
 import { CostCalculator } from '../components/CostCalculator';
+import { ShareRecipeModal } from '../components/ShareRecipeModal';
 import { useAuth } from '../context/AuthContext';
-import { recipeApi, mealPlanApi, shoppingListApi, sharingApi } from '../lib/api';
+import { useLanguage } from '../context/LanguageContext';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
+import { useChat } from '../context/ChatContext';
+import {
+  useLiveRefreshContext,
+  useLiveRefreshEvent,
+  EventType,
+} from '../hooks/useLiveRefresh';
+import { recipeApi, mealPlanApi, shoppingListApi, cookingApi, preferencesApi } from '../lib/api';
+import { convertUnit } from '../lib/unitConversions';
+import { enrichStepWithAmounts } from '../lib/cookModeSteps';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { VetoReplacementBanner } from '../components/VetoReplacementBanner';
+import { IngredientSubstituteButton } from '../components/IngredientSubstituteButton';
 import {
   Dialog,
   DialogContent,
@@ -27,7 +40,9 @@ import {
 } from '../components/ui/select';
 import { Calendar } from '../components/ui/calendar';
 import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
 import { getImageUrl, formatTime, MEAL_TYPES } from '../lib/utils';
+import { wantsFamilyOneMeal } from '../lib/familyMeal';
 import {
   Clock,
   Users,
@@ -53,15 +68,27 @@ import {
   AlertTriangle,
   Star,
   Leaf,
-  Wheat
+  Wheat,
+  CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
+
+const MEAL_TYPE_KEYS = {
+  Breakfast: 'breakfast',
+  Lunch: 'lunch',
+  Dinner: 'dinner',
+  Snack: 'snack',
+};
 
 export const RecipeDetail = () => {
   const { id } = useParams();
+  const { t } = useLanguage();
+  const { confirmActions } = useAccessibility();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { setRecipeContext, clearRecipeContext } = useChat();
+  const liveRefresh = useLiveRefreshContext();
   const [recipe, setRecipe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
@@ -70,10 +97,10 @@ export const RecipeDetail = () => {
   const [mealType, setMealType] = useState('Dinner');
   const [addingToMealPlan, setAddingToMealPlan] = useState(false);
   const [addingToShopping, setAddingToShopping] = useState(false);
-  const [shareUrl, setShareUrl] = useState('');
   const [showShareDialog, setShowShareDialog] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [measurementUnit, setMeasurementUnit] = useState('metric');
+  const [showNutrition, setShowNutrition] = useState(true);
+  const [familyMode, setFamilyMode] = useState(false);
   const [generatingCard, setGeneratingCard] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
@@ -82,8 +109,11 @@ export const RecipeDetail = () => {
   const [showCookMode, setShowCookMode] = useState(false);
   const [allergenWarnings, setAllergenWarnings] = useState([]);
   const [userRating, setUserRating] = useState(null);
+  const [personalNotes, setPersonalNotes] = useState('');
   const [hoverRating, setHoverRating] = useState(0);
   const [savingRating, setSavingRating] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [markingCooked, setMarkingCooked] = useState(false);
   const recipeCardRef = useRef(null);
 
   // Generate formatted text for sharing (memoized)
@@ -119,13 +149,11 @@ export const RecipeDetail = () => {
   const handleCopyAsText = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(generateRecipeText);
-      toast.success('Recipe copied as text!');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      toast.success(t('toastRecipeCopied'));
     } catch (error) {
-      toast.error('Couldn\'t copy to clipboard. Please try again. (E-RD001)');
+      toast.error("Couldn't copy to clipboard. Please try again. (E-RD001)");
     }
-  }, [generateRecipeText]);
+  }, [generateRecipeText, t]);
 
   const handleDownloadCard = async () => {
     setGeneratingCard(true);
@@ -157,7 +185,7 @@ export const RecipeDetail = () => {
       if (recipe.image_url) {
         const img = new window.Image();
         img.crossOrigin = 'anonymous';
-        img.src = getImageUrl(recipe.image_url);
+        img.src = getImageUrl(recipe.image_url, recipe);
         
         await new Promise((resolve) => {
           img.onload = () => {
@@ -212,36 +240,36 @@ export const RecipeDetail = () => {
       ctx.fillText(line, width / 2, y);
       
       // Meta info
-      ctx.font = '36px Inter, sans-serif';
+      ctx.font = '36px Sora, system-ui, sans-serif';
       ctx.fillStyle = '#E8F0E6';
       const totalTime = (recipe.prep_time || 0) + (recipe.cook_time || 0);
       ctx.fillText(`${formatTime(totalTime)} • ${recipe.servings} servings`, width / 2, 340);
       
       // Ingredients section
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#4A6741';
-      ctx.font = 'bold 42px Manrope, sans-serif';
+      ctx.fillStyle = '#2F5442';
+      ctx.font = 'bold 42px Fraunces, Georgia, serif';
       ctx.fillText('Ingredients', 60, 920);
       
-      ctx.fillStyle = '#2D3B29';
-      ctx.font = '32px Inter, sans-serif';
+      ctx.fillStyle = '#1A2922';
+      ctx.font = '32px Sora, system-ui, sans-serif';
       let ingredientY = 980;
       recipe.ingredients.slice(0, 10).forEach(ing => {
         ctx.fillText(`• ${ing.amount} ${ing.unit} ${ing.name}`, 60, ingredientY);
         ingredientY += 50;
       });
       if (recipe.ingredients.length > 10) {
-        ctx.fillStyle = '#6B7C66';
+        ctx.fillStyle = '#5C6860';
         ctx.fillText(`+ ${recipe.ingredients.length - 10} more ingredients...`, 60, ingredientY);
       }
       
       // Instructions section
-      ctx.fillStyle = '#4A6741';
-      ctx.font = 'bold 42px Manrope, sans-serif';
+      ctx.fillStyle = '#2F5442';
+      ctx.font = 'bold 42px Fraunces, Georgia, serif';
       ctx.fillText('Instructions', 60, ingredientY + 80);
       
-      ctx.fillStyle = '#2D3B29';
-      ctx.font = '30px Inter, sans-serif';
+      ctx.fillStyle = '#1A2922';
+      ctx.font = '30px Sora, system-ui, sans-serif';
       let instructionY = ingredientY + 140;
       recipe.instructions.slice(0, 6).forEach((step, idx) => {
         const shortStep = step.length > 60 ? step.substring(0, 60) + '...' : step;
@@ -268,10 +296,10 @@ export const RecipeDetail = () => {
       link.href = dataUrl;
       link.click();
       
-      toast.success('Recipe card downloaded!');
+      toast.success(t('toastRecipeCardDownloaded'));
     } catch (error) {
       console.error('Failed to generate card:', error);
-      toast.error('Couldn\'t generate the recipe card. Please try again. (E-RD002)');
+      toast.error("Couldn't generate the recipe card. Please try again. (E-RD002)");
     } finally {
       setGeneratingCard(false);
     }
@@ -279,7 +307,23 @@ export const RecipeDetail = () => {
 
   useEffect(() => {
     loadRecipe();
+    preferencesApi
+      .get()
+      .then((res) => {
+        if (res.data?.measurementUnit) setMeasurementUnit(res.data.measurementUnit);
+        if (res.data?.showNutrition !== undefined) setShowNutrition(!!res.data.showNutrition);
+        setFamilyMode(wantsFamilyOneMeal(res.data || {}));
+      })
+      .catch(() => {});
   }, [id]);
+
+  // Scope global AI chat to this recipe while the detail page is open
+  useEffect(() => {
+    if (recipe?.id) {
+      setRecipeContext(recipe);
+    }
+    return () => clearRecipeContext();
+  }, [recipe, setRecipeContext, clearRecipeContext]);
 
   const loadRecipe = async () => {
     try {
@@ -290,31 +334,83 @@ export const RecipeDetail = () => {
       // Set allergen warnings from API response
       setAllergenWarnings(res.data.allergen_warnings || []);
 
-      // Load user's personal rating
+      // Load user's personal rating + notes
       try {
         const ratingRes = await recipeApi.getRating(id);
         setUserRating(ratingRes.data.rating);
+        setPersonalNotes(ratingRes.data.personal_notes || '');
       } catch (e) {
         // Rating not found is ok
       }
     } catch (error) {
-      toast.error('Recipe not found');
+      toast.error(t('toastRecipeNotFound'));
       navigate('/recipes');
     } finally {
       setLoading(false);
     }
   };
 
+  useLiveRefreshEvent(
+    EventType.RECIPE_DELETED,
+    useCallback((data) => {
+      if (data?.id && data.id === id) {
+        toast.message(t('toastRecipeDeleted') || 'Recipe deleted');
+        navigate('/recipes');
+      }
+    }, [id, navigate, t]),
+    liveRefresh
+  );
+  useLiveRefreshEvent(
+    EventType.RECIPE_UPDATED,
+    useCallback((data) => {
+      if (data?.id === id) {
+        loadRecipe();
+      }
+    }, [id]),
+    liveRefresh
+  );
+
   const handleSetRating = async (rating) => {
     setSavingRating(true);
     try {
-      await recipeApi.setRating(id, rating);
+      await recipeApi.setRating(id, rating, personalNotes);
       setUserRating(rating);
-      toast.success(`Rated ${rating} star${rating > 1 ? 's' : ''}!`);
+      toast.success(t('toastRatedStars', { n: rating }));
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t save your rating. Please try again. (E-RD003)');
+      toast.error(error.response?.data?.detail || "Couldn't save your rating. Please try again. (E-RD003)");
     } finally {
       setSavingRating(false);
+    }
+  };
+
+  const handleSaveNotes = async () => {
+    setSavingNotes(true);
+    try {
+      await recipeApi.setRating(id, userRating || 3, personalNotes);
+      if (!userRating) setUserRating(3);
+      toast.success(t('toastPersonalNoteSaved'));
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't save note. (E-RD008)");
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
+  const handleMarkCooked = async () => {
+    setMarkingCooked(true);
+    try {
+      // Stamp last_cooked only — personal notes are saved separately above
+      const res = await cookingApi.markCooked(id, {});
+      setRecipe((prev) =>
+        prev
+          ? { ...prev, last_cooked_at: res.data.last_cooked_at || new Date().toISOString() }
+          : prev
+      );
+      toast.success(t('toastMarkedAsCooked'));
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't mark as cooked. (E-RD009)");
+    } finally {
+      setMarkingCooked(false);
     }
   };
 
@@ -323,13 +419,36 @@ export const RecipeDetail = () => {
     try {
       const res = await recipeApi.toggleFavorite(id);
       setIsFavorite(res.data.is_favorite);
-      toast.success(res.data.is_favorite ? 'Added to favorites!' : 'Removed from favorites');
+      toast.success(res.data.is_favorite ? t('toastAddedToFavorites') : t('toastRemovedFromFavorites'));
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t update your favorite. Please try again. (E-RD004)');
+      toast.error(error.response?.data?.detail || `${t('toastUpdateItemFailed')} (E-RD004)`);
     } finally {
       setTogglingFavorite(false);
     }
-  }, [id]);
+  }, [id, t]);
+
+  const handleApplySubstitution = useCallback(
+    async (index, newName) => {
+      if (!recipe?.ingredients) return;
+      const next = recipe.ingredients.map((ing, i) => {
+        if (i !== index) return ing;
+        if (typeof ing === 'string') return newName;
+        return { ...ing, name: newName };
+      });
+      try {
+        const res = await recipeApi.update(id, { ...recipe, ingredients: next });
+        setRecipe(res.data);
+        setScaledIngredients(null);
+      } catch (error) {
+        toast.error(
+          error.response?.data?.detail ||
+            t('toastUpdateRecipeFailed') ||
+            "Couldn't apply substitution."
+        );
+      }
+    },
+    [recipe, id, t]
+  );
 
   const handleScaleServings = useCallback(async (newServings) => {
     if (newServings < 1) return;
@@ -348,19 +467,21 @@ export const RecipeDetail = () => {
   }, []);
 
   const handleDelete = useCallback(async () => {
-    if (!window.confirm('Are you sure you want to delete this recipe?')) return;
+    if (!confirmDestructive(confirmActions, t('deleteRecipeConfirm'))) return;
 
     setDeleting(true);
     try {
       await recipeApi.delete(id);
-      toast.success('Recipe deleted');
-      navigate('/recipes');
+      toast.success(t('toastRecipeDeleted'));
+      // Replace so back doesn't revive the deleted detail; Recipes reloads from network
+      // (in-memory + SW no longer cache /recipes, so All won't resurrect ghosts).
+      navigate('/recipes', { replace: true, state: { deletedRecipeId: id } });
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t delete that recipe. Please try again. (E-RD005)');
+      toast.error(error.response?.data?.detail || "Couldn't delete that recipe. Please try again. (E-RD005)");
     } finally {
       setDeleting(false);
     }
-  }, [id, navigate]);
+  }, [id, navigate, confirmActions, t]);
 
   const handleAddToMealPlan = useCallback(async () => {
     setAddingToMealPlan(true);
@@ -370,52 +491,27 @@ export const RecipeDetail = () => {
         meal_type: mealType,
         recipe_id: recipe?.id,
       });
-      toast.success('Added to meal plan');
+      toast.success(t('toastAddedToMealPlan'));
       setShowMealDialog(false);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t add to your meal plan. Please try again. (E-RD006)');
+      toast.error(error.response?.data?.detail || "Couldn't add to your meal plan. Please try again. (E-RD006)");
     } finally {
       setAddingToMealPlan(false);
     }
-  }, [selectedDate, mealType, recipe?.id]);
+  }, [selectedDate, mealType, recipe?.id, t]);
 
   const handleAddToShopping = useCallback(async () => {
     setAddingToShopping(true);
     try {
       await shoppingListApi.fromRecipes([recipe?.id]);
-      toast.success('Shopping list created');
+      toast.success(t('toastShoppingListCreated'));
       navigate('/shopping');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t create the shopping list. Please try again. (E-RD007)');
+      toast.error(error.response?.data?.detail || "Couldn't create the shopping list. Please try again. (E-RD007)");
     } finally {
       setAddingToShopping(false);
     }
-  }, [recipe?.id, navigate]);
-
-  const handleShare = useCallback(async () => {
-    setSharing(true);
-    try {
-      const res = await sharingApi.create({ recipe_id: recipe?.id });
-      const fullUrl = res.data.share_url;
-      setShareUrl(fullUrl);
-      setShowShareDialog(true);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t create a share link. Please try again. (E-RD008)');
-    } finally {
-      setSharing(false);
-    }
-  }, [recipe?.id]);
-
-  const handleCopyLink = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      toast.success('Link copied!');
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      toast.error('Couldn\'t copy to clipboard. Please try again. (E-RD009)');
-    }
-  }, [shareUrl]);
+  }, [recipe?.id, navigate, t]);
 
   // Memoize expensive computed values - must be before any early returns
   const totalTime = useMemo(() =>
@@ -447,7 +543,7 @@ export const RecipeDetail = () => {
           className="inline-flex items-center text-muted-foreground hover:text-foreground mb-6"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Recipes
+          {t('backToRecipes')}
         </Link>
 
         <motion.article
@@ -458,7 +554,7 @@ export const RecipeDetail = () => {
           {/* Hero Image */}
           <div className="relative aspect-video">
             <img
-              src={getImageUrl(recipe.image_url)}
+              src={getImageUrl(recipe.image_url, recipe)}
               alt={recipe.title}
               loading="eager"
               decoding="async"
@@ -467,7 +563,7 @@ export const RecipeDetail = () => {
             <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
             
             {/* Category Badge */}
-            <Badge className="absolute top-4 left-4 bg-white/90 text-foreground">
+            <Badge className="absolute top-4 left-4 bg-white/90 text-foreground backdrop-blur-sm font-semibold dark:bg-black/80 dark:text-cream dark:border dark:border-white/70 dark:shadow-md">
               {recipe.category}
             </Badge>
 
@@ -475,7 +571,7 @@ export const RecipeDetail = () => {
             {recipe.dietary_tags && recipe.dietary_tags.length > 0 && (
               <div className="absolute top-4 right-4 flex gap-2 flex-wrap justify-end max-w-[200px]">
                 {recipe.dietary_tags.map((tag, idx) => (
-                  <Badge key={idx} variant="secondary" className="bg-green-100 text-green-800 border-green-200">
+                  <Badge key={idx} variant="secondary" className="bg-green-100 text-green-800 border-green-200 dark:bg-green-500/25 dark:text-green-200 dark:border-green-500/40">
                     {tag === 'vegan' && <Leaf className="w-3 h-3 mr-1" aria-hidden="true" />}
                     {tag === 'vegetarian' && <Leaf className="w-3 h-3 mr-1" aria-hidden="true" />}
                     {tag === 'gluten-free' && <Wheat className="w-3 h-3 mr-1" aria-hidden="true" />}
@@ -493,33 +589,62 @@ export const RecipeDetail = () => {
                 <h1 className="font-heading text-3xl font-bold text-foreground" data-testid="recipe-title">
                   {recipe.title}
                 </h1>
+                {recipe.source_author && (
+                  <a
+                    href={
+                      recipe.source_url && /instagram\.com/i.test(recipe.source_url)
+                        ? `https://www.instagram.com/${String(recipe.source_author).replace(/^@/, '')}/`
+                        : recipe.source_url && /tiktok\.com/i.test(recipe.source_url)
+                          ? `https://www.tiktok.com/@${String(recipe.source_author).replace(/^@/, '')}`
+                          : recipe.source_url || undefined
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2 text-sm font-medium text-primary hover:underline"
+                    data-testid="recipe-source-author"
+                  >
+                    {(() => {
+                      const author = String(recipe.source_author).replace(/^@/, '').trim();
+                      const social = recipe.source_url && /(instagram|tiktok)\.com/i.test(recipe.source_url);
+                      const looksHost = author.includes('.') && !author.includes(' ');
+                      return social && !looksHost ? `Source: @${author}` : `Source: ${author}`;
+                    })()}
+                  </a>
+                )}
                 {recipe.description && (
                   <p className="text-muted-foreground mt-2">{recipe.description}</p>
                 )}
                 {/* Personal Rating */}
-                <div className="mt-4 flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Your rating:</span>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        onClick={() => handleSetRating(star)}
-                        onMouseEnter={() => setHoverRating(star)}
-                        onMouseLeave={() => setHoverRating(0)}
-                        disabled={savingRating}
-                        className="p-0.5 transition-transform hover:scale-110 disabled:opacity-50"
-                      >
-                        <Star
-                          className={`w-5 h-5 ${
-                            (hoverRating || userRating) >= star
-                              ? 'fill-yellow-400 text-yellow-400'
-                              : 'text-gray-300'
-                          }`}
-                        />
-                      </button>
-                    ))}
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{t('yourRating')}</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          onClick={() => handleSetRating(star)}
+                          onMouseEnter={() => setHoverRating(star)}
+                          onMouseLeave={() => setHoverRating(0)}
+                          disabled={savingRating}
+                          className="p-0.5 transition-transform hover:scale-110 disabled:opacity-50"
+                        >
+                          <Star
+                            className={`w-5 h-5 ${
+                              (hoverRating || userRating) >= star
+                                ? 'fill-yellow-400 text-yellow-400'
+                                : 'text-gray-300'
+                            }`}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    {savingRating && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" aria-hidden="true" />}
                   </div>
-                  {savingRating && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" aria-hidden="true" />}
+                  {recipe.last_cooked_at && (
+                    <span className="text-xs text-muted-foreground bg-cream-subtle px-2 py-1 rounded-full">
+                      {t('lastCooked', { when: formatDistanceToNow(parseISO(recipe.last_cooked_at), { addSuffix: true }) })}
+                    </span>
+                  )}
                 </div>
 
                 {/* Allergen Warnings */}
@@ -527,9 +652,9 @@ export const RecipeDetail = () => {
                   <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
                     <div>
-                      <p className="font-medium text-amber-800">Allergen Warning</p>
+                      <p className="font-medium text-amber-800">{t('allergenWarning')}</p>
                       <p className="text-sm text-amber-700 mt-1">
-                        This recipe contains ingredients you may be allergic to:{' '}
+                        {t('allergenContains')}{' '}
                         {allergenWarnings.map((w, i) => (
                           <span key={i}>
                             <span className="font-medium">{w.ingredient}</span>
@@ -541,6 +666,15 @@ export const RecipeDetail = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Adult / kid veto hits with suggested swaps (edit to apply) */}
+                {recipe?.ingredients?.length > 0 && (
+                  <VetoReplacementBanner
+                    className="mt-4"
+                    ingredients={recipe.ingredients}
+                    refreshKey={recipe.id}
+                  />
+                )}
               </div>
 
               {isOwner && (
@@ -548,7 +682,7 @@ export const RecipeDetail = () => {
                   <Link to={`/recipes/${recipe.id}/edit`}>
                     <Button variant="outline" size="sm" className="rounded-full" data-testid="edit-recipe-btn">
                       <Edit className="w-4 h-4 mr-2" />
-                      Edit
+                      {t('edit')}
                     </Button>
                   </Link>
                   <Button 
@@ -598,20 +732,20 @@ export const RecipeDetail = () => {
                 <div className="flex items-center gap-2">
                   <Clock className="w-5 h-5 text-laro" aria-hidden="true" />
                   <div>
-                    <p className="text-xs text-muted-foreground">Total Time</p>
+                    <p className="text-xs text-muted-foreground">{t('totalTime')}</p>
                     <p className="font-medium">{formatTime(totalTime)}</p>
                   </div>
                 </div>
               )}
               {recipe.prep_time > 0 && (
                 <div>
-                  <p className="text-xs text-muted-foreground">Prep</p>
+                  <p className="text-xs text-muted-foreground">{t('prep')}</p>
                   <p className="font-medium">{formatTime(recipe.prep_time)}</p>
                 </div>
               )}
               {recipe.cook_time > 0 && (
                 <div>
-                  <p className="text-xs text-muted-foreground">Cook</p>
+                  <p className="text-xs text-muted-foreground">{t('cook')}</p>
                   <p className="font-medium">{formatTime(recipe.cook_time)}</p>
                 </div>
               )}
@@ -620,7 +754,7 @@ export const RecipeDetail = () => {
               <div className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-laro" aria-hidden="true" />
                 <div>
-                  <p className="text-xs text-muted-foreground">Servings</p>
+                  <p className="text-xs text-muted-foreground">{t('servings')}</p>
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => handleScaleServings(scaledServings - 1)}
@@ -638,11 +772,64 @@ export const RecipeDetail = () => {
                     </button>
                     {scaledServings !== recipe.servings && (
                       <span className="text-xs text-muted-foreground ml-1">
-                        (was {recipe.servings})
+                        {t('wasServings', { n: recipe.servings })}
                       </span>
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Per-serving macros (saved or estimated from ingredients) */}
+              {showNutrition && recipe.nutrition && (
+                (() => {
+                  const n = recipe.nutrition;
+                  const chips = [
+                    n.calories != null && { key: 'cal', value: n.calories, label: 'cal' },
+                    n.protein != null && { key: 'p', value: `${n.protein}g`, label: 'protein' },
+                    n.carbs != null && { key: 'c', value: `${n.carbs}g`, label: 'carbs' },
+                    n.fat != null && { key: 'f', value: `${n.fat}g`, label: 'fat' },
+                  ].filter(Boolean);
+                  if (!chips.length) return null;
+                  return (
+                    <div className="w-full flex flex-wrap items-center gap-2 pt-1" data-testid="recipe-macro-chips">
+                      {chips.map((chip) => (
+                        <div
+                          key={chip.key}
+                          className="rounded-full bg-laro-light/80 text-laro-dark px-3 py-1 text-sm"
+                        >
+                          <span className="font-semibold">{chip.value}</span>
+                          <span className="text-xs ml-1 opacity-80">{chip.label}</span>
+                        </div>
+                      ))}
+                      {(n.nutrition_estimated || n.nutrition_source === 'estimated' || n.nutrition_source === 'mixed') && (
+                        <span className="text-xs text-muted-foreground">est. / serving</span>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+
+            {/* Personal notes */}
+            <div className="mb-8 p-4 rounded-2xl border border-border/60 bg-cream-subtle/50">
+              <label className="text-sm font-medium mb-2 block">{t('yourNotes')}</label>
+              <Textarea
+                value={personalNotes}
+                onChange={(e) => setPersonalNotes(e.target.value)}
+                placeholder={t('personalNotesPlaceholder')}
+                className="rounded-xl bg-white min-h-[72px]"
+              />
+              <div className="flex justify-end mt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={handleSaveNotes}
+                  disabled={savingNotes}
+                >
+                  {savingNotes ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  {t('saveNote')}
+                </Button>
               </div>
             </div>
 
@@ -651,24 +838,39 @@ export const RecipeDetail = () => {
               <Button
                 onClick={() => setShowCookMode(true)}
                 className="rounded-full bg-laro hover:bg-laro-dark"
+                data-testid="start-cook-mode"
               >
                 <Play className="w-4 h-4 mr-2" />
-                Start Cooking
+                {t('cookMode')}
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={handleMarkCooked}
+                disabled={markingCooked}
+                data-testid="mark-cooked-btn"
+              >
+                {markingCooked ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                )}
+                {t('markCooked')}
               </Button>
               <Dialog open={showMealDialog} onOpenChange={setShowMealDialog}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="rounded-full" data-testid="add-to-meal-plan">
                     <CalendarPlus className="w-4 h-4 mr-2" />
-                    Add to Meal Plan
+                    {t('addToMealPlan')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Add to Meal Plan</DialogTitle>
+                    <DialogTitle>{t('addToMealPlan')}</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 pt-4">
                     <div>
-                      <label className="text-sm font-medium mb-2 block">Select Date</label>
+                      <label className="text-sm font-medium mb-2 block">{t('selectDate')}</label>
                       <Calendar
                         mode="single"
                         selected={selectedDate}
@@ -677,14 +879,16 @@ export const RecipeDetail = () => {
                       />
                     </div>
                     <div>
-                      <label className="text-sm font-medium mb-2 block">Meal Type</label>
+                      <label className="text-sm font-medium mb-2 block">{t('mealType')}</label>
                       <Select value={mealType} onValueChange={setMealType}>
                         <SelectTrigger className="rounded-xl">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {MEAL_TYPES.map((type) => (
-                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                            <SelectItem key={type} value={type}>
+                              {MEAL_TYPE_KEYS[type] ? t(MEAL_TYPE_KEYS[type]) : type}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -694,7 +898,7 @@ export const RecipeDetail = () => {
                       className="w-full rounded-full bg-laro hover:bg-laro-dark"
                       disabled={addingToMealPlan}
                     >
-                      {addingToMealPlan ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : 'Add to Plan'}
+                      {addingToMealPlan ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : t('addToPlan')}
                     </Button>
                   </div>
                 </DialogContent>
@@ -712,7 +916,7 @@ export const RecipeDetail = () => {
                 ) : (
                   <ShoppingCart className="w-4 h-4 mr-2" />
                 )}
-                Add to Shopping List
+                {t('addToShoppingList')}
               </Button>
 
               <Button 
@@ -722,134 +926,15 @@ export const RecipeDetail = () => {
                 data-testid="share-recipe"
               >
                 <Share2 className="w-4 h-4 mr-2" />
-                Share
+                {t('share')}
               </Button>
             </div>
 
-            {/* Share Dialog */}
-            <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <Share2 className="w-5 h-5 text-laro" aria-hidden="true" />
-                    Share Recipe
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Choose how you want to share this recipe:
-                  </p>
-                  
-                  {/* Recipe Card - Best for messaging */}
-                  <div className="p-4 rounded-xl border border-border/60 hover:border-laro transition-colors">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-coral-light flex items-center justify-center flex-shrink-0">
-                        <Image className="w-5 h-5 text-coral" aria-hidden="true" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium text-sm">Recipe Card</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Download a beautiful image to share on WhatsApp, Instagram, etc.
-                        </p>
-                        <Button 
-                          size="sm"
-                          onClick={handleDownloadCard}
-                          disabled={generatingCard}
-                          className="mt-3 rounded-full bg-coral hover:bg-coral-dark"
-                        >
-                          {generatingCard ? (
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" aria-hidden="true" />
-                          ) : (
-                            <Download className="w-4 h-4 mr-2" aria-hidden="true" />
-                          )}
-                          Download Card
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Copy as Text */}
-                  <div className="p-4 rounded-xl border border-border/60 hover:border-laro transition-colors">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-laro-light flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-5 h-5 text-laro" aria-hidden="true" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium text-sm">Copy as Text</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Copy formatted recipe text to paste anywhere
-                        </p>
-                        <Button 
-                          size="sm"
-                          variant="outline"
-                          onClick={handleCopyAsText}
-                          className="mt-3 rounded-full"
-                        >
-                          {copied ? (
-                            <Check className="w-4 h-4 mr-2" aria-hidden="true" />
-                          ) : (
-                            <Copy className="w-4 h-4 mr-2" aria-hidden="true" />
-                          )}
-                          {copied ? 'Copied!' : 'Copy Text'}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Share Link - Only if externally accessible */}
-                  <div className="p-4 rounded-xl border border-border/60 hover:border-laro transition-colors">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                        <LinkIcon className="w-5 h-5 text-blue-600" aria-hidden="true" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium text-sm">Share Link</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Create a link others can open (requires external server access)
-                        </p>
-                        {shareUrl ? (
-                          <div className="flex gap-2 mt-3">
-                            <Input 
-                              value={shareUrl} 
-                              readOnly 
-                              className="rounded-xl text-xs h-9"
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={handleCopyLink}
-                              className="rounded-xl h-9"
-                              aria-label="Copy share link"
-                            >
-                              <Copy className="w-4 h-4" aria-hidden="true" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button 
-                            size="sm"
-                            variant="outline"
-                            onClick={handleShare}
-                            disabled={sharing}
-                            className="mt-3 rounded-full"
-                          >
-                            {sharing ? (
-                              <Loader2 className="w-4 h-4 animate-spin mr-2" aria-hidden="true" />
-                            ) : (
-                              <LinkIcon className="w-4 h-4 mr-2" aria-hidden="true" />
-                            )}
-                            Generate Link
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground text-center pt-2">
-                    💡 Recipe Card works best for locally-hosted servers
-                  </p>
-                </div>
-              </DialogContent>
-            </Dialog>
+            <ShareRecipeModal
+              isOpen={showShareDialog}
+              onClose={() => setShowShareDialog(false)}
+              recipe={recipe}
+            />
 
             {/* Tags */}
             {recipe.tags && recipe.tags.length > 0 && (
@@ -865,54 +950,117 @@ export const RecipeDetail = () => {
               </div>
             )}
 
+            {familyMode ? (
+              <div
+                className="mb-8 rounded-xl border border-amber-200/80 bg-amber-50/80 px-4 py-3"
+                data-testid="recipe-adult-boost-tip"
+              >
+                <p className="text-sm font-medium text-amber-950 flex items-center gap-2">
+                  <Users className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  {t('recipeAdultBoostTitle')}
+                </p>
+                <p className="text-sm text-amber-900/80 mt-1 leading-relaxed">
+                  {t('recipeAdultBoostBody')}
+                </p>
+              </div>
+            ) : null}
+
             {/* Ingredients */}
             <section className="mb-8">
               <h2 className="font-heading text-xl font-semibold mb-4 flex items-center gap-2">
                 <ChefHat className="w-5 h-5 text-laro" aria-hidden="true" />
-                Ingredients
+                {t('ingredients')}
                 {scaledServings !== recipe.servings && (
                   <span className="text-sm font-normal text-muted-foreground">
-                    (scaled for {scaledServings} servings)
+                    {t('scaledForServings', { n: scaledServings })}
                   </span>
                 )}
               </h2>
               <ul className="space-y-2" data-testid="ingredients-list">
-                {(scaledIngredients || recipe.ingredients).map((ing, idx) => (
-                  <li key={`${ing.name}-${idx}`} className="flex items-start gap-3 p-3 rounded-xl bg-cream-subtle">
+                {(scaledIngredients || recipe.ingredients).map((ing, idx) => {
+                  const converted =
+                    typeof ing === 'string'
+                      ? null
+                      : convertUnit(ing.amount, ing.unit, measurementUnit);
+                  const both =
+                    measurementUnit === 'both' && typeof ing !== 'string'
+                      ? {
+                          metric: convertUnit(ing.amount, ing.unit, 'metric'),
+                          imperial: convertUnit(ing.amount, ing.unit, 'imperial'),
+                        }
+                      : null;
+                  const displayName = typeof ing === 'string' ? ing : ing.name;
+                  return (
+                  <li key={`${ing.name || ing}-${idx}`} className="flex items-start gap-3 p-3 rounded-xl bg-cream-subtle">
                     <span className="w-2 h-2 rounded-full bg-laro mt-2 flex-shrink-0" />
-                    <span>
-                      <span className="font-medium">{ing.amount}</span>
-                      {ing.unit && <span className="text-muted-foreground"> {ing.unit}</span>}
-                      <span> {ing.name}</span>
+                    <span className="flex-1 min-w-0">
+                      {typeof ing === 'string' ? (
+                        ing
+                      ) : both ? (
+                        <>
+                          <span className="font-medium">{both.metric.amount}</span>
+                          {both.metric.unit && (
+                            <span className="text-muted-foreground"> {both.metric.unit}</span>
+                          )}
+                          <span className="text-muted-foreground text-sm">
+                            {' '}
+                            ({both.imperial.amount} {both.imperial.unit})
+                          </span>
+                          <span> {ing.name}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-medium">{converted?.amount ?? ing.amount}</span>
+                          {(converted?.unit || ing.unit) && (
+                            <span className="text-muted-foreground">
+                              {' '}
+                              {converted?.unit || ing.unit}
+                            </span>
+                          )}
+                          <span> {ing.name}</span>
+                        </>
+                      )}
                     </span>
+                    <IngredientSubstituteButton
+                      ingredientName={displayName}
+                      canApply={isOwner}
+                      onApply={(newName) => handleApplySubstitution(idx, newName)}
+                      recipeContext={recipe}
+                    />
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </section>
 
             {/* Instructions */}
             <section className="mb-8">
-              <h2 className="font-heading text-xl font-semibold mb-4">Instructions</h2>
+              <h2 className="font-heading text-xl font-semibold mb-4">{t('instructions')}</h2>
               <ol className="space-y-4" data-testid="instructions-list">
                 {recipe.instructions.map((step, idx) => (
                   <li key={`step-${idx}`} className="flex gap-4">
                     <span className="flex-shrink-0 w-8 h-8 rounded-full bg-laro text-white flex items-center justify-center font-semibold text-sm">
                       {idx + 1}
                     </span>
-                    <p className="pt-1">{step}</p>
+                    <p className="pt-1">
+                      {enrichStepWithAmounts(step, recipe.ingredients, measurementUnit)}
+                    </p>
                   </li>
                 ))}
               </ol>
             </section>
 
-            {/* Nutrition Calculator */}
-            <section className="mb-6">
-              <NutritionCalculator 
-                recipeId={recipe.id}
-                ingredients={recipe.ingredients?.map(i => `${i.amount || ''} ${i.unit || ''} ${i.name}`)}
-                servings={scaledServings || recipe.servings}
-              />
-            </section>
+            {/* Nutrition Calculator — gated by Preferences → showNutrition */}
+            {showNutrition && (
+              <section className="mb-6">
+                <NutritionCalculator 
+                  recipeId={recipe.id}
+                  ingredients={recipe.ingredients?.map(i => `${i.amount || ''} ${i.unit || ''} ${i.name}`)}
+                  servings={scaledServings || recipe.servings}
+                  savedNutrition={recipe.nutrition}
+                />
+              </section>
+            )}
 
             {/* Cost Calculator */}
             <section className="mb-6">

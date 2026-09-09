@@ -1,0 +1,15 @@
+# Laro
+
+> Self-hostable recipe app for families — organize recipes, plan meals, shop, and cook together.
+
+Laro is a kitchen OS for real weeknights: import recipes, build meal plans, generate shopping lists, and share a household cookbook. Available on the web and Android.
+
+Key things to know:
+- Free tier with optional Laro Pro (AI meal plans, imports, unlimited cookbook)
+- Self-hostable; production site is https://laro.food/
+- Privacy-first household sharing (invite / consent flows)
+
+## Links
+- [Home](https://laro.food/): App entry
+- [Sign in](https://laro.food/#/auth): Login / register
+- [Play Store](https://play.google.com/store/apps/details?id=com.laro.app): Android app

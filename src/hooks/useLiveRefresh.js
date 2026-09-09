@@ -313,8 +313,8 @@ import { createContext, useContext } from 'react';
 
 export const LiveRefreshContext = createContext(null);
 
-export function LiveRefreshProvider({ children }) {
-  const liveRefresh = useLiveRefresh();
+export function LiveRefreshProvider({ children, autoConnect = true }) {
+  const liveRefresh = useLiveRefresh({ autoConnect });
 
   return (
     <LiveRefreshContext.Provider value={liveRefresh}>
@@ -324,11 +324,7 @@ export function LiveRefreshProvider({ children }) {
 }
 
 export function useLiveRefreshContext() {
-  const context = useContext(LiveRefreshContext);
-  if (!context) {
-    throw new Error('useLiveRefreshContext must be used within a LiveRefreshProvider');
-  }
-  return context;
+  return useContext(LiveRefreshContext);
 }
 
 export default useLiveRefresh;

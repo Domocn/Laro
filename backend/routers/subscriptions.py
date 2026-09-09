@@ -36,35 +36,23 @@ class SubscriptionStatus(BaseModel):
     expires_at: Optional[str] = None
     source: Optional[str] = None
     is_active: bool = False
+    is_lifetime: bool = False
+    is_owner: bool = False
 
 
 @router.get("/status")
 async def get_subscription_status(user: dict = Depends(get_current_user)) -> SubscriptionStatus:
-    """Get current user's subscription status"""
-    status = user.get("subscription_status", "free")
-    expires_str = user.get("subscription_expires")
-    source = user.get("subscription_source")
+    """Get current user's subscription status (includes owner forever Pro)."""
+    from utils.subscription import subscription_snapshot
 
-    # Check if subscription has expired
-    is_active = False
-    if status in ["premium", "trial"]:
-        if expires_str:
-            try:
-                expires = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
-                is_active = expires > datetime.now(timezone.utc)
-                if not is_active:
-                    status = "expired"
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Could not parse subscription expires date '{expires_str}': {e}")
-                is_active = True  # If can't parse, assume active for safety
-        else:
-            is_active = True  # No expiry means lifetime
-
+    snap = subscription_snapshot(user)
     return SubscriptionStatus(
-        status=status,
-        expires_at=expires_str,
-        source=source,
-        is_active=is_active
+        status=snap["status"],
+        expires_at=snap["expires_at"],
+        source=snap["source"],
+        is_active=snap["is_active"],
+        is_lifetime=snap["is_lifetime"],
+        is_owner=snap["is_owner"],
     )
 
 
@@ -72,6 +60,21 @@ class RevenueCatEvent(BaseModel):
     """RevenueCat webhook event structure"""
     event: dict
     api_version: str = "1.0"
+
+
+@router.get("/webhook/revenuecat")
+@router.head("/webhook/revenuecat")
+async def revenuecat_webhook_health():
+    """
+    Browser / URL-check probe. RevenueCat delivers events with POST only.
+    Opening this URL in a browser used to return 405 Method Not Allowed.
+    """
+    return {
+        "status": "ok",
+        "service": "revenuecat-webhook",
+        "method": "POST required for events",
+        "hint": "Configure RevenueCat → Integrations → Webhooks to POST here with Authorization",
+    }
 
 
 @router.post("/webhook/revenuecat")
@@ -104,7 +107,6 @@ async def revenuecat_webhook(
             raise HTTPException(status_code=401, detail="Missing authorization")
         auth_received = authorization.strip()
         auth_expected = REVENUECAT_WEBHOOK_AUTH.strip()
-        logger.info(f"Webhook auth debug: received='{auth_received[:4]}...{auth_received[-4:]}' (len={len(auth_received)}), expected='{auth_expected[:4]}...{auth_expected[-4:]}' (len={len(auth_expected)})")
         if not hmac.compare_digest(auth_received, auth_expected):
             logger.warning("Invalid RevenueCat webhook authorization")
             raise HTTPException(status_code=401, detail="Invalid authorization")
@@ -123,8 +125,21 @@ async def revenuecat_webhook(
             logger.warning("Invalid RevenueCat webhook signature")
             raise HTTPException(status_code=401, detail="Invalid signature")
     else:
-        # No auth configured - log warning but allow (for development only)
-        logger.warning("No webhook auth configured - webhook not verified!")
+        # Fail closed outside explicit local insecure mode
+        allow_insecure = os.getenv("ALLOW_INSECURE_WEBHOOKS", "false").lower() == "true"
+        is_production = bool(
+            os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("IS_CLOUD", "").lower() == "true"
+            or os.getenv("LARO_ENV", "").lower() == "production"
+            or not allow_insecure
+        )
+        if is_production:
+            logger.error("RevenueCat webhook rejected: no REVENUECAT_WEBHOOK_AUTH or SECRET configured")
+            raise HTTPException(
+                status_code=503,
+                detail="Webhook authentication is not configured",
+            )
+        logger.warning("No webhook auth configured - webhook not verified (ALLOW_INSECURE_WEBHOOKS=true)!")
 
     try:
         data = await request.json()
@@ -166,14 +181,25 @@ async def revenuecat_webhook(
             if expiration:
                 expires_at = datetime.fromtimestamp(expiration / 1000, tz=timezone.utc)
 
+            # Only write columns that exist on users (product_id/store historically
+            # caused webhook 500s and left purchases undetected).
             await user_repository.update_user(user_id, {
                 "subscription_status": "premium",
                 "subscription_expires": expires_at.isoformat() if expires_at else None,
                 "subscription_source": "revenuecat",
-                "subscription_product_id": product_id,
-                "subscription_store": store
             })
-            logger.info(f"Granted premium to user {user_id} until {expires_at}")
+            logger.info(
+                f"Granted premium to user {user_id} until {expires_at} "
+                f"(product={product_id}, store={store})"
+            )
+
+            try:
+                from routers.friends import grant_referrer_reward_for_subscriber
+                refreshed = await user_repository.find_by_id(user_id)
+                if refreshed:
+                    await grant_referrer_reward_for_subscriber(refreshed)
+            except Exception as reward_err:
+                logger.warning(f"Referral reward failed for {user_id}: {reward_err}")
 
             # Send welcome notification (email + push)
             if NOTIFICATIONS_ENABLED:
@@ -189,10 +215,18 @@ async def revenuecat_webhook(
                 "subscription_status": "premium",
                 "subscription_expires": None,  # Lifetime = no expiry
                 "subscription_source": "revenuecat",
-                "subscription_product_id": product_id,
-                "subscription_store": store
             })
-            logger.info(f"Granted lifetime premium to user {user_id}")
+            logger.info(
+                f"Granted lifetime premium to user {user_id} "
+                f"(product={product_id}, store={store})"
+            )
+            try:
+                from routers.friends import grant_referrer_reward_for_subscriber
+                refreshed = await user_repository.find_by_id(user_id)
+                if refreshed:
+                    await grant_referrer_reward_for_subscriber(refreshed)
+            except Exception as reward_err:
+                logger.warning(f"Referral reward failed for {user_id}: {reward_err}")
 
         elif event_type in ["RENEWAL", "UNCANCELLATION"]:
             # Subscription renewed or re-enabled
@@ -218,7 +252,7 @@ async def revenuecat_webhook(
             await user_repository.update_user(user_id, {
                 "subscription_status": "premium",
                 "subscription_expires": expires_at.isoformat() if expires_at else None,
-                "subscription_product_id": product_id
+                "subscription_source": "revenuecat",
             })
             logger.info(f"User {user_id} changed to product {product_id}")
 
@@ -299,18 +333,35 @@ async def sync_subscription(
     Sync subscription status from Android/iOS app
     Called by the app after RevenueCat purchase verification
     """
+    from utils.subscription import is_app_owner, subscription_snapshot
+
+    # Never overwrite owner forever / admin grants via a free RC sync
+    if is_app_owner(user):
+        snap = subscription_snapshot(user)
+        return {"status": snap["status"], "synced": True, "is_owner": True}
+
     if data.is_active:
         await user_repository.update_user(user["id"], {
             "subscription_status": "premium",
             "subscription_expires": data.expires_at,
             "subscription_source": "revenuecat"
         })
+        try:
+            from routers.friends import grant_referrer_reward_for_subscriber
+            refreshed = await user_repository.find_by_id(user["id"])
+            if refreshed:
+                await grant_referrer_reward_for_subscriber(refreshed)
+        except Exception as reward_err:
+            logger.warning(f"Referral reward failed for {user['id']}: {reward_err}")
         return {"status": "premium", "synced": True}
     else:
-        # Check if current subscription is from revenuecat before downgrading
-        if user.get("subscription_source") == "revenuecat":
+        # Only downgrade RevenueCat-sourced subs — preserve admin/owner lifetime
+        source = (user.get("subscription_source") or "").lower()
+        if source == "revenuecat":
             await user_repository.update_user(user["id"], {
                 "subscription_status": "free",
                 "subscription_expires": None
             })
-        return {"status": "free", "synced": True}
+            return {"status": "free", "synced": True}
+        snap = subscription_snapshot(user)
+        return {"status": snap["status"], "synced": True, "preserved": True}

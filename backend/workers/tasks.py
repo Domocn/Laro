@@ -33,9 +33,13 @@ def import_recipe_from_url_task(
     import asyncio
     from dependencies import call_llm, clean_llm_json
     from routers.prompts import get_user_prompt
+    from utils.ai_quota import meter_ai_for_user_id, consume_ai_quota_if_free
+    from fastapi import HTTPException
 
     async def _process():
         try:
+            user = await meter_ai_for_user_id(user_id)
+
             # Fetch URL content
             async with httpx.AsyncClient() as client:
                 logger.info(f"Fetching URL for import: {url}")
@@ -53,14 +57,17 @@ def import_recipe_from_url_task(
             system_prompt = await get_user_prompt(user_id, "recipe_extraction")
 
             # Call LLM for recipe extraction
+            usage_meta = {}
             async with httpx.AsyncClient() as client:
                 logger.info(f"Calling LLM for recipe extraction (user: {user_id})")
                 result = await call_llm(
                     client,
                     system_prompt,
                     f"Extract recipe from:\n{text_content}",
-                    user_id
+                    user_id,
+                    usage_meta=usage_meta,
                 )
+            await consume_ai_quota_if_free(user, usage_meta)
 
             result = clean_llm_json(result)
             recipe_data = json.loads(result)
@@ -72,6 +79,14 @@ def import_recipe_from_url_task(
                 "recipe_data": recipe_data
             }
 
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}
+            return {
+                "status": "error",
+                "error": detail.get("message") or str(e.detail),
+                "error_code": detail.get("error"),
+                "upgrade_required": detail.get("upgrade_required", False),
+            }
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse recipe JSON: {e}")
             return {
@@ -107,21 +122,28 @@ def import_recipe_from_text_task(
     import asyncio
     from dependencies import call_llm, clean_llm_json
     from routers.prompts import get_user_prompt
+    from utils.ai_quota import meter_ai_for_user_id, consume_ai_quota_if_free
+    from fastapi import HTTPException
 
     async def _process():
         try:
+            user = await meter_ai_for_user_id(user_id)
+
             # Get user's custom prompt or default
             system_prompt = await get_user_prompt(user_id, "recipe_extraction")
 
             # Call LLM for recipe parsing
+            usage_meta = {}
             async with httpx.AsyncClient() as client:
                 logger.info(f"Calling LLM for text recipe parsing (user: {user_id})")
                 result = await call_llm(
                     client,
                     system_prompt,
                     f"Parse this recipe:\n{text[:3000]}",
-                    user_id
+                    user_id,
+                    usage_meta=usage_meta,
                 )
+            await consume_ai_quota_if_free(user, usage_meta)
 
             result = clean_llm_json(result)
             recipe_data = json.loads(result)
@@ -133,6 +155,14 @@ def import_recipe_from_text_task(
                 "recipe_data": recipe_data
             }
 
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}
+            return {
+                "status": "error",
+                "error": detail.get("message") or str(e.detail),
+                "error_code": detail.get("error"),
+                "upgrade_required": detail.get("upgrade_required", False),
+            }
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse recipe JSON: {e}")
             return {
@@ -170,9 +200,13 @@ def generate_meal_plan_task(
     import asyncio
     from dependencies import call_llm, clean_llm_json, recipe_repository
     from routers.prompts import get_user_prompt
+    from utils.ai_quota import meter_ai_for_user_id, consume_ai_quota_if_free
+    from fastapi import HTTPException
 
     async def _process():
         try:
+            user = await meter_ai_for_user_id(user_id)
+
             # Get user's recipes
             logger.info(f"Fetching recipes for meal plan generation (user: {user_id})")
             recipes = await recipe_repository.find_by_household_or_author(
@@ -199,18 +233,51 @@ def generate_meal_plan_task(
 
             # Get user's custom prompt or default
             system_prompt = await get_user_prompt(user_id, "meal_planning")
+            from utils.preference_context import merge_preferences_into_free_text
+            from utils.food_db import build_ai_food_context
+            from dependencies import user_preferences_repository
 
-            user_prompt = f"""Create a {days}-day meal plan.
-Preferences: {preferences or 'balanced variety'}
+            saved_prefs = await user_preferences_repository.find_by_user(user_id)
+            from datetime import date as date_cls
+            from utils.calendar_busy import load_busyness_for_prefs
+
+            plan_start = date_cls.today()
+            calendar_busyness = await load_busyness_for_prefs(
+                saved_prefs, start_date=plan_start, days=days
+            )
+            preference_text = merge_preferences_into_free_text(
+                preferences,
+                saved_prefs,
+                start_date=plan_start,
+                days=days,
+                calendar_busyness=calendar_busyness,
+            )
+            food_ctx = build_ai_food_context(
+                saved_prefs,
+                query=preferences or "meal plan",
+                seed=f"{user_id}:meal-plan-worker",
+                limit=14,
+            )
+            food_block = f"\n\n{food_ctx}" if food_ctx else ""
+
+            user_prompt = f"""Create a {days}-day meal plan starting {plan_start.isoformat()}.
+Preferences: {preference_text}{food_block}
 Exclude recipes: {exclude_recipes or 'none'}
 
 Available recipes:
-{json.dumps(recipes_summary)}"""
+{json.dumps(recipes_summary)}
+
+Respect kid-friendly / WFH lunch pacing, calendar evening busyness (quick/leftover on busy nights), and daily calorie/protein targets from Preferences when choosing meals.
+Strictly honour any HARD EXCLUSION adult/kid veto lists in Preferences — never pick recipes that contain vetoed ingredients."""
 
             # Call LLM for meal plan generation
+            usage_meta = {}
             async with httpx.AsyncClient() as client:
                 logger.info(f"Calling LLM for meal plan generation (user: {user_id})")
-                result = await call_llm(client, system_prompt, user_prompt, user_id)
+                result = await call_llm(
+                    client, system_prompt, user_prompt, user_id, usage_meta=usage_meta
+                )
+            await consume_ai_quota_if_free(user, usage_meta)
 
             result = clean_llm_json(result)
             plan_data = json.loads(result)
@@ -222,6 +289,14 @@ Available recipes:
                 "plan_data": plan_data
             }
 
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}
+            return {
+                "status": "error",
+                "error": detail.get("message") or str(e.detail),
+                "error_code": detail.get("error"),
+                "upgrade_required": detail.get("upgrade_required", False),
+            }
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse meal plan JSON: {e}")
             return {
@@ -258,9 +333,13 @@ def fridge_search_task(
     import asyncio
     from dependencies import call_llm, clean_llm_json, recipe_repository
     from routers.prompts import get_user_prompt
+    from utils.ai_quota import meter_ai_for_user_id, consume_ai_quota_if_free
+    from fastapi import HTTPException
 
     async def _process():
         try:
+            user = await meter_ai_for_user_id(user_id)
+
             ingredients_str = ", ".join(ingredients)
 
             # Get user's recipes
@@ -273,10 +352,22 @@ def fridge_search_task(
 
             # Get user's custom prompt or default
             system_prompt = await get_user_prompt(user_id, "fridge_search")
+            from utils.preference_context import load_user_prefs_and_food_context
+
+            pref_ctx = await load_user_prefs_and_food_context(
+                user_id,
+                pantry_items=ingredients,
+                query=f"fridge recipe ideas: {ingredients_str}",
+            )
+            pref_block = f"\n\n{pref_ctx}" if pref_ctx else ""
 
             # Build prompt based on available recipes
             if len(all_recipes) == 0 and search_online:
-                user_prompt = f"I have these ingredients: {ingredients_str}. Suggest a simple recipe I can make."
+                user_prompt = (
+                    f"I have these ingredients: {ingredients_str}. Suggest a unique recipe I can make "
+                    f"using food-database building blocks when relevant; estimate protein per serving."
+                    f"{pref_block}"
+                )
             else:
                 recipes_info = [
                     {
@@ -295,12 +386,16 @@ def fridge_search_task(
 Existing recipes:
 {json.dumps(recipes_info) if recipes_info else "No existing recipes yet."}
 
-Find matching recipes{" and suggest a new simple recipe" if search_online else ""}."""
+Find matching recipes{" and suggest a new unique recipe grounded in the food database macros" if search_online else ""}.{pref_block}"""
 
             # Call LLM for fridge search
+            usage_meta = {}
             async with httpx.AsyncClient() as client:
                 logger.info(f"Calling LLM for fridge search (user: {user_id})")
-                result = await call_llm(client, system_prompt, user_prompt, user_id)
+                result = await call_llm(
+                    client, system_prompt, user_prompt, user_id, usage_meta=usage_meta
+                )
+            await consume_ai_quota_if_free(user, usage_meta)
 
             if not result or len(result.strip()) == 0:
                 logger.warning("LLM returned empty response for fridge search")
@@ -330,6 +425,14 @@ Find matching recipes{" and suggest a new simple recipe" if search_online else "
                 "ai_recipe_suggestion": ai_result.get("ai_suggestion")
             }
 
+        except HTTPException as e:
+            detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}
+            return {
+                "status": "error",
+                "error": detail.get("message") or str(e.detail),
+                "error_code": detail.get("error"),
+                "upgrade_required": detail.get("upgrade_required", False),
+            }
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse fridge search JSON: {e}")
             return {
@@ -347,3 +450,30 @@ Find matching recipes{" and suggest a new simple recipe" if search_online else "
             }
 
     return asyncio.run(_process())
+
+
+# ---------------------------------------------------------------------------
+# Scheduled reminders (Celery Beat)
+# ---------------------------------------------------------------------------
+
+@app.task(name='workers.tasks.run_reminder_sweep')
+def run_reminder_sweep() -> dict:
+    """Periodic sweep for meal / shopping / weekly-plan reminders."""
+    import asyncio
+    from services.reminders import run_all_reminder_sweeps
+
+    return asyncio.run(run_all_reminder_sweeps())
+
+
+@app.task(name='workers.tasks.sync_uk_open_prices_task')
+def sync_uk_open_prices_task(force: bool = False) -> dict:
+    """
+    Refresh the local UK Open Prices (GBP) catalog for offline cost estimates.
+    Scheduled every 12h by Celery Beat; safe to invoke manually.
+    """
+    import asyncio
+    from services.uk_open_prices import sync_uk_open_prices
+
+    result = asyncio.run(sync_uk_open_prices(force=force))
+    logger.info("UK Open Prices sync task finished: %s", result)
+    return result

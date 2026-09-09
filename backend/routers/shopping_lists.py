@@ -5,10 +5,17 @@ from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile, File
 from models import ShoppingListCreate, ShoppingListResponse, ShoppingItem, ShoppingItemCreate, ShoppingItemUpdate
 from dependencies import (
     get_current_user, shopping_list_repository, recipe_repository,
-    pantry_repository, call_llm_with_image, clean_llm_json,
-    STAPLE_INGREDIENTS
+    pantry_repository, meal_plan_repository, call_llm_with_image, clean_llm_json,
+    STAPLE_INGREDIENTS, aisle_override_repository,
 )
-from models import GroceryGenerateRequest, GroceryGenerateResponse
+from utils.ai_quota import require_ai_quota, consume_ai_quota, is_premium_user
+from utils.grocery_aisles import assign_aisles, categorize_grocery_item, AISLE_NAMES, aisle_sort_order
+from models import (
+    GroceryGenerateRequest,
+    GroceryGenerateResponse,
+    FromMealPlanRequest,
+    FromMealPlanResponse,
+)
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
 from utils.security import sanitize_error_message
@@ -40,6 +47,21 @@ class ReceiptMatchResult(BaseModel):
     item_index: Optional[int] = None
     confidence: str  # "high", "medium", "low"
     auto_checked: bool = False
+
+
+class SetItemAisleRequest(BaseModel):
+    aisle: str
+    remember: Optional[bool] = True  # teach aisle for future lists
+
+
+class RemoveRecipeRequest(BaseModel):
+    recipe_id: Optional[str] = None
+    recipe_name: Optional[str] = None
+
+
+class MarkStapleRequest(BaseModel):
+    remove_from_list: Optional[bool] = True
+
 
 router = APIRouter(prefix="/shopping-lists", tags=["Shopping Lists"])
 
@@ -107,6 +129,34 @@ async def get_shopping_lists(
         lists = lists[:limit]
 
     return [ShoppingListResponse(**l) for l in lists]
+
+
+@router.get("/aisles")
+async def list_grocery_aisles(user: dict = Depends(get_current_user)):
+    """Available grocery aisle names for teach-aisle UI."""
+    return {"aisles": AISLE_NAMES}
+
+
+@router.get("/aisle-overrides")
+async def get_aisle_overrides(user: dict = Depends(get_current_user)):
+    household_id = user.get("household_id") or user["id"]
+    overrides = await aisle_override_repository.get_map_for_household(household_id)
+    return {"overrides": overrides}
+
+
+@router.put("/aisle-overrides")
+async def set_aisle_override(
+    data: SetItemAisleRequest,
+    ingredient_name: str = Query(...),
+    user: dict = Depends(get_current_user),
+):
+    """Remember aisle for an ingredient name (household-scoped)."""
+    if data.aisle not in AISLE_NAMES:
+        raise HTTPException(status_code=400, detail=f"Unknown aisle. Choose one of: {', '.join(AISLE_NAMES)}")
+    household_id = user.get("household_id") or user["id"]
+    key = normalize_ingredient(ingredient_name)
+    row = await aisle_override_repository.upsert(household_id, key, data.aisle)
+    return row
 
 
 @router.get("/{list_id}", response_model=ShoppingListResponse)
@@ -340,33 +390,22 @@ async def delete_shopping_item(
 
 @router.post("/from-recipes")
 async def generate_shopping_list_from_recipes(recipe_ids: List[str], user: dict = Depends(get_current_user)):
-    """Generate a shopping list from selected recipes"""
-    recipes = await recipe_repository.find_by_ids(recipe_ids)
-
-    items = []
-    for recipe in recipes:
-        for ing in recipe.get("ingredients", []):
-            # Try to parse amount as float for quantity field
-            amount_str = ing.get("amount", "1")
-            try:
-                quantity = float(amount_str) if amount_str else 1.0
-            except (ValueError, TypeError):
-                quantity = 1.0
-
-            items.append({
-                "id": str(uuid.uuid4()),
-                "name": ing["name"],
-                "quantity": quantity,
-                "amount": amount_str,  # Keep legacy field for backwards compat
-                "unit": ing.get("unit", ""),
-                "checked": False,
-                "recipe_id": recipe["id"],
-                "recipe_name": recipe.get("title")
-            })
-
+    """Generate a shopping list from selected recipes (merged + aisle-sorted)."""
+    generated = await generate_grocery_list(
+        GroceryGenerateRequest(
+            recipe_ids=recipe_ids,
+            exclude_pantry=True,
+            combine_quantities=True,
+            assign_aisles=True,
+            keep_pantry_items=True,
+        ),
+        user,
+    )
     list_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     household_id = user.get("household_id") or user["id"]
+    items = [item.model_dump() for item in generated.items]
+    items = ensure_item_ids(items)
 
     list_doc = {
         "id": list_id,
@@ -374,19 +413,108 @@ async def generate_shopping_list_from_recipes(recipe_ids: List[str], user: dict 
         "items": items,
         "household_id": household_id,
         "created_at": now,
-        "updated_at": now
+        "updated_at": now,
     }
     await shopping_list_repository.create(list_doc)
-
-    # Broadcast to household members
     await ws_manager.broadcast_to_household_or_user(
         user_id=user["id"],
         household_id=user.get("household_id"),
         event_type=EventType.SHOPPING_LIST_CREATED,
-        data=list_doc
+        data=list_doc,
+    )
+    return ShoppingListResponse(**list_doc)
+
+
+@router.post("/from-meal-plan", response_model=FromMealPlanResponse)
+async def shopping_list_from_meal_plan(
+    data: FromMealPlanRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Shop this plan — Honeydew / Plan-to-Eat style.
+
+    Pull recipes from the meal plan date range, merge quantities, assign aisles,
+    mark pantry matches for review, optionally save the list.
+    """
+    household_id = user.get("household_id") or user["id"]
+    plans = await meal_plan_repository.find_by_household(
+        household_id, data.start_date, data.end_date
+    )
+    if data.meal_types:
+        wanted = {m.lower() for m in data.meal_types}
+        plans = [p for p in plans if (p.get("meal_type") or "").lower() in wanted]
+
+    recipe_ids = []
+    seen = set()
+    for plan in plans:
+        # Skip note/leftover placeholders — they have nothing to shop
+        entry_type = (plan.get("entry_type") or "recipe").lower()
+        if entry_type != "recipe":
+            continue
+        rid = plan.get("recipe_id")
+        if rid and rid not in seen:
+            seen.add(rid)
+            recipe_ids.append(rid)
+
+    if not recipe_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No recipes on the meal plan for that date range. Add meals first.",
+        )
+
+    list_name = data.list_name or f"Week of {data.start_date}"
+    generated = await generate_grocery_list(
+        GroceryGenerateRequest(
+            recipe_ids=recipe_ids,
+            exclude_pantry=data.exclude_pantry,
+            combine_quantities=data.combine_quantities,
+            assign_aisles=data.assign_aisles,
+            keep_pantry_items=data.keep_pantry_items,
+        ),
+        user,
     )
 
-    return ShoppingListResponse(**list_doc)
+    saved_list = None
+    if data.save:
+        list_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        items = [item.model_dump() for item in generated.items]
+        # Default shop list: skip pantry staples (still saved with in_pantry for reference)
+        if data.exclude_pantry and data.keep_pantry_items:
+            items = [i for i in items if not i.get("in_pantry")]
+        items = ensure_item_ids(items)
+        list_doc = {
+            "id": list_id,
+            "name": list_name,
+            "items": items,
+            "household_id": household_id,
+            "created_at": now,
+            "updated_at": now,
+        }
+        await shopping_list_repository.create(list_doc)
+        await ws_manager.broadcast_to_household_or_user(
+            user_id=user["id"],
+            household_id=user.get("household_id"),
+            event_type=EventType.SHOPPING_LIST_CREATED,
+            data=list_doc,
+        )
+        await log_action(
+            user, "shopping_list_from_meal_plan", None,
+            target_type="shopping_list",
+            target_id=list_id,
+            details={"meal_count": len(plans), "recipe_count": len(recipe_ids)},
+        )
+        saved_list = ShoppingListResponse(**list_doc)
+
+    return FromMealPlanResponse(
+        list=saved_list,
+        items=generated.items,
+        excluded_count=generated.excluded_count,
+        excluded_items=generated.excluded_items,
+        recipes_used=generated.recipes_used or [],
+        meal_count=len(plans),
+        list_name=list_name,
+    )
 
 
 @router.patch("/{list_id}/items/{item_index}/check")
@@ -425,12 +553,215 @@ async def check_shopping_item(
         data={
             "list_id": list_id,
             "item_index": item_index,
+            "item_id": items[item_index].get("id"),
             "checked": checked,
-            "updated_by": user["id"]
+            "updated_by": user["id"],
+            "updated_by_name": user.get("name"),
         }
     )
 
-    return {"message": "Item updated", "checked": checked}
+    return {
+        "message": "Item updated",
+        "checked": checked,
+        "list_id": list_id,
+        "item_index": item_index,
+        "item_id": items[item_index].get("id"),
+    }
+
+
+@router.patch("/{list_id}/items/{item_index}/aisle")
+async def set_shopping_item_aisle(
+    list_id: str,
+    item_index: int,
+    data: SetItemAisleRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Move an item to another aisle; optionally remember for future lists."""
+    if data.aisle not in AISLE_NAMES:
+        raise HTTPException(status_code=400, detail=f"Unknown aisle. Choose one of: {', '.join(AISLE_NAMES)}")
+
+    shopping_list = await shopping_list_repository.find_by_id(list_id)
+    if not shopping_list:
+        raise HTTPException(status_code=404, detail="Shopping list not found")
+
+    household_id = user.get("household_id") or user["id"]
+    if shopping_list.get("household_id") != household_id and shopping_list.get("household_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    items = shopping_list.get("items", [])
+    if item_index < 0 or item_index >= len(items):
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    items[item_index]["category"] = data.aisle
+    items[item_index]["sort_order"] = aisle_sort_order(data.aisle)
+    items = assign_aisles(items)  # re-sort after move
+    now = datetime.now(timezone.utc).isoformat()
+
+    await shopping_list_repository.update_list(list_id, {
+        "items": items,
+        "updated_at": now,
+    })
+
+    if data.remember:
+        key = normalize_ingredient(items[item_index].get("name", ""))
+        if key:
+            await aisle_override_repository.upsert(household_id, key, data.aisle)
+
+    await ws_manager.broadcast_to_household_or_user(
+        user_id=user["id"],
+        household_id=user.get("household_id"),
+        event_type=EventType.SHOPPING_LIST_UPDATED,
+        data={"id": list_id, "items": items, "updated_at": now},
+    )
+
+    return ShoppingListResponse(**{**shopping_list, "items": items, "updated_at": now})
+
+
+@router.post("/{list_id}/remove-recipe")
+async def remove_recipe_from_list(
+    list_id: str,
+    data: RemoveRecipeRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Drop all items that came from a given recipe (Honeydew-style)."""
+    if not data.recipe_id and not data.recipe_name:
+        raise HTTPException(status_code=400, detail="recipe_id or recipe_name required")
+
+    shopping_list = await shopping_list_repository.find_by_id(list_id)
+    if not shopping_list:
+        raise HTTPException(status_code=404, detail="Shopping list not found")
+
+    household_id = user.get("household_id") or user["id"]
+    if shopping_list.get("household_id") != household_id and shopping_list.get("household_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    items = shopping_list.get("items", [])
+    kept = []
+    removed = 0
+    for item in items:
+        rids = item.get("recipe_ids") or ([] if not item.get("recipe_id") else [item.get("recipe_id")])
+        names = item.get("recipe_names") or ([] if not item.get("recipe_name") else [item.get("recipe_name")])
+        match_id = data.recipe_id and data.recipe_id in rids
+        match_name = data.recipe_name and data.recipe_name in names
+        # Also match sole recipe_id / recipe_name fields
+        if not match_id and data.recipe_id and item.get("recipe_id") == data.recipe_id:
+            match_id = True
+        if not match_name and data.recipe_name and item.get("recipe_name") == data.recipe_name:
+            match_name = True
+
+        if match_id or match_name:
+            # If item was merged from multiple recipes, just drop this provenance
+            if data.recipe_id and len(rids) > 1:
+                new_ids = [r for r in rids if r != data.recipe_id]
+                new_names = [n for i, n in enumerate(names) if i < len(rids) and rids[i] != data.recipe_id]
+                # Fallback: filter names by title if parallel lists diverge
+                if data.recipe_name:
+                    new_names = [n for n in names if n != data.recipe_name]
+                item = {
+                    **item,
+                    "recipe_ids": new_ids,
+                    "recipe_names": new_names,
+                    "recipe_id": new_ids[0] if new_ids else None,
+                    "recipe_name": new_names[0] if new_names else None,
+                }
+                kept.append(item)
+            else:
+                removed += 1
+        else:
+            kept.append(item)
+
+    now = datetime.now(timezone.utc).isoformat()
+    await shopping_list_repository.update_list(list_id, {"items": kept, "updated_at": now})
+    await ws_manager.broadcast_to_household_or_user(
+        user_id=user["id"],
+        household_id=user.get("household_id"),
+        event_type=EventType.SHOPPING_LIST_UPDATED,
+        data={"id": list_id, "items": kept, "updated_at": now},
+    )
+    return {
+        "message": f"Removed {removed} item(s)",
+        "removed": removed,
+        "list": ShoppingListResponse(**{**shopping_list, "items": kept, "updated_at": now}),
+    }
+
+
+@router.post("/{list_id}/items/{item_index}/mark-staple")
+async def mark_item_as_staple(
+    list_id: str,
+    item_index: int,
+    data: MarkStapleRequest = MarkStapleRequest(),
+    user: dict = Depends(get_current_user),
+):
+    """Treat this grocery item as a pantry staple (always on hand)."""
+    shopping_list = await shopping_list_repository.find_by_id(list_id)
+    if not shopping_list:
+        raise HTTPException(status_code=404, detail="Shopping list not found")
+
+    household_id = user.get("household_id") or user["id"]
+    if shopping_list.get("household_id") != household_id and shopping_list.get("household_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    items = shopping_list.get("items", [])
+    if item_index < 0 or item_index >= len(items):
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item = items[item_index]
+    name = (item.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Item has no name")
+
+    now = datetime.now(timezone.utc).isoformat()
+    # Upsert pantry staple by normalized name
+    existing = await pantry_repository.find_by_household_or_user(
+        user_id=user["id"],
+        household_id=user.get("household_id"),
+    )
+    matched = None
+    target_key = normalize_ingredient(name)
+    for p in existing or []:
+        if normalize_ingredient(p.get("name", "")) == target_key:
+            matched = p
+            break
+
+    if matched:
+        await pantry_repository.update_item(matched["id"], {
+            "is_staple": True,
+            "updated_at": now,
+        })
+        pantry_id = matched["id"]
+    else:
+        pantry_id = str(uuid.uuid4())
+        await pantry_repository.create({
+            "id": pantry_id,
+            "user_id": user["id"],
+            "household_id": user.get("household_id"),
+            "name": name,
+            "quantity": None,
+            "unit": item.get("unit") or "",
+            "category": "Other",
+            "expiry_date": None,
+            "notes": "Marked staple from shopping list",
+            "is_staple": True,
+            "created_at": now,
+            "updated_at": now,
+        })
+
+    if data.remove_from_list:
+        items = [it for i, it in enumerate(items) if i != item_index]
+        await shopping_list_repository.update_list(list_id, {"items": items, "updated_at": now})
+        await ws_manager.broadcast_to_household_or_user(
+            user_id=user["id"],
+            household_id=user.get("household_id"),
+            event_type=EventType.SHOPPING_LIST_UPDATED,
+            data={"id": list_id, "items": items, "updated_at": now},
+        )
+
+    return {
+        "message": "Marked as staple",
+        "pantry_id": pantry_id,
+        "list": ShoppingListResponse(**{**shopping_list, "items": items, "updated_at": now})
+        if data.remove_from_list else None,
+    }
 
 
 # =============================================================================
@@ -547,7 +878,8 @@ Return ONLY the JSON, no other text."""
     user_prompt = "Extract all purchased items from this receipt image."
 
     try:
-        # Call vision LLM
+        # Receipt OCR counts against free AI quota
+        await require_ai_quota(user)
         result = await call_llm_with_image(
             request.app.state.http_client,
             system_prompt,
@@ -555,6 +887,8 @@ Return ONLY the JSON, no other text."""
             image_base64,
             user["id"]
         )
+        if not is_premium_user(user):
+            await consume_ai_quota(user["id"])
 
         # Parse result
         cleaned = clean_llm_json(result)
@@ -732,30 +1066,24 @@ def combine_quantities(items: list) -> list:
         key = normalize_ingredient(item["name"])
 
         if key in combined:
-            # Same unit - add quantities
             existing = combined[key]
-            if existing["unit"].lower() == item.get("unit", "").lower():
+            if (existing.get("unit") or "").lower() == (item.get("unit") or "").lower():
                 existing_qty = parse_quantity(existing["amount"])
                 new_qty = parse_quantity(item.get("amount", "1"))
                 total = existing_qty + new_qty
-                existing["amount"] = str(round(total, 2))
+                existing["amount"] = str(round(total, 2) if total % 1 else int(total))
                 existing["quantity"] = round(total, 2)
             else:
-                # Different units - keep separate notation
-                existing["amount"] = f"{existing['amount']}, {item.get('amount', '')} {item.get('unit', '')}".strip()
+                existing["amount"] = (
+                    f"{existing['amount']} {existing.get('unit', '')}, "
+                    f"{item.get('amount', '')} {item.get('unit', '')}"
+                ).strip()
 
-            # Track recipe IDs
-            if "recipe_ids" not in existing:
-                existing["recipe_ids"] = []
-            if item.get("recipe_id"):
+            if item.get("recipe_id") and item["recipe_id"] not in existing["recipe_ids"]:
                 existing["recipe_ids"].append(item["recipe_id"])
         else:
             amount_str = item.get("amount", "1")
-            try:
-                quantity = float(amount_str) if amount_str else 1.0
-            except (ValueError, TypeError):
-                quantity = 1.0
-
+            quantity = parse_quantity(amount_str)
             combined[key] = {
                 "id": str(uuid.uuid4()),
                 "name": item["name"],
@@ -764,7 +1092,7 @@ def combine_quantities(items: list) -> list:
                 "unit": item.get("unit", ""),
                 "checked": False,
                 "recipe_id": item.get("recipe_id"),
-                "recipe_ids": [item["recipe_id"]] if item.get("recipe_id") else []
+                "recipe_ids": [item["recipe_id"]] if item.get("recipe_id") else [],
             }
 
     return list(combined.values())
@@ -776,93 +1104,109 @@ async def generate_grocery_list(
     user: dict = Depends(get_current_user)
 ):
     """
-    Generate a smart grocery list from recipes, excluding pantry items.
+    Generate a smart grocery list from recipes.
 
-    Features:
-    - Excludes items already in pantry
-    - Combines duplicate ingredients with quantity aggregation
-    - Returns excluded items for user reference
+    - Merges duplicate ingredients
+    - Assigns store aisles
+    - Marks pantry matches (keep for review, or drop)
     """
     if not data.recipe_ids:
         raise HTTPException(status_code=400, detail="At least one recipe ID is required")
 
-    # Get recipes
     recipes = await recipe_repository.find_by_ids(data.recipe_ids)
     if not recipes:
         raise HTTPException(status_code=404, detail="No recipes found")
 
-    # Collect all ingredients
+    recipe_titles = {r["id"]: r.get("title") or "Recipe" for r in recipes}
+
     all_items = []
     for recipe in recipes:
         for ing in recipe.get("ingredients", []):
             if isinstance(ing, dict):
+                name = (ing.get("name") or "").strip()
+                if not name:
+                    continue
                 all_items.append({
-                    "name": ing.get("name", ""),
-                    "amount": ing.get("amount", "1"),
-                    "unit": ing.get("unit", ""),
-                    "recipe_id": recipe["id"]
+                    "name": name,
+                    "amount": ing.get("amount", "1") or "1",
+                    "unit": ing.get("unit", "") or "",
+                    "recipe_id": recipe["id"],
+                    "recipe_name": recipe.get("title"),
                 })
-            elif isinstance(ing, str):
+            elif isinstance(ing, str) and ing.strip():
                 all_items.append({
-                    "name": ing,
+                    "name": ing.strip(),
                     "amount": "1",
                     "unit": "",
-                    "recipe_id": recipe["id"]
+                    "recipe_id": recipe["id"],
+                    "recipe_name": recipe.get("title"),
                 })
 
-    # Get pantry items if excluding
-    excluded_items = []
-    excluded_count = 0
+    household_id = user.get("household_id") or user["id"]
+    aisle_overrides = await aisle_override_repository.get_map_for_household(household_id)
 
+    pantry_names: set[str] = set()
     if data.exclude_pantry:
         pantry_items = await pantry_repository.find_by_household_or_user(
             user_id=user["id"],
-            household_id=user.get("household_id")
+            household_id=user.get("household_id"),
         )
-        pantry_names = {normalize_ingredient(p["name"]) for p in pantry_items}
+        pantry_names = {normalize_ingredient(p["name"]) for p in pantry_items if p.get("name")}
 
-        # Filter out pantry items
-        filtered_items = []
-        for item in all_items:
-            normalized = normalize_ingredient(item["name"])
-            if normalized in pantry_names:
-                excluded_items.append(item["name"])
-                excluded_count += 1
-            else:
-                filtered_items.append(item)
-        all_items = filtered_items
-
-    # Combine quantities if requested
     if data.combine_quantities:
         all_items = combine_quantities(all_items)
+        # Restore primary recipe_name after merge
+        for item in all_items:
+            rids = item.get("recipe_ids") or ([item["recipe_id"]] if item.get("recipe_id") else [])
+            item["recipe_ids"] = rids
+            item["recipe_names"] = [recipe_titles[r] for r in rids if r in recipe_titles]
+            if rids:
+                item["recipe_id"] = rids[0]
+                item["recipe_name"] = recipe_titles.get(rids[0])
 
-    # Convert to ShoppingItem format
-    shopping_items = []
+    excluded_items = []
+    shopping_dicts = []
     for item in all_items:
-        # Try to parse amount as float
         amount_str = str(item.get("amount", "1"))
         try:
-            quantity = float(amount_str) if amount_str else 1.0
+            quantity = float(amount_str) if amount_str and amount_str.replace(".", "", 1).isdigit() else parse_quantity(amount_str)
         except (ValueError, TypeError):
-            quantity = 1.0
+            quantity = parse_quantity(amount_str)
 
-        shopping_items.append(ShoppingItem(
-            id=str(uuid.uuid4()),
-            name=item["name"],
-            quantity=quantity,
-            amount=amount_str,
-            unit=item.get("unit", ""),
-            checked=False,
-            recipe_id=item.get("recipe_id")
-        ))
+        in_pantry = bool(
+            data.exclude_pantry and normalize_ingredient(item["name"]) in pantry_names
+        )
+        if in_pantry:
+            excluded_items.append(item["name"])
+            if not data.keep_pantry_items:
+                continue
 
-    # Remove duplicates from excluded list
-    excluded_items = list(set(excluded_items))
+        shopping_dicts.append({
+            "id": item.get("id") or str(uuid.uuid4()),
+            "name": item["name"],
+            "quantity": quantity,
+            "amount": amount_str,
+            "unit": item.get("unit", ""),
+            "checked": False,
+            "recipe_id": item.get("recipe_id"),
+            "recipe_name": item.get("recipe_name"),
+            "recipe_ids": item.get("recipe_ids") or ([item["recipe_id"]] if item.get("recipe_id") else []),
+            "recipe_names": item.get("recipe_names") or [],
+            "in_pantry": in_pantry,
+            "category": categorize_grocery_item(item["name"], aisle_overrides),
+        })
+
+    if data.assign_aisles:
+        shopping_dicts = assign_aisles(shopping_dicts, aisle_overrides)
+
+    shopping_items = [ShoppingItem(**row) for row in shopping_dicts]
+    excluded_items = sorted(set(excluded_items))
 
     return GroceryGenerateResponse(
         items=shopping_items,
-        excluded_count=excluded_count,
-        excluded_items=excluded_items
+        excluded_count=len(excluded_items),
+        excluded_items=excluded_items,
+        recipes_used=[{"id": r["id"], "title": r.get("title")} for r in recipes],
     )
 
 
