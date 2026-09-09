@@ -103,7 +103,11 @@ const ReviewForm = ({ recipeId, existingReview, onSubmit, onCancel }) => {
       }
       onSubmit?.();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Could not submit review (E-RR001)');
+      const detail = err.response?.data?.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((d) => d.msg || d).join('; ')
+        : (typeof detail === 'string' ? detail : null);
+      toast.error(message || 'Could not submit review (E-RR001)');
     } finally {
       setSubmitting(false);
     }

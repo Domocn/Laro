@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from './ui/button';
 import { nutritionApi } from '../lib/api';
@@ -18,7 +18,7 @@ import {
 import { toast } from 'sonner';
 
 const NutritionBar = ({ label, value, unit, color, icon: Icon, max = 100 }) => {
-  const percentage = Math.min((value / max) * 100, 100);
+  const percentage = Math.min(((value || 0) / max) * 100, 100);
   
   return (
     <div className="space-y-1">
@@ -27,7 +27,7 @@ const NutritionBar = ({ label, value, unit, color, icon: Icon, max = 100 }) => {
           <Icon className={`w-4 h-4 ${color}`} />
           {label}
         </span>
-        <span className="font-medium">{value}{unit}</span>
+        <span className="font-medium">{value ?? 0}{unit}</span>
       </div>
       <div className="h-2 bg-muted rounded-full overflow-hidden">
         <motion.div
@@ -41,14 +41,71 @@ const NutritionBar = ({ label, value, unit, color, icon: Icon, max = 100 }) => {
   );
 };
 
-export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSave }) => {
-  const [nutrition, setNutrition] = useState(null);
+const CORE_MACRO_KEYS = ['calories', 'protein', 'carbs', 'fat'];
+
+/** Build UI shape from recipe.nutrition (flat macros saved or API-estimated). */
+function fromSavedNutrition(saved, servings = 1) {
+  if (!saved) return null;
+  const hasCore = CORE_MACRO_KEYS.some((k) => saved[k] != null && saved[k] !== '');
+  if (!hasCore) return null;
+  const per_serving = {
+    calories: Number(saved.calories) || 0,
+    protein: Number(saved.protein) || 0,
+    carbs: Number(saved.carbs) || 0,
+    fat: Number(saved.fat) || 0,
+    fiber: Number(saved.fiber) || 0,
+  };
+  const estimated =
+    !!saved.nutrition_estimated ||
+    saved.nutrition_source === 'estimated' ||
+    saved.nutrition_source === 'mixed';
+  return {
+    source: estimated ? 'estimated' : 'saved',
+    per_serving,
+    totals: Object.fromEntries(
+      Object.entries(per_serving).map(([k, v]) => [k, Math.round(v * servings * 10) / 10])
+    ),
+    unknown_ingredients: [],
+    servings,
+  };
+}
+
+export const NutritionCalculator = ({
+  recipeId,
+  ingredients,
+  servings = 1,
+  savedNutrition,
+  onSave,
+}) => {
+  const seeded = useMemo(
+    () => fromSavedNutrition(savedNutrition, servings),
+    [savedNutrition, servings]
+  );
+  const [nutrition, setNutrition] = useState(seeded);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState(null);
 
-  const calculateNutrition = async () => {
+  useEffect(() => {
+    // Prefer macros already on the recipe (saved or API-estimated from ingredients)
+    if (seeded) {
+      setNutrition(seeded);
+      setError(null);
+      return;
+    }
+    // No macros yet — estimate once from ingredients so the section is not blank
+    if (!ingredients?.length) return;
+    calculateNutrition({ force: true });
+    // Only re-run when seed/recipe identity changes — parent often remaps ingredients
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seeded, recipeId, servings]);
+
+  const calculateNutrition = async ({ force = false } = {}) => {
+    if (!force && seeded) {
+      setNutrition(seeded);
+      return;
+    }
     if (!ingredients || ingredients.length === 0) {
       setError('No ingredients to calculate');
       return;
@@ -60,11 +117,12 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
     try {
       let res;
       if (recipeId) {
-        res = await nutritionApi.getRecipeNutrition(recipeId);
+        // recalculate=1 bypasses saved macros and uses the ingredient table
+        res = await nutritionApi.getRecipeNutrition(recipeId, { recalculate: true });
       } else {
         res = await nutritionApi.calculate(ingredients, servings);
       }
-      setNutrition(res.data);
+      setNutrition({ ...res.data, source: res.data.source || 'estimated' });
     } catch (err) {
       setError('Failed to calculate nutrition');
       console.error(err);
@@ -92,14 +150,19 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
     return null;
   }
 
+  const perServing = nutrition?.per_serving;
+  const showFiber = perServing && (perServing.fiber != null && Number(perServing.fiber) > 0);
+
   return (
     <div className="bg-white dark:bg-card rounded-2xl border border-border/60 overflow-hidden" data-testid="nutrition-calculator">
       {/* Header */}
       <button
         onClick={() => {
-          setExpanded(!expanded);
-          if (!expanded && !nutrition) {
-            calculateNutrition();
+          const next = !expanded;
+          setExpanded(next);
+          if (next && !nutrition) {
+            if (seeded) setNutrition(seeded);
+            else calculateNutrition({ force: true });
           }
         }}
         className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
@@ -107,9 +170,9 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
         <div className="flex items-center gap-2">
           <Flame className="w-5 h-5 text-coral" />
           <span className="font-medium">Nutrition Facts</span>
-          {nutrition && (
+          {perServing && (
             <span className="text-sm text-muted-foreground">
-              ({nutrition.per_serving.calories} cal/serving)
+              ({perServing.calories} cal/serving)
             </span>
           )}
         </div>
@@ -139,20 +202,26 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
                   <AlertCircle className="w-5 h-5 mr-2" />
                   {error}
                 </div>
-              ) : nutrition ? (
+              ) : nutrition && perServing ? (
                 <div className="space-y-4 pt-4">
                   {/* Per Serving */}
                   <div className="text-center pb-3 border-b border-border/60">
                     <p className="text-sm text-muted-foreground">Per serving ({servings} servings total)</p>
-                    <p className="text-3xl font-bold text-coral">{nutrition.per_serving.calories}</p>
+                    <p className="text-3xl font-bold text-coral">{perServing.calories}</p>
                     <p className="text-sm text-muted-foreground">calories</p>
+                    {nutrition.source === 'saved' && (
+                      <p className="text-xs text-muted-foreground mt-1">From recipe macros</p>
+                    )}
+                    {nutrition.source === 'estimated' && (
+                      <p className="text-xs text-muted-foreground mt-1">Estimated from ingredients</p>
+                    )}
                   </div>
 
                   {/* Macros */}
                   <div className="space-y-3">
                     <NutritionBar
                       label="Protein"
-                      value={nutrition.per_serving.protein}
+                      value={perServing.protein}
                       unit="g"
                       color="text-coral"
                       icon={Beef}
@@ -160,7 +229,7 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
                     />
                     <NutritionBar
                       label="Carbs"
-                      value={nutrition.per_serving.carbs}
+                      value={perServing.carbs}
                       unit="g"
                       color="text-tangerine"
                       icon={Wheat}
@@ -168,20 +237,22 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
                     />
                     <NutritionBar
                       label="Fat"
-                      value={nutrition.per_serving.fat}
+                      value={perServing.fat}
                       unit="g"
                       color="text-laro"
                       icon={Droplet}
                       max={50}
                     />
-                    <NutritionBar
-                      label="Fiber"
-                      value={nutrition.per_serving.fiber}
-                      unit="g"
-                      color="text-teal"
-                      icon={Leaf}
-                      max={25}
-                    />
+                    {showFiber && (
+                      <NutritionBar
+                        label="Fiber"
+                        value={perServing.fiber}
+                        unit="g"
+                        color="text-teal"
+                        icon={Leaf}
+                        max={25}
+                      />
+                    )}
                   </div>
 
                   {/* Unknown Ingredients */}
@@ -203,13 +274,13 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={calculateNutrition}
+                      onClick={() => calculateNutrition({ force: true })}
                       className="flex-1 rounded-full"
                     >
                       <Calculator className="w-4 h-4 mr-2" />
                       Recalculate
                     </Button>
-                    {recipeId && (
+                    {recipeId && nutrition.source === 'estimated' && (
                       <Button
                         size="sm"
                         onClick={handleSave}
@@ -229,7 +300,7 @@ export const NutritionCalculator = ({ recipeId, ingredients, servings = 1, onSav
               ) : (
                 <div className="py-8 text-center">
                   <Button
-                    onClick={calculateNutrition}
+                    onClick={() => calculateNutrition({ force: true })}
                     className="rounded-full bg-laro hover:bg-laro-dark"
                   >
                     <Calculator className="w-4 h-4 mr-2" />

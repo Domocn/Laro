@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Laro Cook Mode · Chromecast</title>
+  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  <style>
+    :root {
+      --sage: #7bc89c;
+      --sage-dark: #5aa87c;
+      --ink: #f7f4ef;
+      --muted: rgba(247, 244, 239, 0.72);
+      --bg0: #1a2420;
+      --bg1: #24332c;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: radial-gradient(120% 80% at 50% 0%, #2f463c 0%, var(--bg0) 55%, #121816 100%);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+    }
+    #app {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 6vh 7vw 5vh;
+    }
+    .brand {
+      font-size: clamp(1.1rem, 2.2vw, 1.6rem);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--sage);
+      font-weight: 700;
+    }
+    .idle {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 1rem;
+    }
+    .idle h1 {
+      margin: 0;
+      font-size: clamp(2.4rem, 6vw, 4.5rem);
+      font-weight: 650;
+    }
+    .idle p {
+      margin: 0;
+      max-width: 28em;
+      color: var(--muted);
+      font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+      line-height: 1.4;
+    }
+    .cook { flex: 1; display: none; flex-direction: column; min-height: 0; }
+    .cook.active { display: flex; }
+    .title {
+      margin: 1.2rem 0 0.4rem;
+      font-size: clamp(1.4rem, 3vw, 2.2rem);
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .progress {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      margin-bottom: 2.5vh;
+    }
+    .progress .step-num {
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      font-weight: 700;
+      color: var(--sage);
+    }
+    .progress .of {
+      font-size: clamp(1.1rem, 2.2vw, 1.5rem);
+      color: var(--muted);
+    }
+    .bar {
+      height: 0.45rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      overflow: hidden;
+      margin-bottom: 3vh;
+    }
+    .bar > span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--sage-dark), var(--sage));
+      transition: width 0.35s ease;
+    }
+    .instruction {
+      flex: 1;
+      font-size: clamp(2rem, 5.2vw, 4.2rem);
+      line-height: 1.25;
+      font-weight: 560;
+      max-width: 22em;
+      overflow: auto;
+    }
+    .hint {
+      margin-top: 2vh;
+      color: var(--muted);
+      font-size: clamp(1rem, 2vw, 1.35rem);
+    }
+    .hint strong { color: var(--sage); font-weight: 650; }
+    .timer {
+      display: none;
+      margin-top: 2vh;
+      padding: 0.7rem 1.2rem;
+      border-radius: 999px;
+      background: rgba(123, 200, 156, 0.16);
+      border: 1px solid rgba(123, 200, 156, 0.35);
+      font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+      width: fit-content;
+    }
+    .timer.on { display: inline-flex; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="brand">Laro</div>
+
+    <div id="idle" class="idle">
+      <h1>Ready to cook</h1>
+      <p>Open Cook Mode on your phone or computer, tap Cast, then say <strong style="color:var(--sage)">“Next”</strong> to move through the steps on this TV.</p>
+    </div>
+
+    <div id="cook" class="cook">
+      <div id="recipeTitle" class="title"></div>
+      <div class="progress">
+        <span class="step-num" id="stepLabel">Step 1</span>
+        <span class="of" id="stepOf">of 1</span>
+      </div>
+      <div class="bar"><span id="barFill"></span></div>
+      <div id="instruction" class="instruction"></div>
+      <div id="timer" class="timer"></div>
+      <p class="hint">On your phone say <strong>“Next”</strong>, <strong>“Back”</strong>, or <strong>“Repeat”</strong></p>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var NS = 'urn:x-cast:food.laro.cook';
+      var state = {
+        title: '',
+        steps: [],
+        stepIndex: 0,
+        timerLabel: ''
+      };
+
+      var idleEl = document.getElementById('idle');
+      var cookEl = document.getElementById('cook');
+      var titleEl = document.getElementById('recipeTitle');
+      var stepLabelEl = document.getElementById('stepLabel');
+      var stepOfEl = document.getElementById('stepOf');
+      var barFillEl = document.getElementById('barFill');
+      var instructionEl = document.getElementById('instruction');
+      var timerEl = document.getElementById('timer');
+
+      function render() {
+        var total = state.steps.length;
+        if (!total) {
+          idleEl.style.display = 'flex';
+          cookEl.classList.remove('active');
+          return;
+        }
+        idleEl.style.display = 'none';
+        cookEl.classList.add('active');
+        var idx = Math.max(0, Math.min(state.stepIndex, total - 1));
+        titleEl.textContent = state.title || '';
+        stepLabelEl.textContent = 'Step ' + (idx + 1);
+        stepOfEl.textContent = 'of ' + total;
+        barFillEl.style.width = (((idx + 1) / total) * 100) + '%';
+        instructionEl.textContent = state.steps[idx] || '';
+        if (state.timerLabel) {
+          timerEl.textContent = 'Timer · ' + state.timerLabel;
+          timerEl.classList.add('on');
+        } else {
+          timerEl.classList.remove('on');
+        }
+      }
+
+      function applyMessage(data) {
+        if (!data || typeof data !== 'object') return;
+        switch (data.type) {
+          case 'show':
+            state.title = data.title || '';
+            state.steps = Array.isArray(data.steps) ? data.steps : [];
+            state.stepIndex = typeof data.stepIndex === 'number' ? data.stepIndex : 0;
+            state.timerLabel = data.timerLabel || '';
+            break;
+          case 'set_step':
+            if (typeof data.stepIndex === 'number') state.stepIndex = data.stepIndex;
+            if (data.timerLabel !== undefined) state.timerLabel = data.timerLabel || '';
+            break;
+          case 'timer':
+            state.timerLabel = data.timerLabel || '';
+            break;
+          case 'clear':
+            state = { title: '', steps: [], stepIndex: 0, timerLabel: '' };
+            break;
+          default:
+            break;
+        }
+        render();
+      }
+
+      var context = cast.framework.CastReceiverContext.getInstance();
+      var options = new cast.framework.CastReceiverOptions();
+      options.disableIdleTimeout = true;
+      options.customNamespaces = {};
+      options.customNamespaces[NS] = cast.framework.system.MessageType.JSON;
+
+      context.addCustomMessageListener(NS, function (event) {
+        applyMessage(event.data);
+      });
+
+      context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, function () {
+        // Keep last step visible briefly; clear if no senders left
+        if (context.getSenders().length === 0) {
+          setTimeout(function () {
+            if (context.getSenders().length === 0) {
+              applyMessage({ type: 'clear' });
+            }
+          }, 15000);
+        }
+      });
+
+      context.start(options);
+      render();
+    })();
+  </script>
+</body>
+</html>

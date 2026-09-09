@@ -66,6 +66,9 @@ async def import_from_platform(data: ImportPlatformRequest, request: Request, us
                 imported.append(r)
 
         # Save imported recipes
+        from utils.subscription import assert_can_create_recipes
+        await assert_can_create_recipes(user, recipe_repository, len(imported))
+
         saved_count = 0
         for recipe in imported:
             recipe_id = str(uuid.uuid4())

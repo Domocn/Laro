@@ -1,21 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Cookie, X } from 'lucide-react';
 import { Button } from './ui/button';
+import { isPublicRecipeViewPath } from '../lib/publicRecipeView';
 
 const COOKIE_CONSENT_KEY = 'laro_cookie_consent';
 
 export const CookieConsent = () => {
+  const location = useLocation();
   const [visible, setVisible] = useState(false);
+  const onPublicRecipe = isPublicRecipeViewPath(location.pathname);
 
   useEffect(() => {
+    if (onPublicRecipe) {
+      setVisible(false);
+      return undefined;
+    }
     const consent = localStorage.getItem(COOKIE_CONSENT_KEY);
     if (!consent) {
       // Small delay so it doesn't flash on page load
       const timer = setTimeout(() => setVisible(true), 800);
       return () => clearTimeout(timer);
     }
-  }, []);
+    setVisible(false);
+    return undefined;
+  }, [onPublicRecipe]);
 
   const accept = () => {
     localStorage.setItem(COOKIE_CONSENT_KEY, 'accepted');
@@ -27,7 +36,7 @@ export const CookieConsent = () => {
     setVisible(false);
   };
 
-  if (!visible) return null;
+  if (!visible || onPublicRecipe) return null;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4 animate-in slide-in-from-bottom duration-500">

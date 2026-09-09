@@ -51,6 +51,7 @@ from .pantry_repository import (
     PANTRY_CATEGORIES,
     STAPLE_INGREDIENTS,
 )
+from .uk_open_price_repository import UkOpenPriceRepository, uk_open_price_repository
 
 __all__ = [
     "UserRepository",
@@ -91,4 +92,6 @@ __all__ = [
     "PantryRepository",
     "PANTRY_CATEGORIES",
     "STAPLE_INGREDIENTS",
+    "UkOpenPriceRepository",
+    "uk_open_price_repository",
 ]

@@ -28,8 +28,26 @@ build/
 # Logs
 *.log
 logs/
+*.jsonl
 
-# Secrets
+# Host-local runtime data (may contain user ids / URLs)
+backend/uploads/
+backend/uploads/**
+**/import-logs/
+
+# Secrets / private cloud material
 *.pem
 *.key
+*.p12
+*.jks
+*.keystore
 secrets/
+google-services.json
+*service-account*.json
+firebase-service-account.json
+yt-dlp-cookies.txt
+AGENTS.cloud.md
+DEPLOY.md
+HETZNER-DEPLOY.md
+Caddyfile
+docker-compose.production.yml

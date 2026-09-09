@@ -118,12 +118,23 @@ async def request_password_reset(data: PasswordResetRequest, background_tasks: B
         background_tasks.add_task(send_password_reset_email, user["email"], token)
         return {"message": "If the email exists, a reset link has been sent"}
     else:
-        # Development mode - return token directly
-        return {
-            "message": "Password reset token generated",
-            "token": token,
-            "note": "Email is disabled. In production, this token would be sent via email."
-        }
+        # Fail closed when email is not configured — never return tokens over the API.
+        # Dev recovery: set ALLOW_INSECURE_TOKEN_RESPONSE=true explicitly (local only).
+        allow_insecure = os.getenv("ALLOW_INSECURE_TOKEN_RESPONSE", "false").lower() == "true"
+        if allow_insecure and not (
+            os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("IS_CLOUD", "").lower() == "true"
+            or os.getenv("LARO_ENV", "").lower() == "production"
+        ):
+            return {
+                "message": "Password reset token generated (insecure local mode)",
+                "token": token,
+                "note": "Email is disabled. ALLOW_INSECURE_TOKEN_RESPONSE=true — local only.",
+            }
+        raise HTTPException(
+            status_code=503,
+            detail="Password reset email is not configured. Contact your administrator.",
+        )
 
 @router.post("/password-reset/confirm")
 async def confirm_password_reset(data: PasswordResetConfirm):
@@ -147,9 +158,11 @@ async def confirm_password_reset(data: PasswordResetConfirm):
 
     user = dict_from_row(row)
 
-    # Validate password
-    if len(data.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    # Validate password against policy (same as registration)
+    from routers.auth import validate_password
+    is_valid, error_msg = await validate_password(data.new_password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
 
     # Hash new password
     hashed = await asyncio.get_running_loop().run_in_executor(
@@ -478,13 +491,22 @@ async def request_account_deletion(data: AccountDeletionRequest, background_task
             "success": True
         }
     else:
-        # Development mode - return token directly
-        return {
-            "message": "Account deletion token generated",
-            "token": token,
-            "note": "Email is disabled. In production, this token would be sent via email.",
-            "success": True
-        }
+        allow_insecure = os.getenv("ALLOW_INSECURE_TOKEN_RESPONSE", "false").lower() == "true"
+        if allow_insecure and not (
+            os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("IS_CLOUD", "").lower() == "true"
+            or os.getenv("LARO_ENV", "").lower() == "production"
+        ):
+            return {
+                "message": "Account deletion token generated (insecure local mode)",
+                "token": token,
+                "note": "Email is disabled. ALLOW_INSECURE_TOKEN_RESPONSE=true — local only.",
+                "success": True
+            }
+        raise HTTPException(
+            status_code=503,
+            detail="Account deletion email is not configured. Contact your administrator.",
+        )
 
 
 @router.post("/account-deletion/confirm")

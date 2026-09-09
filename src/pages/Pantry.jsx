@@ -4,6 +4,9 @@ import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { RecipeCard } from '../components/RecipeCard';
 import { pantryApi, recipeApi, aiApi } from '../lib/api';
+import { useLanguage } from '../context/LanguageContext';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
+import { getAiQuotaErrorMessage } from '../lib/aiQuota';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -51,6 +54,22 @@ const PANTRY_CATEGORIES = [
   'Other'
 ];
 
+const PANTRY_CATEGORY_KEYS = {
+  All: 'all',
+  Produce: 'produce',
+  Dairy: 'dairy',
+  'Meat & Seafood': 'meatSeafood',
+  'Grains & Pasta': 'grainsPasta',
+  'Canned Goods': 'cannedGoods',
+  'Spices & Seasonings': 'spicesSeasonings',
+  Baking: 'baking',
+  Condiments: 'condiments',
+  Snacks: 'snacks',
+  Beverages: 'beverages',
+  Frozen: 'frozen',
+  Other: 'other',
+};
+
 const commonIngredients = [
   'Chicken', 'Beef', 'Pork', 'Fish', 'Eggs', 'Tofu',
   'Rice', 'Pasta', 'Bread', 'Potatoes',
@@ -60,6 +79,8 @@ const commonIngredients = [
 ];
 
 export const Pantry = () => {
+  const { t } = useLanguage();
+  const { confirmActions } = useAccessibility();
   // Pantry state
   const [items, setItems] = useState([]);
   const [expiringItems, setExpiringItems] = useState([]);
@@ -75,7 +96,8 @@ export const Pantry = () => {
     unit: '',
     category: 'Other',
     expiry_date: '',
-    notes: ''
+    notes: '',
+    is_staple: false,
   });
   const [saving, setSaving] = useState(false);
   const [showRecipeSuggestions, setShowRecipeSuggestions] = useState(false);
@@ -106,11 +128,11 @@ export const Pantry = () => {
       setItems(itemsRes.data || []);
       setExpiringItems(expiringRes.data || []);
     } catch (error) {
-      toast.error('Couldn\'t load your pantry. Check your connection and try again. (E-PT001)');
+      toast.error(`${t('toastLoadPantryFailed')} (E-PT001)`);
     } finally {
       setLoading(false);
     }
-  }, [category, search]);
+  }, [category, search, t]);
 
   useEffect(() => {
     loadPantry();
@@ -130,7 +152,7 @@ export const Pantry = () => {
 
   const handleCreate = async () => {
     if (!formData.name.trim()) {
-      toast.error('Name is required');
+      toast.error(t('nameRequired'));
       return;
     }
     setSaving(true);
@@ -142,10 +164,10 @@ export const Pantry = () => {
       });
       setItems([res.data, ...items]);
       setShowCreateModal(false);
-      setFormData({ name: '', quantity: '', unit: '', category: 'Other', expiry_date: '', notes: '' });
-      toast.success('Item added to pantry!');
+      setFormData({ name: '', quantity: '', unit: '', category: 'Other', expiry_date: '', notes: '', is_staple: false });
+      toast.success(formData.is_staple ? t('toastStapleAdded') : t('toastItemAdded'));
     } catch (error) {
-      toast.error('Couldn\'t add that item. Please try again. (E-PT002)');
+      toast.error(`${t('toastAddItemFailed')} (E-PT002)`);
     } finally {
       setSaving(false);
     }
@@ -153,7 +175,7 @@ export const Pantry = () => {
 
   const handleEdit = async () => {
     if (!formData.name.trim()) {
-      toast.error('Name is required');
+      toast.error(t('nameRequired'));
       return;
     }
     setSaving(true);
@@ -166,23 +188,33 @@ export const Pantry = () => {
       setItems(items.map(i => i.id === editingItem.id ? res.data : i));
       setShowEditModal(false);
       setEditingItem(null);
-      setFormData({ name: '', quantity: '', unit: '', category: 'Other', expiry_date: '', notes: '' });
-      toast.success('Item updated!');
+      setFormData({ name: '', quantity: '', unit: '', category: 'Other', expiry_date: '', notes: '', is_staple: false });
+      toast.success(t('toastItemUpdated'));
     } catch (error) {
-      toast.error('Couldn\'t update that item. Please try again. (E-PT003)');
+      toast.error(`${t('toastUpdateItemFailed')} (E-PT003)`);
     } finally {
       setSaving(false);
     }
   };
 
+  const handleToggleStaple = async (item) => {
+    try {
+      const res = await pantryApi.update(item.id, { is_staple: !item.is_staple });
+      setItems(items.map((i) => (i.id === item.id ? res.data : i)));
+      toast.success(res.data.is_staple ? t('toastMarkedStaple') : t('toastRemovedStapleFlag'));
+    } catch (error) {
+      toast.error(`${t('toastUpdateItemFailed')} (E-PT006)`);
+    }
+  };
+
   const handleDelete = async (item) => {
-    if (!window.confirm(`Remove "${item.name}" from pantry?`)) return;
+    if (!confirmDestructive(confirmActions, t('toastRemovePantryConfirm', { name: item.name }))) return;
     try {
       await pantryApi.delete(item.id);
       setItems(items.filter(i => i.id !== item.id));
-      toast.success('Item removed');
+      toast.success(t('toastItemRemoved'));
     } catch (error) {
-      toast.error('Couldn\'t remove that item. Please try again. (E-PT004)');
+      toast.error(`${t('toastRemoveItemFailed')} (E-PT004)`);
     }
   };
 
@@ -195,6 +227,7 @@ export const Pantry = () => {
       category: item.category || 'Other',
       expiry_date: item.expiry_date ? item.expiry_date.split('T')[0] : '',
       notes: item.notes || '',
+      is_staple: !!item.is_staple,
     });
     setShowEditModal(true);
   };
@@ -207,7 +240,7 @@ export const Pantry = () => {
       const res = await pantryApi.matchRecipes({ ingredients: ingredientNames, limit: 6 });
       setSuggestedRecipes(res.data || []);
     } catch (error) {
-      toast.error('Couldn\'t find matching recipes. Please try again. (E-PT005)');
+      toast.error(`${t('toastLoadRecipesFailed')} (E-PT005)`);
       setSuggestedRecipes([]);
     } finally {
       setLoadingSuggestions(false);
@@ -252,9 +285,9 @@ export const Pantry = () => {
 
       const res = await recipeApi.create(recipeData);
       setSavedRecipeId(res.data.id);
-      toast.success('Recipe saved to your collection!');
+      toast.success(t('toastRecipeSavedCollection'));
     } catch (error) {
-      toast.error('Couldn\'t save the recipe. Please try again. (E-PT006)');
+      toast.error(`${t('toastAddItemFailed')} (E-PT006)`);
     } finally {
       setSavingRecipe(false);
     }
@@ -274,7 +307,7 @@ export const Pantry = () => {
 
   const handleFridgeSearch = async () => {
     if (ingredients.length === 0) {
-      toast.error('Please add at least one ingredient');
+      toast.error(t('toastAddOneIngredient'));
       return;
     }
 
@@ -286,10 +319,15 @@ export const Pantry = () => {
       setResults(res.data);
 
       if (res.data.matching_recipes.length === 0 && !res.data.ai_recipe_suggestion) {
-        toast.info('No exact matches found. Try adding more ingredients or enable AI suggestions.');
+        toast.info(t('toastNoExactMatches'));
       }
     } catch (error) {
-      toast.error('Couldn\'t search for recipes. Please try again. (E-PT007)');
+      toast.error(
+        getAiQuotaErrorMessage(
+          error,
+          `${t('toastLoadRecipesFailed')} (E-PT007)`
+        )
+      );
     } finally {
       setSearchLoading(false);
     }
@@ -305,10 +343,10 @@ export const Pantry = () => {
   const PantryItemForm = () => (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="name">Item Name *</Label>
+        <Label htmlFor="name">{t('itemNameRequired')}</Label>
         <Input
           id="name"
-          placeholder="Milk, Eggs, Chicken..."
+          placeholder={t('itemNamePlaceholder')}
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           className="rounded-xl"
@@ -318,7 +356,7 @@ export const Pantry = () => {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label htmlFor="quantity">Quantity</Label>
+          <Label htmlFor="quantity">{t('quantity')}</Label>
           <Input
             id="quantity"
             type="number"
@@ -330,10 +368,10 @@ export const Pantry = () => {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="unit">Unit</Label>
+          <Label htmlFor="unit">{t('unit')}</Label>
           <Input
             id="unit"
-            placeholder="lbs, oz, cups..."
+            placeholder={t('unitPlaceholder')}
             value={formData.unit}
             onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
             className="rounded-xl"
@@ -342,21 +380,23 @@ export const Pantry = () => {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="category">Category</Label>
+        <Label htmlFor="category">{t('category')}</Label>
         <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
           <SelectTrigger className="rounded-xl">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {PANTRY_CATEGORIES.filter(c => c !== 'All').map(cat => (
-              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+              <SelectItem key={cat} value={cat}>
+                {PANTRY_CATEGORY_KEYS[cat] ? t(PANTRY_CATEGORY_KEYS[cat]) : cat}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="expiry_date">Expiry Date</Label>
+        <Label htmlFor="expiry_date">{t('expiryDate')}</Label>
         <Input
           id="expiry_date"
           type="date"
@@ -366,11 +406,21 @@ export const Pantry = () => {
         />
       </div>
 
+      <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={!!formData.is_staple}
+          onChange={(e) => setFormData({ ...formData, is_staple: e.target.checked })}
+          className="rounded border-border"
+        />
+        {t('alwaysHaveStapleSkip')}
+      </label>
+
       <div className="space-y-2">
-        <Label htmlFor="notes">Notes</Label>
+        <Label htmlFor="notes">{t('notes')}</Label>
         <Input
           id="notes"
-          placeholder="Location, brand, etc..."
+          placeholder={t('notesPlaceholder')}
           value={formData.notes}
           onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
           className="rounded-xl"
@@ -391,21 +441,21 @@ export const Pantry = () => {
           <div>
             <h1 className="font-heading text-3xl font-bold flex items-center gap-3">
               <Refrigerator className="w-8 h-8 text-laro" />
-              My Fridge
+              {t('myFridgeTitle')}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Track ingredients and find recipes you can make
+              {t('fridgeSubtitle')}
             </p>
           </div>
           <Button
             className="rounded-full bg-laro hover:bg-laro-dark"
             onClick={() => {
-              setFormData({ name: '', quantity: '', unit: '', category: 'Other', expiry_date: '', notes: '' });
+              setFormData({ name: '', quantity: '', unit: '', category: 'Other', expiry_date: '', notes: '', is_staple: false });
               setShowCreateModal(true);
             }}
           >
             <Plus className="w-4 h-4 mr-2" />
-            Add Item
+            {t('addItem')}
           </Button>
         </motion.div>
 
@@ -413,8 +463,8 @@ export const Pantry = () => {
         <section className="space-y-4">
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5 text-laro" />
-            <h2 className="font-heading text-xl font-semibold">My Pantry</h2>
-            <span className="text-muted-foreground text-sm">({items.length} items)</span>
+            <h2 className="font-heading text-xl font-semibold">{t('myPantry')}</h2>
+            <span className="text-muted-foreground text-sm">{t('itemsCountParen', { count: items.length })}</span>
           </div>
 
             {/* Expiring Soon Alert */}
@@ -426,7 +476,7 @@ export const Pantry = () => {
               >
                 <div className="flex items-center gap-3 mb-3">
                   <AlertTriangle className="w-5 h-5 text-amber-600" />
-                  <h3 className="font-semibold text-amber-800">Expiring Soon</h3>
+                  <h3 className="font-semibold text-amber-800">{t('expiringSoon')}</h3>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {expiringItems.slice(0, 5).map(item => (
@@ -452,14 +502,14 @@ export const Pantry = () => {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <Input
-                    placeholder="Search pantry..."
+                    placeholder={t('searchPantryPlaceholder')}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="pl-10 rounded-xl bg-white border-border/60"
                   />
                 </div>
                 <Button type="submit" variant="outline" className="rounded-xl">
-                  Search
+                  {t('search')}
                 </Button>
               </form>
 
@@ -475,7 +525,7 @@ export const Pantry = () => {
                         : 'bg-white text-foreground border border-border/60 hover:bg-laro-light'
                     }`}
                   >
-                    {cat}
+                    {PANTRY_CATEGORY_KEYS[cat] ? t(PANTRY_CATEGORY_KEYS[cat]) : cat}
                   </button>
                 ))}
               </div>
@@ -497,18 +547,18 @@ export const Pantry = () => {
                 <div className="w-16 h-16 rounded-full bg-laro-light mx-auto mb-4 flex items-center justify-center">
                   <Package className="w-8 h-8 text-laro" />
                 </div>
-                <h3 className="font-heading text-lg font-semibold mb-2">Your pantry is empty</h3>
+                <h3 className="font-heading text-lg font-semibold mb-2">{t('pantryEmpty')}</h3>
                 <p className="text-muted-foreground mb-6">
                   {search || category !== 'All'
-                    ? 'No items match your search'
-                    : 'Start tracking your ingredients'}
+                    ? t('noItemsMatchSearch')
+                    : t('startTrackingIngredients')}
                 </p>
                 <Button
                   className="rounded-full bg-laro hover:bg-laro-dark"
                   onClick={() => setShowCreateModal(true)}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Your First Item
+                  {t('addYourFirstItem')}
                 </Button>
               </motion.div>
             ) : (
@@ -535,13 +585,18 @@ export const Pantry = () => {
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold truncate">{item.name}</h3>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1 flex-wrap">
                             {item.quantity && (
                               <span>{item.quantity} {item.unit}</span>
                             )}
                             {item.category && item.category !== 'Other' && (
                               <span className="px-2 py-0.5 bg-cream rounded-full text-xs">
-                                {item.category}
+                                {PANTRY_CATEGORY_KEYS[item.category] ? t(PANTRY_CATEGORY_KEYS[item.category]) : item.category}
+                              </span>
+                            )}
+                            {item.is_staple && (
+                              <span className="px-2 py-0.5 bg-laro-light text-laro rounded-full text-xs font-medium">
+                                {t('staple')}
                               </span>
                             )}
                           </div>
@@ -553,8 +608,8 @@ export const Pantry = () => {
                               'text-muted-foreground'
                             }`}>
                               <Calendar className="w-3 h-3" />
-                              {expiryStatus === 'expired' ? 'Expired' :
-                               `Expires in ${getDaysUntilExpiry(item.expiry_date)} days`}
+                              {expiryStatus === 'expired' ? t('expired') :
+                               t('expiresInDays', { days: getDaysUntilExpiry(item.expiry_date) })}
                             </div>
                           )}
                         </div>
@@ -567,14 +622,17 @@ export const Pantry = () => {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => openEditModal(item)}>
                               <Edit2 className="w-4 h-4 mr-2" />
-                              Edit
+                              {t('edit')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleToggleStaple(item)}>
+                              {item.is_staple ? t('unmarkStaple') : t('markAsStaple')}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleDelete(item)}
                               className="text-red-600"
                             >
                               <Trash2 className="w-4 h-4 mr-2" />
-                              Remove
+                              {t('remove')}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -590,7 +648,7 @@ export const Pantry = () => {
         <section className="space-y-6">
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-coral" />
-            <h2 className="font-heading text-xl font-semibold">What Can I Make?</h2>
+            <h2 className="font-heading text-xl font-semibold">{t('whatCanIMake')}</h2>
           </div>
 
           <motion.div
@@ -601,7 +659,7 @@ export const Pantry = () => {
 
               <div className="flex gap-3 mb-4">
                 <Input
-                  placeholder="Type an ingredient and press Enter..."
+                  placeholder={t('typeIngredientEnter')}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyPress={handleKeyPress}
@@ -639,7 +697,7 @@ export const Pantry = () => {
 
               {/* Quick Add */}
               <div className="border-t border-border/60 pt-4 mt-4">
-                <p className="text-sm text-muted-foreground mb-3">Quick add:</p>
+                <p className="text-sm text-muted-foreground mb-3">{t('quickAdd')}</p>
                 <div className="flex flex-wrap gap-2">
                   {commonIngredients.filter(i => !ingredients.includes(i)).slice(0, 12).map((ing) => (
                     <button
@@ -662,7 +720,7 @@ export const Pantry = () => {
                   />
                   <span className="text-sm">
                     <Sparkles className="w-4 h-4 inline mr-1 text-coral" />
-                    Suggest new recipes with AI
+                    {t('suggestRecipesWithAi')}
                   </span>
                 </label>
               </div>
@@ -678,7 +736,7 @@ export const Pantry = () => {
                 ) : (
                   <>
                     <Search className="w-5 h-5 mr-2" />
-                    Find Recipes
+                    {t('findRecipes')}
                   </>
                 )}
               </Button>
@@ -695,7 +753,7 @@ export const Pantry = () => {
                 {results.matching_recipes.length > 0 && (
                   <div>
                     <h2 className="font-heading text-xl font-semibold mb-4">
-                      Matching Recipes ({results.matching_recipes.length})
+                      {t('matchingRecipes', { count: results.matching_recipes.length })}
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       {results.matching_recipes.map((recipe) => (
@@ -710,18 +768,18 @@ export const Pantry = () => {
                   <div className="bg-coral-light rounded-2xl border border-coral/20 p-6">
                     <div className="flex items-center gap-2 mb-4">
                       <Sparkles className="w-5 h-5 text-coral" />
-                      <h2 className="font-heading text-lg font-semibold">AI Recipe Suggestion</h2>
+                      <h2 className="font-heading text-lg font-semibold">{t('aiRecipeSuggestion')}</h2>
                     </div>
                     <div className="bg-white rounded-xl p-4">
                       <h3 className="font-heading font-semibold text-lg">
-                        {results.ai_recipe_suggestion.title || 'Suggested Recipe'}
+                        {results.ai_recipe_suggestion.title || t('suggestedRecipe')}
                       </h3>
                       {results.ai_recipe_suggestion.description && (
                         <p className="text-muted-foreground mt-2">{results.ai_recipe_suggestion.description}</p>
                       )}
                       {results.ai_recipe_suggestion.ingredients && (
                         <div className="mt-4">
-                          <p className="text-sm font-medium mb-2">Ingredients:</p>
+                          <p className="text-sm font-medium mb-2">{t('ingredients')}:</p>
                           <div className="flex flex-wrap gap-2">
                             {results.ai_recipe_suggestion.ingredients.map((ing, idx) => (
                               <span key={idx} className="px-2 py-1 bg-cream-subtle rounded text-sm">
@@ -733,7 +791,7 @@ export const Pantry = () => {
                       )}
                       {results.ai_recipe_suggestion.instructions && (
                         <div className="mt-4">
-                          <p className="text-sm font-medium mb-2">Instructions:</p>
+                          <p className="text-sm font-medium mb-2">{t('instructions')}:</p>
                           <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
                             {results.ai_recipe_suggestion.instructions.map((step, idx) => (
                               <li key={idx}>{step}</li>
@@ -744,9 +802,9 @@ export const Pantry = () => {
                       <div className="mt-4 pt-4 border-t">
                         {savedRecipeId ? (
                           <div className="flex items-center gap-2 text-green-600">
-                            <span>✓ Recipe saved!</span>
+                            <span>{t('recipeSavedCheck')}</span>
                             <Link to={`/recipes/${savedRecipeId}`}>
-                              <Button variant="outline" size="sm">View Recipe</Button>
+                              <Button variant="outline" size="sm">{t('viewRecipe')}</Button>
                             </Link>
                           </div>
                         ) : (
@@ -758,12 +816,12 @@ export const Pantry = () => {
                             {savingRecipe ? (
                               <>
                                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                Saving...
+                                {t('saving')}
                               </>
                             ) : (
                               <>
                                 <Plus className="w-4 h-4 mr-2" />
-                                Save Recipe
+                                {t('saveRecipe')}
                               </>
                             )}
                           </Button>
@@ -779,14 +837,14 @@ export const Pantry = () => {
                  !results.ai_recipe_suggestion && (
                   <div className="bg-white rounded-2xl border border-border/60 p-8 text-center">
                     <ChefHat className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="font-heading text-lg font-semibold mb-2">No matching recipes</h3>
+                    <h3 className="font-heading text-lg font-semibold mb-2">{t('noMatchingRecipes')}</h3>
                     <p className="text-muted-foreground mb-4">
-                      Try adding more ingredients or enable AI suggestions!
+                      {t('tryMoreIngredientsOrAi')}
                     </p>
                     <Link to="/recipes/new">
                       <Button className="rounded-full bg-laro hover:bg-laro-dark">
                         <Plus className="w-4 h-4 mr-2" />
-                        Create Recipe
+                        {t('createRecipe')}
                       </Button>
                     </Link>
                   </div>
@@ -801,17 +859,17 @@ export const Pantry = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Package className="w-5 h-5 text-laro" />
-                Add to Pantry
+                {t('addToPantry')}
               </DialogTitle>
             </DialogHeader>
             <PantryItemForm />
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateModal(false)} className="rounded-full">
-                Cancel
+                {t('cancel')}
               </Button>
               <Button onClick={handleCreate} disabled={saving} className="rounded-full bg-laro hover:bg-laro-dark">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                Add Item
+                {t('addItem')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -823,17 +881,17 @@ export const Pantry = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Edit2 className="w-5 h-5 text-laro" />
-                Edit Item
+                {t('editItem')}
               </DialogTitle>
             </DialogHeader>
             <PantryItemForm />
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowEditModal(false)} className="rounded-full">
-                Cancel
+                {t('cancel')}
               </Button>
               <Button onClick={handleEdit} disabled={saving} className="rounded-full bg-laro hover:bg-laro-dark">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Save Changes
+                {t('saveChanges')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -845,7 +903,7 @@ export const Pantry = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ChefHat className="w-5 h-5 text-laro" />
-                Recipes from Your Pantry
+                {t('recipesFromYourPantry')}
               </DialogTitle>
             </DialogHeader>
             {loadingSuggestions ? (
@@ -854,9 +912,9 @@ export const Pantry = () => {
               </div>
             ) : suggestedRecipes.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-muted-foreground">No matching recipes found</p>
+                <p className="text-muted-foreground">{t('noMatchingRecipes')}</p>
                 <p className="text-sm text-muted-foreground mt-2">
-                  Try the "What Can I Make?" section below with AI suggestions enabled
+                  {t('tryWhatCanIMakeHint')}
                 </p>
               </div>
             ) : (
@@ -870,7 +928,7 @@ export const Pantry = () => {
                     <h4 className="font-semibold">{recipe.title}</h4>
                     {recipe.match_count && (
                       <p className="text-sm text-muted-foreground">
-                        {recipe.match_count} matching ingredient{recipe.match_count !== 1 ? 's' : ''}
+                        {t('matchingIngredientCount', { count: recipe.match_count })}
                       </p>
                     )}
                   </Link>

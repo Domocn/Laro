@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 import { householdApi } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -25,9 +26,12 @@ import {
   Mail
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLanguage } from '../context/LanguageContext';
 
 export const Household = () => {
+  const { t } = useLanguage();
   const { user, household, refreshHousehold, updateUser } = useAuth();
+  const { confirmActions } = useAccessibility();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -37,6 +41,7 @@ export const Household = () => {
   const [creating, setCreating] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState([]);
 
   useEffect(() => {
     if (household) {
@@ -44,7 +49,17 @@ export const Household = () => {
     } else {
       setLoading(false);
     }
+    loadPendingInvites();
   }, [household]);
+
+  const loadPendingInvites = async () => {
+    try {
+      const res = await householdApi.listInvites();
+      setPendingInvites(res.data?.invites || []);
+    } catch (error) {
+      console.error('Failed to load household invites:', error);
+    }
+  };
 
   const loadMembers = async () => {
     try {
@@ -70,10 +85,10 @@ export const Household = () => {
       }
       setShowCreateDialog(false);
       setHouseholdName('');
-      toast.success('Household created!');
+      toast.success(t('toastHouseholdCreated'));
       loadMembers();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t create the household. Please try again. (E-HH001)');
+      toast.error(error.response?.data?.detail || t('toastCreateHouseholdFailed'));
     } finally {
       setCreating(false);
     }
@@ -85,28 +100,53 @@ export const Household = () => {
     setInviting(true);
     try {
       await householdApi.invite(inviteEmail);
-      toast.success('User added to household!');
+      toast.success(t('toastInviteSentAcceptHint'));
       setShowInviteDialog(false);
       setInviteEmail('');
-      loadMembers();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t invite that user. Please try again. (E-HH002)');
+      toast.error(error.response?.data?.detail || t('toastInviteUserFailed'));
     } finally {
       setInviting(false);
     }
   };
 
+  const handleAcceptInvite = async (inviteId) => {
+    try {
+      await householdApi.acceptInvite(inviteId);
+      await refreshHousehold();
+      const meRes = await householdApi.getMy();
+      if (meRes.data) {
+        updateUser({ ...user, household_id: meRes.data.id });
+      }
+      toast.success(t('toastJoinedHousehold'));
+      await loadPendingInvites();
+      loadMembers();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || t('toastAcceptInviteFailed'));
+    }
+  };
+
+  const handleDeclineInvite = async (inviteId) => {
+    try {
+      await householdApi.declineInvite(inviteId);
+      toast.success(t('toastInviteDeclined'));
+      setPendingInvites((prev) => prev.filter((i) => i.id !== inviteId));
+    } catch (error) {
+      toast.error(error.response?.data?.detail || t('toastDeclineInviteFailed'));
+    }
+  };
+
   const handleLeave = async () => {
-    if (!window.confirm('Are you sure you want to leave this household?')) return;
+    if (!confirmDestructive(confirmActions, t('confirmLeaveHousehold'))) return;
 
     setLeaving(true);
     try {
       await householdApi.leave();
       updateUser({ ...user, household_id: null });
       await refreshHousehold();
-      toast.success('Left household');
+      toast.success(t('toastLeftHousehold'));
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t leave the household. Please try again. (E-HH003)');
+      toast.error(error.response?.data?.detail || t('toastLeaveHouseholdFailed'));
     } finally {
       setLeaving(false);
     }
@@ -124,9 +164,9 @@ export const Household = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h1 className="font-heading text-3xl font-bold">Household</h1>
+          <h1 className="font-heading text-3xl font-bold">{t('householdTitle')}</h1>
           <p className="text-muted-foreground mt-1">
-            Manage your family or household members
+            {t('householdPageDesc')}
           </p>
         </motion.div>
 
@@ -139,32 +179,66 @@ export const Household = () => {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="bg-white rounded-2xl border border-border/60 p-8 text-center"
+            className="space-y-6"
           >
+            {pendingInvites.length > 0 && (
+              <div className="bg-white rounded-2xl border border-border/60 p-6" data-testid="pending-household-invites">
+                <h3 className="font-heading text-lg font-semibold mb-3">{t('pendingInvites')}</h3>
+                <ul className="space-y-3">
+                  {pendingInvites.map((invite) => (
+                    <li key={invite.id} className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-cream-subtle">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{invite.household_name}</p>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {t('fromInviterPrefix', { inviter: invite.inviter_name || invite.inviter_email })}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="rounded-full bg-laro hover:bg-laro-dark"
+                        onClick={() => handleAcceptInvite(invite.id)}
+                      >
+                        {t('accept')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-full"
+                        onClick={() => handleDeclineInvite(invite.id)}
+                      >
+                        {t('decline')}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="bg-white rounded-2xl border border-border/60 p-8 text-center">
             <div className="w-16 h-16 rounded-full bg-laro-light mx-auto mb-4 flex items-center justify-center">
               <Home className="w-8 h-8 text-laro" />
             </div>
-            <h3 className="font-heading text-lg font-semibold mb-2">No Household Yet</h3>
+            <h3 className="font-heading text-lg font-semibold mb-2">{t('noHouseholdYet')}</h3>
             <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-              Create a household to share recipes, meal plans, and shopping lists with your family.
+              {t('noHouseholdDesc')}
             </p>
             
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
                 <Button className="rounded-full bg-laro hover:bg-laro-dark" data-testid="create-household-btn">
                   <Plus className="w-4 h-4 mr-2" />
-                  Create Household
+                  {t('createHousehold')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Create Your Household</DialogTitle>
+                  <DialogTitle>{t('createYourHouseholdTitle')}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 pt-4">
                   <div>
-                    <Label>Household Name</Label>
+                    <Label>{t('householdNameLabel')}</Label>
                     <Input
-                      placeholder="e.g., Smith Family"
+                      placeholder={t('householdNamePlaceholder')}
                       value={householdName}
                       onChange={(e) => setHouseholdName(e.target.value)}
                       className="mt-1 rounded-xl"
@@ -177,11 +251,12 @@ export const Household = () => {
                     disabled={creating || !householdName.trim()}
                   >
                     {creating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                    Create Household
+                    {t('createHousehold')}
                   </Button>
                 </div>
               </DialogContent>
             </Dialog>
+            </div>
           </motion.div>
         ) : (
           /* Has Household */
@@ -200,7 +275,7 @@ export const Household = () => {
                   <div>
                     <h2 className="font-heading text-xl font-semibold">{household.name}</h2>
                     <p className="text-sm text-muted-foreground">
-                      {members.length} member{members.length !== 1 ? 's' : ''}
+                      {t('memberCountLabel', { count: members.length })}
                     </p>
                   </div>
                 </div>
@@ -209,24 +284,24 @@ export const Household = () => {
                   <DialogTrigger asChild>
                     <Button className="rounded-full bg-laro hover:bg-laro-dark" data-testid="invite-member-btn">
                       <UserPlus className="w-4 h-4 mr-2" />
-                      Invite
+                      {t('invite')}
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>Invite Member</DialogTitle>
+                      <DialogTitle>{t('inviteMemberTitle')}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 pt-4">
                       <p className="text-sm text-muted-foreground">
-                        The user must already have a Laro account.
+                        {t('inviteMemberHint')}
                       </p>
                       <div>
-                        <Label>Email Address</Label>
+                        <Label>{t('emailAddressLabel')}</Label>
                         <div className="relative mt-1">
                           <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                           <Input
                             type="email"
-                            placeholder="member@example.com"
+                            placeholder={t('inviteEmailPlaceholder')}
                             value={inviteEmail}
                             onChange={(e) => setInviteEmail(e.target.value)}
                             className="pl-10 rounded-xl"
@@ -240,7 +315,7 @@ export const Household = () => {
                         disabled={inviting || !inviteEmail.trim()}
                       >
                         {inviting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                        Add to Household
+                        {t('sendInvite')}
                       </Button>
                     </div>
                   </DialogContent>
@@ -250,7 +325,7 @@ export const Household = () => {
               {/* Members List */}
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                  Members
+                  {t('members')}
                 </h3>
                 {members.map((member) => (
                   <div 
@@ -277,9 +352,9 @@ export const Household = () => {
             {/* Leave Household */}
             {user?.id !== household.owner_id && (
               <div className="bg-white rounded-2xl border border-destructive/20 p-6">
-                <h3 className="font-medium mb-2">Leave Household</h3>
+                <h3 className="font-medium mb-2">{t('leaveHousehold')}</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  You will no longer have access to shared recipes and meal plans.
+                  {t('leaveHouseholdDesc')}
                 </p>
                 <Button 
                   variant="outline"
@@ -288,7 +363,7 @@ export const Household = () => {
                   disabled={leaving}
                 >
                   {leaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LogOut className="w-4 h-4 mr-2" />}
-                  Leave Household
+                  {t('leaveHousehold')}
                 </Button>
               </div>
             )}

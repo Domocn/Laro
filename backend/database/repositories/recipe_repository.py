@@ -9,7 +9,7 @@ from .base_repository import BaseRepository
 class RecipeRepository(BaseRepository):
     """Repository for recipe operations"""
 
-    JSON_FIELDS = ["ingredients", "instructions", "tags"]
+    JSON_FIELDS = ["ingredients", "instructions", "tags", "dietary_tags"]
 
     def __init__(self):
         super().__init__("recipes")
@@ -34,8 +34,53 @@ class RecipeRepository(BaseRepository):
         )
 
     async def delete_recipe(self, recipe_id: str) -> int:
-        """Delete a recipe"""
-        return await self.delete({"id": recipe_id})
+        """
+        Delete a recipe and dependent rows that FK-reference it.
+
+        Without this cleanup, Postgres raises ForeignKeyViolationError
+        (e.g. recipe_shares_recipe_id_fkey) and the API returns 500 —
+        surfaced in the web UI as E-RD005.
+        """
+        pool = await self._get_db()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # Tables with FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+                await conn.execute(
+                    "DELETE FROM recipe_shares WHERE recipe_id = $1", recipe_id
+                )
+                await conn.execute(
+                    "DELETE FROM recipe_feedback WHERE recipe_id = $1", recipe_id
+                )
+                await conn.execute(
+                    "DELETE FROM cook_sessions WHERE recipe_id = $1", recipe_id
+                )
+                await conn.execute(
+                    "DELETE FROM recipe_versions WHERE recipe_id = $1", recipe_id
+                )
+                await conn.execute(
+                    "DELETE FROM reviews WHERE recipe_id = $1", recipe_id
+                )
+                await conn.execute(
+                    "DELETE FROM user_recipe_ratings WHERE recipe_id = $1", recipe_id
+                )
+                # Soft references (FK may be absent; still clean up)
+                await conn.execute(
+                    "DELETE FROM meal_plans WHERE recipe_id = $1", recipe_id
+                )
+                await conn.execute(
+                    """
+                    UPDATE google_health_nutrition_logs
+                    SET recipe_id = NULL
+                    WHERE recipe_id = $1
+                    """,
+                    recipe_id,
+                )
+                result = await conn.execute(
+                    "DELETE FROM recipes WHERE id = $1", recipe_id
+                )
+
+        rowcount = int(result.split()[-1]) if result else 0
+        return rowcount
 
     async def find_by_author(
         self,
@@ -318,21 +363,31 @@ class ReviewRepository(BaseRepository):
     def __init__(self):
         super().__init__("reviews")
 
+    @staticmethod
+    def _normalize(review: Optional[dict]) -> Optional[dict]:
+        """Ensure API field `comment` is populated from legacy `content`."""
+        if not review:
+            return review
+        if review.get("comment") is None and review.get("content") is not None:
+            review["comment"] = review["content"]
+        return review
+
     async def find_by_recipe(self, recipe_id: str) -> List[dict]:
         """Find all reviews for a recipe"""
-        return await self.find_many(
+        rows = await self.find_many(
             {"recipe_id": recipe_id},
             json_fields=self.JSON_FIELDS,
             order_by="created_at",
             order_dir="DESC"
         )
+        return [self._normalize(r) for r in rows]
 
     async def find_by_user_and_recipe(self, user_id: str, recipe_id: str) -> Optional[dict]:
         """Find a user's review for a recipe"""
-        return await self.find_one(
+        return self._normalize(await self.find_one(
             {"user_id": user_id, "recipe_id": recipe_id},
             json_fields=self.JSON_FIELDS
-        )
+        ))
 
     async def create(self, review_data: dict) -> dict:
         """Create a new review"""

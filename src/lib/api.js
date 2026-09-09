@@ -23,9 +23,22 @@ const setCache = (key, data) => {
   apiCache.set(key, { data, timestamp: Date.now() });
 };
 
-// Clear cache on mutations
+// Clear in-memory cache + tell the service worker to drop cached API lists
+// (SW used to serve stale empty /recipes and /meal-plans right after imports).
+const clearServiceWorkerApiCache = () => {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) return;
+    controller.postMessage({ type: 'CLEAR_API_CACHE' });
+  } catch {
+    /* ignore */
+  }
+};
+
 const clearCache = () => {
   apiCache.clear();
+  clearServiceWorkerApiCache();
 };
 
 // Export for manual cache invalidation
@@ -35,19 +48,63 @@ export const invalidateCache = clearCache;
 // DO NOT CHANGE this string - it must match the placeholder in docker-entrypoint.sh
 const RUNTIME_BACKEND_URL = '%REACT_APP_BACKEND_URL%';
 
+/**
+ * Normalize a configured backend origin.
+ * Returns '' for same-origin / proxy mode.
+ * Strips a trailing /api so we never build .../api/api/...
+ * Clears stale localhost URLs when the app is served from a real host.
+ */
+const normalizeServerUrl = (raw) => {
+  if (raw == null) return '';
+  let url = String(raw).trim();
+  if (!url || url.startsWith('%')) return '';
+
+  // Strip trailing slash and accidental /api suffix
+  url = url.replace(/\/+$/, '');
+  if (url.toLowerCase().endsWith('/api')) {
+    url = url.slice(0, -4);
+  }
+
+  // If we're on a public site, never call the visitor's localhost
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    const isLocalPage = host === 'localhost' || host === '127.0.0.1';
+    const pointsAtLocal =
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(url);
+    if (!isLocalPage && pointsAtLocal) {
+      try {
+        localStorage.removeItem('laro_server_url');
+      } catch {
+        /* ignore */
+      }
+      return '';
+    }
+    // Same host as the page → use relative /api (works through Caddy)
+    try {
+      if (url && new URL(url).hostname === host) {
+        return '';
+      }
+    } catch {
+      /* keep url */
+    }
+  }
+
+  return url;
+};
+
 // Get server URL - check localStorage first, then runtime env, then fallback to same-origin
-// When using same-origin (empty string), requests go through nginx proxy to backend
+// When using same-origin (empty string), requests go through nginx/Caddy proxy to backend
 const getServerUrl = () => {
   const savedUrl = localStorage.getItem('laro_server_url');
   if (savedUrl) {
-    return savedUrl;
+    return normalizeServerUrl(savedUrl);
   }
   // Check if runtime placeholder was replaced (doesn't start with %)
   if (RUNTIME_BACKEND_URL && !RUNTIME_BACKEND_URL.startsWith('%')) {
-    return RUNTIME_BACKEND_URL;
+    return normalizeServerUrl(RUNTIME_BACKEND_URL);
   }
   // Fallback to build-time env or empty (same-origin, uses nginx proxy)
-  return process.env.REACT_APP_BACKEND_URL || '';
+  return normalizeServerUrl(process.env.REACT_APP_BACKEND_URL || '');
 };
 
 // Check if we're using same-origin mode (nginx proxy)
@@ -84,6 +141,8 @@ const getApiBaseUrl = () => {
 
 const api = axios.create({
   baseURL: getApiBaseUrl(),
+  // Default; PDF / AI routes override with a longer timeout below
+  timeout: 60000,
 });
 
 // Add debug interceptor for API call logging
@@ -117,8 +176,12 @@ api.interceptors.request.use((config) => {
 // Handle auth errors and cache management
 api.interceptors.response.use(
   (response) => {
-    // Cache GET responses
-    if (response.config.method === 'get' && response.config.url) {
+    // Cache GET responses (except recipes / meal-plans — see NEVER_MEMORY_CACHE)
+    if (
+      response.config.method === 'get' &&
+      response.config.url &&
+      !shouldSkipMemoryCache(response.config)
+    ) {
       const cacheKey = getCacheKey(response.config.url, response.config.params);
       setCache(cacheKey, response);
     }
@@ -136,10 +199,25 @@ api.interceptors.response.use(
   }
 );
 
+// Endpoints that must never be served from the in-memory GET cache.
+// Stale /recipes after delete was bringing ghost cards back into All.
+const NEVER_MEMORY_CACHE = [
+  '/recipes',
+  '/meal-plans',
+];
+
+const shouldSkipMemoryCache = (config) => {
+  if (config?.skipCache) return true;
+  const url = config?.url || '';
+  return NEVER_MEMORY_CACHE.some(
+    (path) => url === path || url.startsWith(`${path}?`) || url.startsWith(`${path}/`)
+  );
+};
+
 // Add request interceptor for cache checking
 api.interceptors.request.use((config) => {
-  // Only cache GET requests
-  if (config.method === 'get' && config.url) {
+  // Only cache GET requests (and never recipes / meal-plans — deletes must stick)
+  if (config.method === 'get' && config.url && !shouldSkipMemoryCache(config)) {
     const cacheKey = getCacheKey(config.url, config.params);
     const cached = getFromCache(cacheKey);
     if (cached) {
@@ -172,6 +250,9 @@ export const householdApi = {
   getMy: () => api.get('/households/me'),
   getMembers: () => api.get('/households/members'),
   invite: (email) => api.post('/households/invite', { email }),
+  listInvites: () => api.get('/households/invites'),
+  acceptInvite: (inviteId) => api.post(`/households/invites/${inviteId}/accept`),
+  declineInvite: (inviteId) => api.post(`/households/invites/${inviteId}/decline`),
   leave: () => api.post('/households/leave'),
   generateJoinCode: () => api.post('/households/join-code'),
   revokeJoinCode: () => api.delete('/households/join-code'),
@@ -185,6 +266,8 @@ export const recipeApi = {
   create: (data) => api.post('/recipes', data),
   update: (id, data) => api.put(`/recipes/${id}`, data),
   delete: (id) => api.delete(`/recipes/${id}`),
+  bulkDelete: (recipeIds) =>
+    api.delete('/recipes/bulk', { data: { recipe_ids: recipeIds } }),
   uploadImage: (id, file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -200,6 +283,16 @@ export const recipeApi = {
   setRating: (id, rating, personalNotes = '') =>
     api.post(`/recipes/${id}/rating`, { rating, personal_notes: personalNotes }),
   deleteRating: (id) => api.delete(`/recipes/${id}/rating`),
+  /** Check ingredients against adult/kid veto lists; returns hits + replacement suggestions. */
+  checkVeto: (ingredients) => api.post('/recipes/check-veto', { ingredients }),
+  /** Honeydew-style swaps for a single ingredient (pass object with recipe context for AI). */
+  substitutions: (ingredientOrPayload, limit = 5) => {
+    const payload =
+      typeof ingredientOrPayload === 'string'
+        ? { ingredient: ingredientOrPayload, limit }
+        : { limit: 5, ...ingredientOrPayload };
+    return api.post('/recipes/substitutions', payload, { timeout: 90000 });
+  },
 };
 
 // Favorites
@@ -209,19 +302,96 @@ export const favoritesApi = {
 
 // AI
 export const aiApi = {
-  importUrl: (url) => api.post('/ai/import-url', { url }),
-  importText: (text) => api.post('/ai/import-text', { text }),
+  importUrl: (url) => api.post('/ai/import-url', { url }, { timeout: 120000 }),
+  importText: (text) => api.post('/ai/import-text', { text }, { timeout: 120000 }),
+  importFeedback: (payload) => api.post('/ai/import-feedback', payload, { timeout: 30000 }),
+  /** Caption + optional mp4/mov when social URLs are login-walled. */
+  importVideo: (formData) =>
+    api.post('/ai/import-video', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 240000,
+    }),
+  extractFromImages: (images, cookbookId = null, cookbookPage = null) =>
+    api.post(
+      '/ai/extract-from-images',
+      { images, cookbook_id: cookbookId || undefined, cookbook_page: cookbookPage || undefined },
+      { timeout: 180000 }
+    ),
+  quota: () => api.get('/ai/quota'),
   fridgeSearch: (ingredients, searchOnline = false) =>
-    api.post('/ai/fridge-search', { ingredients, search_online: searchOnline }),
-  autoMealPlan: (days = 7, preferences = '', excludeRecipes = []) =>
-    api.post('/ai/auto-meal-plan', { days, preferences, exclude_recipes: excludeRecipes }),
+    api.post('/ai/fridge-search', { ingredients, search_online: searchOnline }, { timeout: 120000 }),
+  autoMealPlan: (days = 7, preferences = '', excludeRecipes = [], options = {}) =>
+    api.post('/ai/auto-meal-plan', {
+      days,
+      preferences,
+      exclude_recipes: excludeRecipes,
+      start_date: options.start_date,
+      apply: options.apply !== false,
+      replace_week: options.replace_week !== false,
+    }, {
+      timeout: 180000,
+    }),
+  /** Import a printable weekly meal plan (paste text extracted from PDF). */
+  importMealPlan: (payload) =>
+    api.post('/ai/import-meal-plan', payload, { timeout: 180000 }),
+  /** Upload a text-based recipe PDF (review before save). Also accepts meal-plan PDFs. */
+  importRecipePdf: (formData) =>
+    api.post('/ai/import-recipe-pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    }),
+  /** Upload a meal-plan or recipe PDF (schedules weekly plans; recipes fall back to library). */
+  importMealPlanPdf: (formData) =>
+    api.post('/ai/import-meal-plan-pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    }),
+  /** Unified PDF import — auto-detects recipes vs weekly meal plans. */
+  importPdf: (formData) =>
+    api.post('/ai/import-pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    }),
+  /** Import a weekly meal plan from a public URL (Huel guides, meal blogs, etc.) */
+  importMealPlanUrl: (payload) =>
+    api.post('/ai/import-meal-plan-url', payload, { timeout: 120000 }),
+  /** AI chat (metered). Pass session_id to continue a saved conversation.
+   *  Optional recipeContext scopes answers to the recipe the user is viewing. */
+  chat: (message, history = [], sessionId = null, recipeContext = null) =>
+    api.post(
+      '/ai/chat',
+      {
+        message,
+        history,
+        session_id: sessionId || undefined,
+        ...(recipeContext?.recipe_id || recipeContext?.recipe_title
+          ? {
+              recipe_id: recipeContext.recipe_id || undefined,
+              recipe_title: recipeContext.recipe_title || undefined,
+              recipe_description: recipeContext.recipe_description || undefined,
+              ingredients: recipeContext.ingredients || undefined,
+              instructions: recipeContext.instructions || undefined,
+            }
+          : {}),
+      },
+      { timeout: 120000 }
+    ),
+  listChatSessions: () => api.get('/ai/chat-sessions'),
+  createChatSession: () => api.post('/ai/chat-sessions'),
+  getChatSession: (sessionId) => api.get(`/ai/chat-sessions/${sessionId}`),
+  deleteChatSession: (sessionId) => api.delete(`/ai/chat-sessions/${sessionId}`),
+  /** File a support ticket that includes the chat transcript (for AI bugs). */
+  reportChatSession: (sessionId, data = {}) =>
+    api.post(`/ai/chat-sessions/${sessionId}/report`, data),
 };
 
 // Meal Plans
 export const mealPlanApi = {
   getAll: (params) => api.get('/meal-plans', { params }),
   create: (data) => api.post('/meal-plans', data),
+  update: (id, data) => api.put(`/meal-plans/${id}`, data),
   delete: (id) => api.delete(`/meal-plans/${id}`),
+  repeatWeek: (data) => api.post('/meal-plans/repeat-week', data),
 };
 
 // Shopping Lists
@@ -232,10 +402,26 @@ export const shoppingListApi = {
   update: (id, data) => api.put(`/shopping-lists/${id}`, data),
   delete: (id) => api.delete(`/shopping-lists/${id}`),
   fromRecipes: (recipeIds) => api.post('/shopping-lists/from-recipes', recipeIds),
+  /** Honeydew-style: meal plan week → merged aisle list */
+  fromMealPlan: (data) => api.post('/shopping-lists/from-meal-plan', data),
+  generate: (data) => api.post('/shopping-lists/generate', data),
+  getAisles: () => api.get('/shopping-lists/aisles'),
+  getAisleOverrides: () => api.get('/shopping-lists/aisle-overrides'),
   // Check item endpoint for real-time sync
   checkItem: (listId, itemIndex, checked) =>
     api.patch(`/shopping-lists/${listId}/items/${itemIndex}/check`, null, {
-      params: { checked }
+      params: { checked: checked ? 'true' : 'false' },
+    }),
+  setItemAisle: (listId, itemIndex, aisle, remember = true) =>
+    api.patch(`/shopping-lists/${listId}/items/${itemIndex}/aisle`, { aisle, remember }),
+  removeRecipe: (listId, { recipeId, recipeName }) =>
+    api.post(`/shopping-lists/${listId}/remove-recipe`, {
+      recipe_id: recipeId || null,
+      recipe_name: recipeName || null,
+    }),
+  markStaple: (listId, itemIndex, removeFromList = true) =>
+    api.post(`/shopping-lists/${listId}/items/${itemIndex}/mark-staple`, {
+      remove_from_list: removeFromList,
     }),
   // Receipt scanning
   scanReceipt: (listId, file, autoCheck = true) => {
@@ -263,8 +449,11 @@ export const shareApi = {
 
 // Calendar
 export const calendarApi = {
-  exportIcal: (startDate, endDate) => 
+  exportIcal: (startDate, endDate) =>
     api.get('/calendar/ical', { params: { start_date: startDate, end_date: endDate }, responseType: 'blob' }),
+  getBusyness: (startDate, days = 7) =>
+    api.get('/calendar/busyness', { params: { start_date: startDate, days } }),
+  validateIcs: (url) => api.post('/calendar/ics/validate', { url }),
 };
 
 // Import (legacy - use recipeImportApi instead)
@@ -277,6 +466,8 @@ export const notificationApi = {
   subscribe: (subscription) => api.post('/notifications/subscribe', subscription),
   getSettings: () => api.get('/notifications/settings'),
   updateSettings: (settings) => api.put('/notifications/settings', settings),
+  getVapidPublicKey: () => api.get('/notifications/vapid-public-key'),
+  runReminders: () => api.post('/notifications/reminders/run'),
 };
 
 // LLM Settings
@@ -297,14 +488,17 @@ export const promptsApi = {
 export const cookingApi = {
   getTonightSuggestions: () => api.get('/cooking/tonight'),
   startSession: (recipeId) => api.post('/cooking/session', { recipe_id: recipeId }),
-  completeSession: (sessionId, feedback) => api.post(`/cooking/session/${sessionId}/complete`, { feedback }),
+  completeSession: (sessionId, feedback, notes = '') =>
+    api.post(`/cooking/session/${sessionId}/complete`, { feedback, notes }),
   submitFeedback: (recipeId, feedback) => api.post('/cooking/feedback', { recipe_id: recipeId, feedback }),
+  markCooked: (recipeId, { notes = '', feedback = null } = {}) =>
+    api.post(`/cooking/recipes/${recipeId}/mark-cooked`, { notes, feedback }),
   getStats: () => api.get('/cooking/stats'),
 };
 
 // Server Config
 export const configApi = {
-  getConfig: () => api.get('/config'),
+  getConfig: () => api.get('/config', { params: { _: Date.now() }, headers: { 'Cache-Control': 'no-cache' } }),
   healthCheck: () => api.get('/health'),
   wsStatus: () => api.get('/ws/status'),
 };
@@ -366,6 +560,16 @@ export const adminApi = {
   sendNotification: (data) => api.post('/admin/notifications/send', data),
   sendBulkNotification: (data) => api.post('/admin/notifications/send-bulk', data),
 
+  // Subscriptions (admin grant / revoke)
+  listSubscriptions: (params) => api.get('/admin/subscriptions', { params }),
+  grantSubscription: (data) => api.post('/admin/subscriptions/grant', data),
+  grantSubscriptionByEmail: (data) => api.post('/admin/subscriptions/grant-by-email', data),
+  grantSubscriptionBulk: (data) => api.post('/admin/subscriptions/grant-bulk', data),
+  revokeSubscription: (userId, params) =>
+    api.post(`/admin/subscriptions/revoke/${userId}`, null, { params }),
+  getUserRevenueCat: (userId) => api.get(`/admin/subscriptions/${userId}/revenuecat`),
+  syncUserRevenueCat: (userId) => api.post(`/admin/subscriptions/${userId}/sync-revenuecat`),
+
   // Email Templates Testing
   sendTestEmails: (email) => api.post('/debug/test-emails', { email }),
 };
@@ -404,6 +608,18 @@ export const oauthApi = {
   unlinkAccount: (provider) => api.delete(`/oauth/linked-accounts/${provider}`),
 };
 
+// Google Health API (Fitbit / cloud nutrition)
+export const googleHealthApi = {
+  getStatus: () => api.get('/google-health/status'),
+  getAuthUrl: () => api.get('/google-health/auth-url'),
+  callback: (code, state) => api.post('/google-health/callback', { code, state }),
+  unlink: () => api.delete('/google-health/link'),
+  updateSettings: (sync_on_cook) => api.patch('/google-health/settings', { sync_on_cook }),
+  syncRecipe: (recipeId) => api.post(`/google-health/sync/${recipeId}`),
+  listLogs: () => api.get('/google-health/logs'),
+  deleteLog: (logId) => api.delete(`/google-health/logs/${logId}`),
+};
+
 // Roles APIs
 export const rolesApi = {
   list: () => api.get('/roles'),
@@ -435,17 +651,20 @@ export const recipeVersionsApi = {
 // Nutrition APIs
 export const nutritionApi = {
   calculate: (ingredients, servings = 1) => api.post('/nutrition/calculate', { ingredients, servings }),
-  getRecipeNutrition: (recipeId) => api.get(`/nutrition/recipe/${recipeId}`),
+  getRecipeNutrition: (recipeId, params) =>
+    api.get(`/nutrition/recipe/${recipeId}`, { params }),
   saveRecipeNutrition: (recipeId) => api.post(`/nutrition/recipe/${recipeId}/save`),
   listIngredients: () => api.get('/nutrition/ingredients'),
   getIngredient: (name) => api.get(`/nutrition/ingredient/${name}`),
+  listFoodDb: (params) => api.get('/nutrition/food-db', { params }),
   addCustomIngredient: (data) => api.post('/nutrition/custom-ingredient', data),
 };
 
 // Recipe Import APIs
 export const importApi = {
   getPlatforms: () => api.get('/import/platforms'),
-  importFromUrl: (url) => api.post('/import/url', { url }),
+  // AI/social path (IG/TikTok/Facebook + recipe sites). Legacy /import/url is JSON-LD only.
+  importFromUrl: (url) => api.post('/ai/import-url', { url }, { timeout: 120000 }),
   bulkImport: (urls) => api.post('/import/bulk', { urls }),
   importFromText: (text, title) => api.post('/import/text', { text, title }),
 };
@@ -470,6 +689,8 @@ export const costApi = {
   saveRecipeCost: (recipeId) => api.post(`/costs/recipe/${recipeId}/save`),
   getSummary: () => api.get('/costs/summary'),
   getBudgetFriendly: (maxCost) => api.get('/costs/budget', { params: { max_cost: maxCost } }),
+  getUkCatalog: () => api.get('/costs/uk-catalog'),
+  syncUkCatalog: (force = true) => api.post('/costs/uk-catalog/sync', null, { params: { force } }),
 };
 
 // Reviews APIs
@@ -494,6 +715,16 @@ export const sharingApi = {
   revoke: (linkId) => api.delete(`/share/${linkId}`),
   getStats: (linkId) => api.get(`/share/stats/${linkId}`),
   getSettings: () => api.get('/share/settings'),
+};
+
+// Support tickets (raise + track)
+export const supportApi = {
+  list: () => api.get('/support/tickets'),
+  get: (ticketId) => api.get(`/support/tickets/${ticketId}`),
+  create: (data) => api.post('/support/tickets', data),
+  addMessage: (ticketId, body) => api.post(`/support/tickets/${ticketId}/messages`, { body }),
+  update: (ticketId, data) => api.patch(`/support/tickets/${ticketId}`, data),
+  adminList: (params) => api.get('/support/admin/tickets', { params }),
 };
 
 // API Tokens APIs
@@ -527,6 +758,7 @@ export const cookbooksApi = {
   update: (cookbookId, data) => api.put(`/cookbooks/${cookbookId}`, data),
   delete: (cookbookId) => api.delete(`/cookbooks/${cookbookId}`),
   lookupISBN: (isbn) => api.get('/cookbooks/lookup', { params: { isbn } }),
+  searchBuy: (q, limit = 12) => api.get('/cookbooks/search-buy', { params: { q, limit } }),
   getRecipes: (cookbookId) => api.get(`/cookbooks/${cookbookId}/recipes`),
 };
 
@@ -543,8 +775,35 @@ export const exportApi = {
 export const preferencesApi = {
   get: () => api.get('/preferences'),
   update: (data) => api.put('/preferences', data),
+  getLocales: () => api.get('/preferences/locales'),
   getSetupStatus: () => api.get('/preferences/setup/status'),
   completeSetup: () => api.post('/preferences/setup/complete'),
+};
+
+// Friends APIs
+export const friendsApi = {
+  getMyCode: () => api.get('/friends/my-code'),
+  list: () => api.get('/friends/list'),
+  add: (friendCode) => api.post('/friends/add', { friend_code: friendCode }),
+  listRequests: () => api.get('/friends/requests'),
+  acceptRequest: (requestId) => api.post(`/friends/requests/${requestId}/accept`),
+  declineRequest: (requestId) => api.post(`/friends/requests/${requestId}/decline`),
+  remove: (friendId) => api.delete(`/friends/${friendId}`),
+  count: () => api.get('/friends/count'),
+  referralStats: () => api.get('/friends/referral-stats'),
+};
+
+export const rewardsApi = {
+  catalog: () => api.get('/rewards/catalog'),
+  balance: () => api.get('/rewards/balance'),
+  history: () => api.get('/rewards/history'),
+  redeem: (sku) => api.post('/rewards/redeem', { sku }),
+};
+
+// Subscription / RevenueCat (backend mirror + optional web billing)
+export const subscriptionsApi = {
+  getStatus: () => api.get('/subscriptions/status'),
+  sync: (data) => api.post('/subscriptions/sync', data),
 };
 
 export default api;

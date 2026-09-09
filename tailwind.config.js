@@ -8,17 +8,23 @@ module.exports = {
   theme: {
         extend: {
                 fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        heading: ['Manrope', 'sans-serif'],
-                        accent: ['Caveat', 'cursive'],
+                        /* Manrope ≈ SoDoSans; Lora ≈ Lander Tall for brand moments */
+                        sans: ['Manrope', 'Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif'],
+                        heading: ['Manrope', 'Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif'],
+                        accent: ['Lora', 'Iowan Old Style', 'Georgia', 'serif'],
                 },
                 borderRadius: {
-                        lg: '1rem',
-                        md: '0.75rem',
-                        sm: '0.5rem',
-                        xl: '1.25rem',
-                        '2xl': '1.5rem',
-                        '3xl': '2rem',
+                        lg: '0.75rem',   /* 12px cards */
+                        md: '0.5rem',
+                        sm: '0.25rem',
+                        xl: '0.75rem',
+                        '2xl': '0.75rem',
+                        '3xl': '1.5rem',
+                        pill: '50px',
+                },
+                letterSpacing: {
+                        tight: '-0.01em',
+                        tighter: '-0.16px',
                 },
                 colors: {
                         background: 'hsl(var(--background))',
@@ -34,12 +40,12 @@ module.exports = {
                         primary: {
                                 DEFAULT: 'hsl(var(--primary))',
                                 foreground: 'hsl(var(--primary-foreground))',
-                                light: '#E8E4FF',
+                                light: '#d4e9e2',
                         },
                         secondary: {
                                 DEFAULT: 'hsl(var(--secondary))',
                                 foreground: 'hsl(var(--secondary-foreground))',
-                                light: '#FFE5E5',
+                                light: '#edebe9',
                         },
                         muted: {
                                 DEFAULT: 'hsl(var(--muted))',
@@ -63,46 +69,45 @@ module.exports = {
                                 '4': 'hsl(var(--chart-4))',
                                 '5': 'hsl(var(--chart-5))'
                         },
-                        // Laro Brand Colors - Sage Green
+                        // Brand accent — RGB channels so opacity modifiers (bg-laro/20) work
                         laro: {
-                                DEFAULT: '#7BC89C',
-                                light: '#D1FAE5',
-                                dark: '#065F46',
+                                DEFAULT: 'rgb(var(--laro-accent-rgb) / <alpha-value>)',
+                                light: 'rgb(var(--laro-accent-light-rgb) / <alpha-value>)',
+                                dark: 'rgb(var(--laro-accent-dark-rgb) / <alpha-value>)',
+                                brand: '#006241',
+                                house: '#1E3932',
+                                uplift: '#2b5148',
+                                gold: '#cba258',
                         },
-                        // Vibrant yellow from logo ingredients
                         sunny: {
-                                DEFAULT: '#FFD93D',
-                                light: '#FFF4CC',
-                                dark: '#E6C235',
+                                DEFAULT: '#cba258',
+                                light: '#faf6ee',
+                                dark: '#9A7D3A',
                         },
-                        // Coral/Red from logo ingredients
                         coral: {
-                                DEFAULT: '#FF6B6B',
-                                light: '#FFE5E5',
-                                dark: '#E05656',
+                                DEFAULT: '#c82014',
+                                light: '#F6E8E5',
+                                dark: '#9A3F32',
                         },
-                        // Teal/Cyan from logo ingredients
                         teal: {
-                                DEFAULT: '#00D2D3',
-                                light: '#E0FAFA',
-                                dark: '#00B8B9',
+                                DEFAULT: '#00754A',
+                                light: '#d4e9e2',
+                                dark: '#1E3932',
                         },
-                        // Orange from logo ingredients
                         tangerine: {
-                                DEFAULT: '#FF9F43',
-                                light: '#FFECD9',
-                                dark: '#E68A3A',
+                                DEFAULT: '#C47A3A',
+                                light: '#F6EBDD',
+                                dark: '#9A5C28',
                         },
-                        // Light purple/lavender from logo ingredients
                         lavender: {
-                                DEFAULT: '#A29BFE',
-                                light: '#F0EEFF',
-                                dark: '#8B83E6',
+                                DEFAULT: '#2b5148',
+                                light: '#d4e9e2',
+                                dark: '#006241',
                         },
                         cream: {
-                                DEFAULT: '#F8F7FF',
-                                paper: '#FFFFFF',
-                                subtle: '#F0EFFF',
+                                DEFAULT: '#f2f0eb',
+                                paper: '#ffffff',
+                                subtle: '#edebe9',
                         },
                 },
                 keyframes: {
@@ -119,7 +124,7 @@ module.exports = {
                                 '100%': { opacity: '1', transform: 'translateY(0)' }
                         },
                         'scale-in': {
-                                '0%': { opacity: '0', transform: 'scale(0.95)' },
+                                '0%': { opacity: '0', transform: 'scale(0.98)' },
                                 '100%': { opacity: '1', transform: 'scale(1)' }
                         },
                         'shimmer': {
@@ -135,13 +140,16 @@ module.exports = {
                         'shimmer': 'shimmer 1.5s infinite linear',
                 },
                 boxShadow: {
-                        'soft': '0 2px 8px rgba(0,0,0,0.04)',
-                        'hover': '0 8px 24px rgba(0,0,0,0.08)',
-                        'card': '0 4px 12px rgba(108,92,231,0.08)',
-                        'sunny': '0 4px 12px rgba(255,217,61,0.25)',
-                        'coral': '0 4px 12px rgba(255,107,107,0.25)',
-                        'teal': '0 4px 12px rgba(0,210,211,0.25)',
-                        'tangerine': '0 4px 12px rgba(255,159,67,0.25)',
+                        /* Whisper-soft layered shadows (DESIGN (1)) */
+                        'soft': '0 0 0.5px rgba(0,0,0,0.14), 0 1px 1px rgba(0,0,0,0.24)',
+                        'hover': '0 0 0.5px rgba(0,0,0,0.14), 0 2px 4px rgba(0,0,0,0.18)',
+                        'card': '0 0 0.5px rgba(0,0,0,0.14), 0 1px 1px rgba(0,0,0,0.24)',
+                        'nav': '0 1px 3px rgba(0,0,0,0.1), 0 2px 2px rgba(0,0,0,0.06), 0 0 2px rgba(0,0,0,0.07)',
+                        'frap': '0 0 6px rgba(0,0,0,0.24), 0 8px 12px rgba(0,0,0,0.14)',
+                        'sunny': '0 0 0.5px rgba(203,162,88,0.2), 0 1px 1px rgba(203,162,88,0.24)',
+                        'coral': '0 0 0.5px rgba(200,32,20,0.14), 0 1px 1px rgba(200,32,20,0.2)',
+                        'teal': '0 0 0.5px rgba(0,117,74,0.14), 0 1px 1px rgba(0,117,74,0.2)',
+                        'tangerine': '0 0 0.5px rgba(196,122,58,0.14), 0 1px 1px rgba(196,122,58,0.2)',
                 }
         }
   },

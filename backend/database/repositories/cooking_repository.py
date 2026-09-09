@@ -1,8 +1,23 @@
 """
 Cooking Repository - Handles cooking sessions and recipe feedback
 """
-from typing import Optional, List
+from typing import Optional, List, Union
+from datetime import datetime, timezone
 from .base_repository import BaseRepository
+
+
+def _as_timestamp(value: Union[str, datetime, None]) -> Optional[datetime]:
+    """Normalize ISO strings to naive UTC datetimes for asyncpg TIMESTAMP columns."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    if isinstance(value, str):
+        raw = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(raw)
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+    return value
+
 
 
 class CookSessionRepository(BaseRepository):
@@ -92,7 +107,7 @@ class RecipeFeedbackRepository(BaseRepository):
                 SET feedback = $1, updated_at = $2
                 WHERE user_id = $3 AND recipe_id = $4
                 """,
-                feedback, updated_at, user_id, recipe_id
+                feedback, _as_timestamp(updated_at), user_id, recipe_id
             )
 
             # Parse rowcount from result string (e.g., "UPDATE 1")
@@ -107,7 +122,7 @@ class RecipeFeedbackRepository(BaseRepository):
                     INSERT INTO recipe_feedback (id, user_id, recipe_id, feedback, updated_at)
                     VALUES ($1, $2, $3, $4, $5)
                     """,
-                    feedback_id, user_id, recipe_id, feedback, updated_at
+                    feedback_id, user_id, recipe_id, feedback, _as_timestamp(updated_at)
                 )
 
         return {

@@ -19,21 +19,38 @@ export const ACCESSIBILITY_PRESETS = {
     description: 'Standard settings',
   },
   adhd: {
-    name: 'Focus Mode (ADHD)',
-    description: 'Reduced distractions, clear progress indicators',
+    name: 'Focus Mode (ADHD / neurospicy)',
+    description: 'Less clutter, one-thing-at-a-time steps, labels + confirms',
   },
   dyslexia: {
     name: 'Reading Support (Dyslexia)',
-    description: 'Dyslexic-friendly fonts, increased spacing',
+    description: 'OpenDyslexic font, roomier spacing, reading ruler',
   },
   autism: {
     name: 'Predictable Mode (Autism)',
-    description: 'Consistent patterns, clear structure',
+    description: 'Consistent UI, confirms before big actions, calmer motion',
   },
   sensory: {
     name: 'Quiet Mode (Sensory)',
-    description: 'Reduced motion, muted colors, minimal animations',
+    description: 'No motion flash, quiet timers, simplified chrome',
   },
+};
+
+/** Destructive confirm helper — respects the confirmActions accessibility toggle. */
+export const confirmDestructive = (confirmActions, message) => {
+  if (!confirmActions) return true;
+  if (typeof window === 'undefined') return true;
+  return window.confirm(message);
+};
+
+/** Optional haptic pulse when the user has haptic feedback enabled. */
+export const pulseHaptic = (hapticFeedback, pattern = [40, 30, 40]) => {
+  if (!hapticFeedback || typeof navigator === 'undefined' || !navigator.vibrate) return;
+  try {
+    navigator.vibrate(pattern);
+  } catch {
+    /* ignore unsupported devices */
+  }
 };
 
 export const AccessibilityProvider = ({ children }) => {
@@ -351,6 +368,8 @@ export const AccessibilityProvider = ({ children }) => {
         setHighlightCurrentStep(true);
         setTimerNotifications('both');
         setIconLabels(true);
+        setAnimationLevel('reduced');
+        setSoundEffects(true);
         break;
 
       case 'dyslexia':
@@ -377,6 +396,7 @@ export const AccessibilityProvider = ({ children }) => {
         setHapticFeedback(false);
         setSimplifiedMode(true);
         setFocusMode(true);
+        setTimerNotifications('visual');
         break;
 
       case 'default':

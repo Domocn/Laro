@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Download, X } from 'lucide-react';
+import { isPublicRecipeViewPath } from '../lib/publicRecipeView';
 
 export const InstallPrompt = () => {
+  const location = useLocation();
+  const onPublicRecipe = isPublicRecipeViewPath(location.pathname);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -44,6 +48,8 @@ export const InstallPrompt = () => {
     };
   }, []);
 
+  if (onPublicRecipe || isInstalled || !showPrompt) return null;
+
   const handleInstall = async () => {
     if (!deferredPrompt) return;
 
@@ -60,8 +66,6 @@ export const InstallPrompt = () => {
     setShowPrompt(false);
     localStorage.setItem('pwa-install-dismissed', Date.now().toString());
   };
-
-  if (isInstalled || !showPrompt) return null;
 
   return (
     <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-white rounded-2xl shadow-hover border border-border/60 p-4 z-50 animate-fade-in-up">

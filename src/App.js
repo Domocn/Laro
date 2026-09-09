@@ -10,6 +10,7 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { ReadingRuler } from './components/ReadingRuler';
 import { SkipToContent } from './components/SkipToContent';
 import { UserOnboarding } from './components/UserOnboarding';
+import { GuidedTour } from './components/GuidedTour';
 import { ChatModal, ChatButton } from './components/ChatModal';
 import { CookieConsent } from './components/CookieConsent';
 
@@ -25,6 +26,8 @@ const ImportRecipe = lazy(() => import('./pages/ImportRecipe').then(m => ({ defa
 const MealPlanner = lazy(() => import('./pages/MealPlanner').then(m => ({ default: m.MealPlanner })));
 const ShoppingLists = lazy(() => import('./pages/ShoppingLists').then(m => ({ default: m.ShoppingLists })));
 const Household = lazy(() => import('./pages/Household').then(m => ({ default: m.Household })));
+const Friends = lazy(() => import('./pages/Friends').then(m => ({ default: m.Friends })));
+const Support = lazy(() => import('./pages/Support').then(m => ({ default: m.Support })));
 const ServerConfig = lazy(() => import('./pages/ServerConfig').then(m => ({ default: m.ServerConfig })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const QuickAddRecipe = lazy(() => import('./pages/QuickAddRecipe').then(m => ({ default: m.QuickAddRecipe })));
@@ -45,8 +48,19 @@ const Pantry = lazy(() => import('./pages/Pantry').then(m => ({ default: m.Pantr
 
 import { NameUpdateModal } from './components/NameUpdateModal';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
+import { LiveRefreshProvider } from './hooks/useLiveRefresh';
 
 import './App.css';
+
+/** Only open the household websocket when a user is logged in. */
+const AuthLiveRefresh = ({ children }) => {
+  const { isAuthenticated } = useAuth();
+  return (
+    <LiveRefreshProvider autoConnect={!!isAuthenticated}>
+      {children}
+    </LiveRefreshProvider>
+  );
+};
 
 // Loading fallback component
 const PageLoader = () => (
@@ -121,6 +135,7 @@ function AppRoutes() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/server" element={<ServerConfig />} />
+        <Route path="/recipe/:shareCode" element={<SharedRecipe />} />
         <Route path="/r/:shareCode" element={<SharedRecipe />} />
         <Route path="/shared/:shareCode" element={<SharedRecipe />} />
         <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
@@ -141,6 +156,8 @@ function AppRoutes() {
         <Route path="/fridge" element={<ProtectedRoute><Pantry /></ProtectedRoute>} />
         <Route path="/pantry" element={<Navigate to="/fridge" replace />} />
         <Route path="/household" element={<ProtectedRoute><Household /></ProtectedRoute>} />
+        <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
+        <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/settings/security" element={<ProtectedRoute><SecuritySettings /></ProtectedRoute>} />
         <Route path="/settings/preferences" element={<ProtectedRoute><UserPreferences /></ProtectedRoute>} />
@@ -160,30 +177,33 @@ function App() {
       <ThemeProvider>
         <LanguageProvider>
           <AuthProvider>
-            <AccessibilityProvider>
-              <ChatProvider>
-                <SkipToContent />
-                <ReadingRuler />
-                <UserOnboarding />
-                <NameUpdateModal />
-                <PasswordChangeModal />
-                <AppRoutes />
-                <GlobalChat />
-                <CookieConsent />
-                <InstallPrompt />
-                <Toaster
-                  position="top-right"
-                  toastOptions={{
-                    style: {
-                      background: '#FFFFFF',
-                      border: '1px solid #E6E2D6',
-                      borderRadius: '1rem',
-                    },
-                    className: 'font-sans',
-                  }}
-                />
-              </ChatProvider>
-            </AccessibilityProvider>
+            <AuthLiveRefresh>
+              <AccessibilityProvider>
+                <ChatProvider>
+                  <SkipToContent />
+                  <ReadingRuler />
+                  <UserOnboarding />
+                  <GuidedTour />
+                  <NameUpdateModal />
+                  <PasswordChangeModal />
+                  <AppRoutes />
+                  <GlobalChat />
+                  <CookieConsent />
+                  <InstallPrompt />
+                  <Toaster
+                    position="top-right"
+                    toastOptions={{
+                      style: {
+                        background: '#FFFFFF',
+                        border: '1px solid #E6E2D6',
+                        borderRadius: '1rem',
+                      },
+                      className: 'font-sans',
+                    }}
+                  />
+                </ChatProvider>
+              </AccessibilityProvider>
+            </AuthLiveRefresh>
           </AuthProvider>
         </LanguageProvider>
       </ThemeProvider>

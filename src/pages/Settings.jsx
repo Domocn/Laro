@@ -3,9 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
-import { configApi, llmApi, notificationApi, promptsApi, authApi, householdApi, importApi, apiTokensApi, exportApi } from '../lib/api';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
+import { useTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { configApi, llmApi, notificationApi, promptsApi, authApi, householdApi, importApi, apiTokensApi, exportApi, preferencesApi } from '../lib/api';
+import { SubscriptionSection } from '../components/SubscriptionSection';
+import { Button } from '../components/ui/button';import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import {
   Select,
@@ -49,30 +51,39 @@ import {
   UserPlus,
   Key,
   Shield,
+  Map,
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Switch } from '../components/ui/switch';
-
-const tabs = [
-  { id: 'user', label: 'User', icon: User },
-  { id: 'ai', label: 'AI', icon: Sparkles },
-  { id: 'household', label: 'Household', icon: Users },
-  { id: 'admin', label: 'Admin', icon: Server },
-];
+import { requestOnboarding } from '../lib/onboarding';
 
 export const Settings = () => {
   const navigate = useNavigate();
   const { user, household, logout } = useAuth();
+  const { t } = useLanguage();
+  const tabs = [
+    { id: 'user', label: t('tabUser'), icon: User },
+    { id: 'ai', label: t('tabAi'), icon: Sparkles },
+    { id: 'household', label: t('tabHousehold'), icon: Users },
+    // Notifications + server + feedback live here — labeled App so regular users find them
+    { id: 'admin', label: t('tabApp'), icon: Bell },
+  ];
   const [serverInfo, setServerInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('user');
+  // Managed cloud AI (laro.food) — hide BYO provider picker
+  const isManagedAi = Boolean(
+    serverInfo?.is_cloud || serverInfo?.features?.local_llm === false
+  );
   
   // LLM Settings
   const [llmSettings, setLlmSettings] = useState({
     provider: 'openai',
     ollama_url: 'http://localhost:11434',
     ollama_model: 'llama3',
+    openai_base_url: '',
+    openai_model: 'gpt-4o',
     embedded_model: 'Phi-3-mini-4k-instruct.Q4_0.gguf'
   });
   const [availableModels, setAvailableModels] = useState([]);
@@ -142,35 +153,30 @@ export const Settings = () => {
   const [newlyCreatedToken, setNewlyCreatedToken] = useState(null);
   const [showCreateToken, setShowCreateToken] = useState(false);
 
-  // Theme Settings
-  const [darkMode, setDarkMode] = useState(() => {
-    // Check localStorage or system preference
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('laro_dark_mode');
-      if (saved !== null) return saved === 'true';
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
-  });
+  // Theme — single source: ThemeContext (laro_theme)
+  const { theme, setThemeMode } = useTheme();
+  const darkMode = theme === 'dark';
 
   useEffect(() => {
     loadData();
     checkNotificationPermission();
   }, []);
 
-  // Apply dark mode to document
+  // Deep-link to Reward store under Subscription (Settings → User)
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    localStorage.setItem('laro_dark_mode', String(darkMode));
-  }, [darkMode]);
+    if (activeTab !== 'user') return;
+    const hash = window.location.hash || '';
+    if (!hash.includes('rewards')) return;
+    const t = setTimeout(() => {
+      document.getElementById('rewards')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [activeTab]);
 
   const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
-    toast.success(darkMode ? 'Light mode enabled' : 'Dark mode enabled');
+    const next = darkMode ? 'light' : 'dark';
+    setThemeMode(next);
+    toast.success(next === 'light' ? t('toastLightMode') : t('toastDarkMode'));
   };
 
   const checkNotificationPermission = () => {
@@ -222,12 +228,20 @@ export const Settings = () => {
         }
       }
 
-      // Load user profile
+      // Load user profile (+ merge preference allergens so Settings shows both sources)
       const userRes = await authApi.me();
       if (userRes.data) {
         setProfileName(userRes.data.name || '');
         setProfileEmail(userRes.data.email || '');
-        setAllergies(userRes.data.allergies || []);
+        let merged = userRes.data.allergies || [];
+        try {
+          const prefRes = await preferencesApi.get();
+          const fromPrefs = prefRes.data?.allergens || [];
+          merged = [...new Set(
+            [...merged, ...fromPrefs].map((a) => String(a).toLowerCase().trim()).filter(Boolean)
+          )];
+        } catch (_) { /* keep profile allergies */ }
+        setAllergies(merged);
       }
 
       // Load household members and join code
@@ -291,7 +305,7 @@ export const Settings = () => {
     setSavingLlm(true);
     try {
       await llmApi.updateSettings(llmSettings);
-      toast.success('AI settings saved!');
+      toast.success(t('toastAiSettingsSaved'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t save your settings. Please try again. (E-ST002)');
     } finally {
@@ -345,20 +359,28 @@ export const Settings = () => {
       let subscription = await registration.pushManager.getSubscription();
       
       if (!subscription) {
-        // For demo purposes, we'll create a simple subscription
-        // In production, you'd need to generate proper VAPID keys
-        // and store the public key on the server
         try {
+          let applicationServerKey;
+          try {
+            const vapidRes = await notificationApi.getVapidPublicKey();
+            if (vapidRes.data?.publicKey) {
+              applicationServerKey = urlBase64ToUint8Array(vapidRes.data.publicKey);
+            }
+          } catch (e) {
+            console.warn('Could not load VAPID public key from server', e);
+          }
+          if (!applicationServerKey) {
+            toast.error('Web Push is not configured on this server (missing VAPID keys).');
+            return;
+          }
           subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
-            // This is a placeholder - in production, use your VAPID public key
-            applicationServerKey: urlBase64ToUint8Array(
-              'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U'
-            )
+            applicationServerKey,
           });
         } catch (subscribeError) {
-          // If VAPID key fails, try without it (for development)
-          console.warn('VAPID subscription failed, notifications may be limited:', subscribeError);
+          console.warn('VAPID subscription failed:', subscribeError);
+          toast.error('Could not subscribe to Web Push in this browser.');
+          return;
         }
       }
 
@@ -372,7 +394,7 @@ export const Settings = () => {
       setNotificationSettings(newSettings);
       await notificationApi.updateSettings(newSettings);
       
-      toast.success('Notifications enabled!');
+      toast.success(t('toastNotificationsEnabled'));
     } catch (error) {
       console.error('Failed to enable notifications:', error);
       toast.error('Couldn\'t enable notifications. Please try again. (E-ST003)');
@@ -396,7 +418,7 @@ export const Settings = () => {
       const newSettings = { ...notificationSettings, enabled: false };
       setNotificationSettings(newSettings);
       await notificationApi.updateSettings(newSettings);
-      toast.success('Notifications disabled');
+      toast.success(t('toastNotificationsDisabled'));
     } catch (error) {
       toast.error('Couldn\'t disable notifications. Please try again. (E-ST004)');
     } finally {
@@ -408,7 +430,7 @@ export const Settings = () => {
     setSavingNotifications(true);
     try {
       await notificationApi.updateSettings(notificationSettings);
-      toast.success('Notification settings saved!');
+      toast.success(t('toastNotificationSettingsSaved'));
     } catch (error) {
       toast.error('Couldn\'t save notification settings. Please try again. (E-ST005)');
     } finally {
@@ -458,7 +480,7 @@ export const Settings = () => {
     setSavingProfile(true);
     try {
       await authApi.updateProfile({ name: profileName, email: profileEmail });
-      toast.success('Profile updated!');
+      toast.success(t('toastProfileUpdated'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t update your profile. Please try again. (E-ST009)');
     } finally {
@@ -481,8 +503,14 @@ export const Settings = () => {
   const handleSaveAllergies = async () => {
     setSavingAllergies(true);
     try {
+      // Dual-write: recipe allergen checks merge users.allergies + preferences.allergens
       await authApi.updateProfile({ allergies });
-      toast.success('Allergies saved!');
+      try {
+        await preferencesApi.update({ allergens: allergies });
+      } catch (e) {
+        console.warn('Could not sync allergies to preferences.allergens', e);
+      }
+      toast.success(t('toastAllergiesSaved'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t save your allergies. Please try again. (E-ST010)');
     } finally {
@@ -497,7 +525,7 @@ export const Settings = () => {
       const res = await householdApi.generateJoinCode();
       setJoinCode(res.data.join_code);
       setJoinCodeExpires(res.data.expires);
-      toast.success('Join code generated!');
+      toast.success(t('toastJoinCodeGenerated'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t generate the join code. Please try again. (E-ST011)');
     } finally {
@@ -510,7 +538,7 @@ export const Settings = () => {
       await householdApi.revokeJoinCode();
       setJoinCode(null);
       setJoinCodeExpires(null);
-      toast.success('Join code revoked');
+      toast.success(t('toastJoinCodeRevoked'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t revoke the join code. Please try again. (E-ST012)');
     }
@@ -521,7 +549,7 @@ export const Settings = () => {
     setJoiningHousehold(true);
     try {
       await householdApi.joinWithCode(joinCodeInput.trim());
-      toast.success('Joined household!');
+      toast.success(t('toastJoinedHousehold'));
       window.location.reload();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t join that household. Please try again. (E-ST013)');
@@ -532,7 +560,7 @@ export const Settings = () => {
 
   const copyJoinCode = () => {
     navigator.clipboard.writeText(joinCode);
-    toast.success('Join code copied!');
+    toast.success(t('toastJoinCodeCopied'));
   };
 
   // Import handlers
@@ -589,7 +617,7 @@ export const Settings = () => {
       window.URL.revokeObjectURL(url);
       a.remove();
 
-      toast.success('Your data has been downloaded!');
+      toast.success(t('toastDataDownloaded'));
     } catch (error) {
       console.error('Download failed:', error);
       toast.error(error.response?.data?.detail || 'Couldn\'t download your data. Please try again. (E-ST015)');
@@ -604,7 +632,7 @@ export const Settings = () => {
     setDeleting(true);
     try {
       await authApi.deleteAccount();
-      toast.success('Account deleted');
+      toast.success(t('toastAccountDeleted'));
       await logout();
       navigate('/');
     } catch (error) {
@@ -629,7 +657,7 @@ export const Settings = () => {
 
   const handleCreateToken = async () => {
     if (!newTokenName.trim()) {
-      toast.error('Please enter a token name');
+      toast.error(t('toastEnterTokenName'));
       return;
     }
     setCreatingToken(true);
@@ -643,7 +671,7 @@ export const Settings = () => {
       setNewTokenName('');
       setNewTokenExpiry('never');
       await loadApiTokens();
-      toast.success('API token created!');
+      toast.success(t('toastTokenCreated'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t create that token. Please try again. (E-ST017)');
     } finally {
@@ -655,7 +683,7 @@ export const Settings = () => {
     try {
       await apiTokensApi.revoke(tokenId);
       await loadApiTokens();
-      toast.success('Token revoked');
+      toast.success(t('toastTokenRevoked'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t revoke the token. Please try again. (E-ST018)');
     }
@@ -665,7 +693,7 @@ export const Settings = () => {
     try {
       await apiTokensApi.delete(tokenId);
       await loadApiTokens();
-      toast.success('Token deleted');
+      toast.success(t('toastTokenDeleted'));
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Couldn\'t delete the token. Please try again. (E-ST019)');
     }
@@ -673,7 +701,7 @@ export const Settings = () => {
 
   const copyToken = (token) => {
     navigator.clipboard.writeText(token);
-    toast.success('Token copied to clipboard!');
+    toast.success(t('toastTokenCopied'));
   };
 
   // Load API tokens when user tab becomes active
@@ -704,8 +732,8 @@ export const Settings = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h1 className="font-heading text-3xl font-bold">Settings</h1>
-          <p className="text-muted-foreground mt-1">Manage your app preferences</p>
+          <h1 className="font-heading text-3xl font-bold">{t('settings')}</h1>
+          <p className="text-muted-foreground mt-1">{t('settingsSubtitle')}</p>
         </motion.div>
 
         {/* Tab Bar */}
@@ -748,7 +776,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <User className="w-5 h-5 text-laro" />
-              Account
+              {t('account')}
             </h2>
           </div>
 
@@ -759,7 +787,7 @@ export const Settings = () => {
               </div>
               <div className="flex-1 space-y-3">
                 <div>
-                  <Label htmlFor="profile-name" className="text-xs text-muted-foreground">Name</Label>
+                  <Label htmlFor="profile-name" className="text-xs text-muted-foreground">{t('name')}</Label>
                   <Input
                     id="profile-name"
                     value={profileName}
@@ -768,7 +796,7 @@ export const Settings = () => {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="profile-email" className="text-xs text-muted-foreground">Email</Label>
+                  <Label htmlFor="profile-email" className="text-xs text-muted-foreground">{t('email')}</Label>
                   <Input
                     id="profile-email"
                     type="email"
@@ -787,7 +815,7 @@ export const Settings = () => {
                 data-testid="logout-btn"
               >
                 <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
+                {t('signOut')}
               </Button>
               <Button
                 onClick={handleSaveProfile}
@@ -795,9 +823,89 @@ export const Settings = () => {
                 className="rounded-full bg-laro hover:bg-laro-dark"
               >
                 {savingProfile ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Check className="w-4 h-4 mr-2" />}
-                Save Changes
+                {t('saveChanges')}
               </Button>
             </div>
+          </div>
+        </motion.section>
+
+        <SubscriptionSection
+          userId={user?.id}
+          userEmail={user?.email || profileEmail}
+          user={user}
+        />
+
+        {/* Nested settings that used to live as separate menu items */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.11 }}
+          className="bg-white rounded-2xl border border-border/60 overflow-hidden"
+        >
+          <div className="divide-y divide-border/60">
+            <button
+              type="button"
+              onClick={() => navigate('/settings/preferences')}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
+              data-testid="settings-link-preferences"
+            >
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-5 h-5 text-laro" />
+                <div>
+                  <p className="font-medium text-sm">{t('preferences')}</p>
+                  <p className="text-xs text-muted-foreground">{t('prefsLinkDesc')}</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!user?.id) return;
+                requestOnboarding(user.id);
+              }}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
+              data-testid="settings-learn-more"
+            >
+              <div className="flex items-center gap-3">
+                <Map className="w-5 h-5 text-laro" />
+                <div>
+                  <p className="font-medium text-sm">{t('learnMoreAboutLaro')}</p>
+                  <p className="text-xs text-muted-foreground">{t('learnMoreAboutLaroDesc')}</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/settings/security')}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
+              data-testid="settings-link-security"
+            >
+              <div className="flex items-center gap-3">
+                <Shield className="w-5 h-5 text-laro" />
+                <div>
+                  <p className="font-medium text-sm">{t('security')}</p>
+                  <p className="text-xs text-muted-foreground">{t('securityDesc')}</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/support')}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
+              data-testid="settings-link-support"
+            >
+              <div className="flex items-center gap-3">
+                <MessageSquare className="w-5 h-5 text-laro" />
+                <div>
+                  <p className="font-medium text-sm">{t('helpSupport')}</p>
+                  <p className="text-xs text-muted-foreground">{t('helpSupportLinkDesc')}</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
           </div>
         </motion.section>
 
@@ -811,25 +919,25 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Shield className="w-5 h-5 text-laro" />
-              Allergies
+              {t('allergies')}
             </h2>
           </div>
 
           <div className="p-4 space-y-4">
             <p className="text-sm text-muted-foreground">
-              Add your food allergies to receive warnings when planning recipes that contain allergens.
+              {t('allergiesHint')}
             </p>
 
             <div className="flex gap-2">
               <Input
-                placeholder="Type allergies (e.g., gluten, nuts, dairy)..."
+                placeholder={t('allergyPlaceholder')}
                 value={newAllergy}
                 onChange={(e) => setNewAllergy(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddAllergy()}
                 className="rounded-lg flex-1"
               />
               <Button onClick={handleAddAllergy} variant="outline" className="rounded-lg">
-                Add
+                {t('add')}
               </Button>
             </div>
 
@@ -855,7 +963,7 @@ export const Settings = () => {
               className="rounded-full bg-laro hover:bg-laro-dark"
             >
               {savingAllergies ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Check className="w-4 h-4 mr-2" />}
-              Save Allergies
+              {t('saveAllergies')}
             </Button>
           </div>
         </motion.section>
@@ -870,7 +978,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Palette className="w-5 h-5 text-laro" />
-              Appearance
+              {t('appearance')}
             </h2>
           </div>
 
@@ -883,7 +991,7 @@ export const Settings = () => {
                   <Sun className="w-5 h-5 text-amber-500" />
                 )}
                 <div>
-                  <p className="font-medium">Dark Mode</p>
+                  <p className="font-medium">{t('darkMode')}</p>
                   <p className="text-sm text-muted-foreground">
                     {darkMode ? 'Currently using dark theme' : 'Currently using light theme'}
                   </p>
@@ -907,7 +1015,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Upload className="w-5 h-5 text-laro" />
-              Import Recipe Archive
+              {t('importRecipeArchive')}
             </h2>
           </div>
 
@@ -951,7 +1059,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Key className="w-5 h-5 text-laro" />
-              API Tokens
+              {t('apiTokens')}
             </h2>
           </div>
 
@@ -966,7 +1074,7 @@ export const Settings = () => {
                 <div className="flex items-start gap-3">
                   <AlertCircle className="w-5 h-5 text-laro flex-shrink-0 mt-0.5" />
                   <div className="flex-1 space-y-2">
-                    <p className="font-medium text-laro">Save your token now!</p>
+                    <p className="font-medium text-laro">{t('saveTokenNow')}</p>
                     <p className="text-sm text-laro/80">This token will only be shown once. Copy it and store it securely.</p>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 p-2 bg-white rounded-lg text-sm font-mono break-all border">
@@ -997,12 +1105,12 @@ export const Settings = () => {
                 className="rounded-full"
               >
                 <Key className="w-4 h-4 mr-2" />
-                Create New Token
+                {t('createNewToken')}
               </Button>
             ) : (
               <div className="p-4 bg-cream-subtle rounded-xl space-y-3">
                 <div>
-                  <Label htmlFor="token-name" className="mb-2 block text-sm">Token Name</Label>
+                  <Label htmlFor="token-name" className="mb-2 block text-sm">{t('tokenName')}</Label>
                   <Input
                     id="token-name"
                     placeholder="e.g., Home Assistant"
@@ -1012,7 +1120,7 @@ export const Settings = () => {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="token-expiry" className="mb-2 block text-sm">Expiration</Label>
+                  <Label htmlFor="token-expiry" className="mb-2 block text-sm">{t('expiration')}</Label>
                   <Select value={newTokenExpiry} onValueChange={setNewTokenExpiry}>
                     <SelectTrigger className="rounded-lg w-48">
                       <SelectValue />
@@ -1035,7 +1143,7 @@ export const Settings = () => {
                     }}
                     className="rounded-full"
                   >
-                    Cancel
+                    {t('cancel')}
                   </Button>
                   <Button
                     onClick={handleCreateToken}
@@ -1043,7 +1151,7 @@ export const Settings = () => {
                     className="rounded-full bg-laro hover:bg-laro-dark"
                   >
                     {creatingToken ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Key className="w-4 h-4 mr-2" />}
-                    Create Token
+                    {t('createNewToken')}
                   </Button>
                 </div>
               </div>
@@ -1064,7 +1172,7 @@ export const Settings = () => {
                         <div className="flex items-center gap-2">
                           <p className="font-medium text-sm truncate">{token.name}</p>
                           {token.revoked && (
-                            <span className="px-2 py-0.5 text-xs bg-red-100 text-red-600 rounded">Revoked</span>
+                            <span className="px-2 py-0.5 text-xs bg-red-100 text-red-600 rounded">{t('revoked')}</span>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">
@@ -1122,7 +1230,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Download className="w-5 h-5 text-laro" />
-              Download My Data
+              {t('downloadMyData')}
             </h2>
           </div>
 
@@ -1147,7 +1255,7 @@ export const Settings = () => {
               ) : (
                 <Download className="w-4 h-4 mr-2" />
               )}
-              Download My Data (.zip)
+              {t('downloadMyData')} (.zip)
             </Button>
           </div>
         </motion.section>
@@ -1162,7 +1270,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-red-200 bg-red-50">
             <h2 className="font-heading font-semibold flex items-center gap-2 text-red-700">
               <AlertTriangle className="w-5 h-5" />
-              Danger Zone
+              {t('dangerZone')}
             </h2>
           </div>
 
@@ -1178,7 +1286,7 @@ export const Settings = () => {
                 onClick={() => setShowDeleteConfirm(true)}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                Delete My Account
+                {t('deleteMyAccount')}
               </Button>
             ) : (
               <div className="p-4 bg-red-50 rounded-xl space-y-3">
@@ -1200,7 +1308,7 @@ export const Settings = () => {
                       setDeleteConfirmText('');
                     }}
                   >
-                    Cancel
+                    {t('cancel')}
                   </Button>
                   <Button
                     onClick={handleDeleteAccount}
@@ -1208,7 +1316,7 @@ export const Settings = () => {
                     className="rounded-full bg-red-600 hover:bg-red-700 text-white"
                   >
                     {deleting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                    Delete Account
+                    {t('deleteMyAccount')}
                   </Button>
                 </div>
               </div>
@@ -1231,38 +1339,57 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-laro" />
-              AI Settings
+              {t('aiSettings')}
             </h2>
           </div>
           
           <div className="p-4 space-y-6">
-            {/* Cloud Mode - Laro AI managed by the service */}
-            {serverInfo?.is_cloud ? (
+            {/* Cloud Mode - Laro AI managed by the service.
+                Also treat missing serverInfo as cloud-safe once features.local_llm is false,
+                and avoid flashing the self-host picker while config is loading. */}
+            {(isManagedAi) ? (
               <div className="space-y-4">
-                <div className="p-6 rounded-xl border-2 border-laro bg-gradient-to-br from-laro-light to-purple-50">
+                <div className="p-6 rounded-xl border border-laro/30 bg-laro-light/80">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
-                      <span className="text-3xl">👨‍🍳</span>
+                    <div className="w-14 h-14 rounded-2xl bg-laro flex items-center justify-center shadow-soft">
+                      <Sparkles className="w-7 h-7 text-white" aria-hidden="true" />
                     </div>
                     <div>
-                      <h3 className="font-heading font-semibold text-lg">Laro AI</h3>
+                      <h3 className="font-heading font-semibold text-lg tracking-tight">{t('laroAi')}</h3>
                       <p className="text-sm text-muted-foreground">
-                        Powered by advanced AI, managed for you
+                        {t('laroAiDesc')}
                       </p>
                     </div>
                   </div>
-                  <div className="mt-4 p-3 bg-white/60 rounded-lg">
-                    <p className="text-sm text-gray-600">
-                      Your AI assistant is ready to help with recipe imports, meal planning,
-                      cooking questions, and more. No configuration needed!
+                  <div className="mt-4 p-3 bg-card/80 rounded-lg border border-border/50 space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      Helps with recipe imports, meal planning, and cooking questions.
+                      Free accounts get a few uses; Pro is unlimited.
                     </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full"
+                      disabled={testingLlm}
+                      onClick={handleTestLlm}
+                      data-testid="test-laro-ai"
+                    >
+                      {testingLlm ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                      {t('checkLaroAi')}
+                    </Button>
                   </div>
                 </div>
+              </div>
+            ) : loading || !serverInfo ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading AI settings…
               </div>
             ) : (
               /* Self-Hosted Mode - User can choose AI provider */
               <div>
-                <Label className="mb-3 block">AI Provider</Label>
+                <Label className="mb-3 block">{t('aiProvider')}</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <button
                     onClick={() => setLlmSettings({ ...llmSettings, provider: 'openai' })}
@@ -1336,24 +1463,20 @@ export const Settings = () => {
             )}
 
             {/* Provider-specific configuration (self-hosted only) */}
-            {!serverInfo?.is_cloud && llmSettings.provider === 'anthropic' && (
+            {!isManagedAi && llmSettings.provider === 'anthropic' && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 className="space-y-4 p-4 bg-cream-subtle rounded-xl"
               >
                 <div>
-                  <Label htmlFor="anthropic-key" className="mb-2 block">Anthropic API Key</Label>
-                  <Input
-                    id="anthropic-key"
-                    type="password"
-                    placeholder="sk-ant-..."
-                    value={llmSettings.anthropic_api_key || ''}
-                    onChange={(e) => setLlmSettings({ ...llmSettings, anthropic_api_key: e.target.value })}
-                    className="rounded-xl"
-                  />
+                  <Label className="mb-2 block">Anthropic API Key</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Set <code className="text-xs bg-muted px-1 rounded">ANTHROPIC_API_KEY</code> on the
+                    server environment — keys are not stored from this UI.
+                  </p>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Get your API key from{' '}
+                    Get a key at{' '}
                     <a 
                       href="https://console.anthropic.com/settings/keys" 
                       target="_blank" 
@@ -1367,7 +1490,7 @@ export const Settings = () => {
               </motion.div>
             )}
 
-            {!serverInfo?.is_cloud && llmSettings.provider === 'embedded' && (
+            {!isManagedAi && llmSettings.provider === 'embedded' && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
@@ -1423,7 +1546,7 @@ export const Settings = () => {
                     ) : (
                       <Download className="w-4 h-4 mr-2" />
                     )}
-                    Check Model Status
+                    {t('checkModelStatus')}
                   </Button>
                   
                   {llmTestResult && (
@@ -1442,7 +1565,7 @@ export const Settings = () => {
               </motion.div>
             )}
 
-            {!serverInfo?.is_cloud && llmSettings.provider === 'ollama' && (
+            {!isManagedAi && llmSettings.provider === 'ollama' && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
@@ -1495,7 +1618,7 @@ export const Settings = () => {
                     ) : (
                       <Wifi className="w-4 h-4 mr-2" />
                     )}
-                    Test Connection
+                    {t('testConnection')}
                   </Button>
                   
                   {llmTestResult && (
@@ -1514,17 +1637,44 @@ export const Settings = () => {
               </motion.div>
             )}
 
-            {/* OpenAI Info (self-hosted only) */}
-            {!serverInfo?.is_cloud && llmSettings.provider === 'openai' && (
-              <div className="p-4 bg-cream-subtle rounded-xl">
+            {/* OpenAI / LM Studio (self-hosted only) */}
+            {!isManagedAi && llmSettings.provider === 'openai' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="space-y-4 p-4 bg-cream-subtle rounded-xl"
+              >
                 <p className="text-sm text-muted-foreground">
-                  Using OpenAI GPT-4o for AI features. API calls are made through the server.
+                  OpenAI-compatible API. Leave base URL empty for official OpenAI, or point at
+                  LM Studio / local gateways (e.g. <code className="text-xs">http://localhost:1234/v1</code>).
+                  Server <code className="text-xs">OPENAI_API_KEY</code> is used for auth when required.
                 </p>
-              </div>
+                <div>
+                  <Label htmlFor="openai-base" className="mb-2 block">Base URL (optional)</Label>
+                  <Input
+                    id="openai-base"
+                    type="url"
+                    placeholder="https://api.openai.com/v1 or http://localhost:1234/v1"
+                    value={llmSettings.openai_base_url || ''}
+                    onChange={(e) => setLlmSettings({ ...llmSettings, openai_base_url: e.target.value })}
+                    className="rounded-xl"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="openai-model" className="mb-2 block">Model</Label>
+                  <Input
+                    id="openai-model"
+                    placeholder="gpt-4o"
+                    value={llmSettings.openai_model || 'gpt-4o'}
+                    onChange={(e) => setLlmSettings({ ...llmSettings, openai_model: e.target.value })}
+                    className="rounded-xl"
+                  />
+                </div>
+              </motion.div>
             )}
 
             {/* Save Button (self-hosted only) */}
-            {!serverInfo?.is_cloud && (
+            {!isManagedAi && (
               <Button
                 onClick={handleSaveLlm}
                 disabled={savingLlm}
@@ -1535,7 +1685,7 @@ export const Settings = () => {
                 ) : (
                   <Check className="w-4 h-4 mr-2" />
                 )}
-                Save AI Settings
+                {t('saveAiSettings')}
               </Button>
             )}
           </div>
@@ -1552,7 +1702,7 @@ export const Settings = () => {
             <div className="flex items-center justify-between">
               <h2 className="font-heading font-semibold flex items-center gap-2">
                 <FileText className="w-5 h-5 text-laro" />
-                Custom AI Prompts
+                {t('customAiPrompts')}
               </h2>
               <Button
                 variant="ghost"
@@ -1561,7 +1711,7 @@ export const Settings = () => {
                 className="text-xs text-muted-foreground hover:text-destructive"
               >
                 <RotateCcw className="w-3 h-3 mr-1" />
-                Reset All
+                {t('resetAll')}
               </Button>
             </div>
           </div>
@@ -1624,7 +1774,7 @@ export const Settings = () => {
                         ) : (
                           <Check className="w-4 h-4 mr-1" />
                         )}
-                        Save
+                        {t('save')}
                       </Button>
                     </div>
                   </motion.div>
@@ -1656,7 +1806,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Bell className="w-5 h-5 text-laro" />
-              Notifications
+              {t('notifications')}
             </h2>
           </div>
           
@@ -1670,13 +1820,13 @@ export const Settings = () => {
                   <BellOff className="w-5 h-5 text-muted-foreground" />
                 )}
                 <div>
-                  <p className="font-medium">Push Notifications</p>
+                  <p className="font-medium">{t('pushNotifications')}</p>
                   <p className="text-sm text-muted-foreground">
                     {notificationPermission === 'denied' 
-                      ? 'Blocked in browser settings'
+                      ? t('blockedInBrowser')
                       : notificationSettings.enabled 
-                        ? 'Enabled' 
-                        : 'Disabled'}
+                        ? t('enabled') 
+                        : t('disabled')}
                   </p>
                 </div>
               </div>
@@ -1684,7 +1834,7 @@ export const Settings = () => {
               {notificationPermission === 'denied' ? (
                 <Button variant="outline" disabled className="rounded-full">
                   <AlertCircle className="w-4 h-4 mr-2" />
-                  Blocked
+                  {t('blocked')}
                 </Button>
               ) : notificationSettings.enabled ? (
                 <Button 
@@ -1698,7 +1848,7 @@ export const Settings = () => {
                   ) : (
                     <BellOff className="w-4 h-4 mr-2" />
                   )}
-                  Disable
+                  {t('disable')}
                 </Button>
               ) : (
                 <Button 
@@ -1711,107 +1861,103 @@ export const Settings = () => {
                   ) : (
                     <Bell className="w-4 h-4 mr-2" />
                   )}
-                  Enable
+                  {t('enable')}
                 </Button>
               )}
             </div>
 
-            {/* Notification Options - only show if enabled */}
+            {/* Reminder toggles — delivered by in-process / Celery Beat scheduler */}
             {notificationSettings.enabled && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 className="space-y-4 pt-4 border-t border-border/60"
               >
-                {/* Meal Reminders */}
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-sm">Meal Reminders</p>
                     <p className="text-xs text-muted-foreground">
-                      Get reminded before planned meals
+                      Notify before breakfast, lunch, and dinner on your plan
                     </p>
                   </div>
                   <Switch
                     checked={notificationSettings.meal_reminders}
-                    onCheckedChange={(checked) => 
-                      setNotificationSettings({ ...notificationSettings, meal_reminders: checked })
+                    onCheckedChange={(checked) =>
+                      setNotificationSettings((s) => ({ ...s, meal_reminders: checked }))
                     }
+                    data-testid="meal-reminders-toggle"
                   />
                 </div>
 
-                {/* Reminder Time */}
                 {notificationSettings.meal_reminders && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="ml-4 p-3 bg-cream-subtle rounded-xl"
-                  >
-                    <Label htmlFor="reminder-time" className="mb-2 block text-sm">
-                      Remind me before meals
-                    </Label>
-                    <Select 
-                      value={String(notificationSettings.reminder_time)} 
-                      onValueChange={(value) => 
-                        setNotificationSettings({ ...notificationSettings, reminder_time: parseInt(value) })
+                  <div className="pl-0 sm:pl-2">
+                    <label className="text-xs text-muted-foreground" htmlFor="reminder-lead">
+                      Minutes before meal
+                    </label>
+                    <select
+                      id="reminder-lead"
+                      className="mt-1 w-full rounded-xl border border-border/60 bg-background px-3 py-2 text-sm"
+                      value={notificationSettings.reminder_time}
+                      onChange={(e) =>
+                        setNotificationSettings((s) => ({
+                          ...s,
+                          reminder_time: parseInt(e.target.value, 10),
+                        }))
                       }
+                      data-testid="reminder-time-select"
                     >
-                      <SelectTrigger className="rounded-xl w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="15">15 minutes</SelectItem>
-                        <SelectItem value="30">30 minutes</SelectItem>
-                        <SelectItem value="60">1 hour</SelectItem>
-                        <SelectItem value="120">2 hours</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </motion.div>
+                      <option value={15}>15 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={60}>60 minutes</option>
+                      <option value={120}>2 hours</option>
+                    </select>
+                  </div>
                 )}
 
-                {/* Shopping Reminders */}
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-sm">Shopping List Reminders</p>
                     <p className="text-xs text-muted-foreground">
-                      Remind when items are added to shopping list
+                      Saturday morning nudge when the list still has items
                     </p>
                   </div>
                   <Switch
                     checked={notificationSettings.shopping_reminders}
-                    onCheckedChange={(checked) => 
-                      setNotificationSettings({ ...notificationSettings, shopping_reminders: checked })
+                    onCheckedChange={(checked) =>
+                      setNotificationSettings((s) => ({ ...s, shopping_reminders: checked }))
                     }
+                    data-testid="shopping-reminders-toggle"
                   />
                 </div>
 
-                {/* Weekly Plan Reminder */}
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-sm">Weekly Planning Reminder</p>
                     <p className="text-xs text-muted-foreground">
-                      Remind to plan meals for the week
+                      Sunday afternoon if next week still looks empty
                     </p>
                   </div>
                   <Switch
                     checked={notificationSettings.weekly_plan_reminder}
-                    onCheckedChange={(checked) => 
-                      setNotificationSettings({ ...notificationSettings, weekly_plan_reminder: checked })
+                    onCheckedChange={(checked) =>
+                      setNotificationSettings((s) => ({ ...s, weekly_plan_reminder: checked }))
                     }
+                    data-testid="weekly-plan-reminder-toggle"
                   />
                 </div>
 
-                {/* Save Button */}
-                <Button 
+                <Button
                   onClick={handleSaveNotificationSettings}
                   disabled={savingNotifications}
-                  className="rounded-full bg-laro hover:bg-laro-dark mt-4"
+                  className="rounded-full bg-laro hover:bg-laro-dark"
+                  data-testid="save-notification-settings"
                 >
                   {savingNotifications ? (
                     <Loader2 className="w-4 h-4 animate-spin mr-2" />
                   ) : (
-                    <Check className="w-4 h-4 mr-2" />
+                    <Bell className="w-4 h-4 mr-2" />
                   )}
-                  Save Notification Settings
+                  {t('saveChanges')}
                 </Button>
               </motion.div>
             )}
@@ -1845,7 +1991,7 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Server className="w-5 h-5 text-laro" />
-              Server Connection
+              {t('serverConnection')}
             </h2>
           </div>
           
@@ -1875,7 +2021,7 @@ export const Settings = () => {
                   className="rounded-full"
                   data-testid="change-server-btn"
                 >
-                  Change
+                  {t('change')}
                   <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
@@ -1907,17 +2053,17 @@ export const Settings = () => {
               <div className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Your Role</p>
+                    <p className="text-sm text-muted-foreground">{t('yourRole')}</p>
                     <p className="font-medium">
                       {household.owner_id === user?.id ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-laro/20 text-laro rounded text-xs">Admin</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-laro/20 text-laro rounded text-xs">{t('admin')}</span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">Member</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300 rounded text-xs">{t('member')}</span>
                       )}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-muted-foreground">Members</p>
+                    <p className="text-sm text-muted-foreground">{t('members')}</p>
                     <p className="font-medium">{householdMembers.length}</p>
                   </div>
                 </div>
@@ -1928,7 +2074,7 @@ export const Settings = () => {
                     onClick={async () => {
                       try {
                         await householdApi.leave();
-                        toast.success('Left household');
+                        toast.success(t('toastLeftHousehold'));
                         window.location.reload();
                       } catch (error) {
                         toast.error(error.response?.data?.detail || 'Couldn\'t leave the household. Please try again. (E-ST020)');
@@ -1936,7 +2082,7 @@ export const Settings = () => {
                     }}
                   >
                     <LogOut className="w-4 h-4 mr-2" />
-                    Leave Household
+                    {t('leaveHousehold')}
                   </Button>
                 )}
               </div>
@@ -1952,7 +2098,7 @@ export const Settings = () => {
               <div className="p-4 border-b border-border/60 bg-cream-subtle">
                 <h2 className="font-heading font-semibold flex items-center gap-2">
                   <UserPlus className="w-5 h-5 text-laro" />
-                  Members
+                  {t('members')}
                 </h2>
               </div>
 
@@ -1973,9 +2119,9 @@ export const Settings = () => {
                     <span className={`px-2 py-0.5 rounded text-xs ${
                       household.owner_id === member.id
                         ? 'bg-laro/20 text-laro'
-                        : 'bg-gray-100 text-gray-600'
+                        : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'
                     }`}>
-                      {household.owner_id === member.id ? 'Admin' : 'Member'}
+                      {household.owner_id === member.id ? t('admin') : t('member')}
                     </span>
                   </div>
                 ))}
@@ -1993,7 +2139,7 @@ export const Settings = () => {
                 <div className="p-4 border-b border-border/60 bg-cream-subtle">
                   <h2 className="font-heading font-semibold flex items-center gap-2">
                     <Key className="w-5 h-5 text-laro" />
-                    Join Code
+                    {t('joinCode')}
                   </h2>
                 </div>
 
@@ -2019,7 +2165,7 @@ export const Settings = () => {
                         className="rounded-full text-red-600 border-red-300 hover:bg-red-50"
                         onClick={handleRevokeJoinCode}
                       >
-                        Revoke Code
+                        {t('revokeCode')}
                       </Button>
                     </>
                   ) : (
@@ -2033,7 +2179,7 @@ export const Settings = () => {
                         className="rounded-full bg-laro hover:bg-laro-dark"
                       >
                         {generatingCode ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Key className="w-4 h-4 mr-2" />}
-                        Generate Join Code
+                        {t('generateJoinCode')}
                       </Button>
                     </>
                   )}
@@ -2053,7 +2199,7 @@ export const Settings = () => {
               <div className="p-4 border-b border-border/60 bg-cream-subtle">
                 <h2 className="font-heading font-semibold flex items-center gap-2">
                   <Users className="w-5 h-5 text-laro" />
-                  Join a Household
+                  {t('joinAHousehold')}
                 </h2>
               </div>
 
@@ -2089,7 +2235,7 @@ export const Settings = () => {
               <div className="p-4 border-b border-border/60 bg-cream-subtle">
                 <h2 className="font-heading font-semibold flex items-center gap-2">
                   <UserPlus className="w-5 h-5 text-laro" />
-                  Create a Household
+                  {t('createAHousehold')}
                 </h2>
               </div>
 
@@ -2102,7 +2248,7 @@ export const Settings = () => {
                   className="rounded-full bg-laro hover:bg-laro-dark"
                 >
                   <Users className="w-4 h-4 mr-2" />
-                  Create Household
+                  {t('createHousehold')}
                 </Button>
               </div>
             </motion.section>
@@ -2124,58 +2270,55 @@ export const Settings = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-laro" />
-              Feedback & Support
+              {t('feedbackSupport')}
             </h2>
           </div>
 
           <div className="divide-y divide-border/60">
-            <a
-              href="https://github.com/Domocn/Laro/issues/new?template=bug_report.md&labels=bug"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors block"
+            <button
+              type="button"
+              onClick={() => navigate('/support?new=1')}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
             >
               <div className="flex items-center gap-3">
                 <Bug className="w-5 h-5 text-coral" />
                 <div>
-                  <p className="font-medium text-sm">Report a Bug</p>
-                  <p className="text-xs text-muted-foreground">Found something broken? Let us know on GitHub</p>
+                  <p className="font-medium text-sm">Report a problem</p>
+                  <p className="text-xs text-muted-foreground">Open a ticket — we&apos;ll track it with you</p>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </a>
-            
-            <a 
-              href="https://github.com/Domocn/Laro/issues/new?template=feature_request.md&labels=enhancement"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors block"
-            >
-              <div className="flex items-center gap-3">
-                <Sparkles className="w-5 h-5 text-amber-500" />
-                <div>
-                  <p className="font-medium text-sm">Request a Feature</p>
-                  <p className="text-xs text-muted-foreground">Have an idea? We'd love to hear it</p>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </a>
-            
-            <a 
-              href="https://github.com/Domocn/Laro/discussions"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors block"
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/support')}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
             >
               <div className="flex items-center gap-3">
                 <MessageSquare className="w-5 h-5 text-laro" />
                 <div>
-                  <p className="font-medium text-sm">Community Discussions</p>
-                  <p className="text-xs text-muted-foreground">Ask questions and share tips</p>
+                  <p className="font-medium text-sm">My tickets</p>
+                  <p className="text-xs text-muted-foreground">Check status and reply</p>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
-            </a>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/support?new=1&category=feature')}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
+            >
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <div>
+                  <p className="font-medium text-sm">Request a feature</p>
+                  <p className="text-xs text-muted-foreground">Tell us what would make cooking easier</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
           </div>
         </motion.section>
           </>
@@ -2188,10 +2331,10 @@ export const Settings = () => {
           transition={{ delay: 0.3 }}
           className="text-center text-sm text-muted-foreground"
         >
-          <p>Laro v{serverInfo?.version || '1.0.0'}</p>
+          <p>{t('brandName')} v{serverInfo?.version || '1.0.0'}</p>
           <p className="mt-1">Self-hostable recipe app for families</p>
           <Link to="/privacy-policy" className="mt-2 inline-block hover:text-laro transition-colors">
-            Privacy Policy
+            {t('privacyPolicy')}
           </Link>
         </motion.section>
       </div>

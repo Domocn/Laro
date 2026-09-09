@@ -64,7 +64,12 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
         toast.success(`Automatically checked ${res.data.auto_checked_count} items`);
       }
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t scan that receipt. Please try again. (E-RS001)');
+      const detail = error.response?.data?.detail;
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : detail?.message || detail?.error || "Couldn't scan that receipt. Please try again. (E-RS001)";
+      toast.error(message);
     } finally {
       setScanning(false);
     }
@@ -85,7 +90,12 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
       onScanComplete?.();
       handleClose();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t apply those matches. Please try again. (E-RS002)');
+      const detail = error.response?.data?.detail;
+      const message =
+        typeof detail === 'string'
+          ? detail
+          : detail?.message || detail?.error || "Couldn't apply those matches. Please try again. (E-RS002)";
+      toast.error(message);
     }
   };
 
@@ -110,9 +120,9 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
 
   const getConfidenceBadge = (confidence) => {
     const styles = {
-      high: 'bg-green-100 text-green-800',
-      medium: 'bg-yellow-100 text-yellow-800',
-      low: 'bg-gray-100 text-gray-600'
+      high: 'bg-green-100 text-green-800 dark:bg-green-500/25 dark:text-green-200',
+      medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-500/25 dark:text-yellow-200',
+      low: 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'
     };
     return (
       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[confidence]}`}>
@@ -139,7 +149,7 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
                 Take a photo or upload an image of your receipt to automatically check off purchased items.
               </p>
 
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -161,7 +171,7 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
                   onClick={() => document.getElementById('receipt-camera').click()}
                   className="flex-1 rounded-xl bg-laro hover:bg-laro-dark"
                 >
-                  <Camera className="w-4 h-4 mr-2" />
+                  <Camera className="w-4 h-4 mr-2 shrink-0" />
                   Take Photo
                 </Button>
 
@@ -170,7 +180,7 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
                   onClick={() => document.getElementById('receipt-upload').click()}
                   className="flex-1 rounded-xl"
                 >
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="w-4 h-4 mr-2 shrink-0" />
                   Upload
                 </Button>
               </div>
@@ -245,9 +255,9 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
                         className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${
                           match.matched_item
                             ? match.auto_checked
-                              ? 'bg-green-50 border border-green-200'
-                              : 'bg-cream-subtle hover:bg-cream'
-                            : 'bg-gray-50 opacity-60'
+                              ? 'bg-green-50 border border-green-200 dark:bg-green-500/25 dark:border-green-500/40'
+                              : 'bg-cream-subtle hover:bg-cream dark:bg-white/5 dark:hover:bg-white/10'
+                            : 'bg-gray-50 opacity-60 dark:bg-white/5'
                         }`}
                       >
                         {match.matched_item && !match.auto_checked && (
@@ -284,7 +294,7 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
               </div>
 
               {/* Actions */}
-              <div className="flex gap-3 pt-2">
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
                 <Button
                   variant="outline"
                   onClick={handleClose}
@@ -297,8 +307,8 @@ export const ReceiptScanner = ({ listId, onScanComplete, open, onOpenChange }) =
                   className="flex-1 rounded-xl bg-laro hover:bg-laro-dark"
                   disabled={selectedMatches.size === 0 && !matches.some(m => m.auto_checked)}
                 >
-                  <Check className="w-4 h-4 mr-2" />
-                  Apply ({selectedMatches.size} items)
+                  <Check className="w-4 h-4 mr-2 shrink-0" />
+                  Apply ({selectedMatches.size})
                 </Button>
               </div>
             </motion.div>

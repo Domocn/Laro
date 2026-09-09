@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from dependencies import get_current_user, push_subscription_repository, notification_settings_repository
 from models import MobileNotificationSettingsUpdate, MobileNotificationSettingsResponse
 from datetime import datetime, timezone
+import os
 import uuid
 
 # Import for mobile notification settings
@@ -52,9 +53,73 @@ async def update_notification_settings(settings: dict, user: dict = Depends(get_
     # Remove user_id if passed in settings to avoid overwriting
     settings.pop("user_id", None)
 
-    await notification_settings_repository.upsert_settings(user["id"], settings)
+    # Only persist known columns
+    allowed = {
+        "enabled",
+        "meal_reminders",
+        "reminder_time",
+        "shopping_reminders",
+        "weekly_plan_reminder",
+    }
+    clean = {k: v for k, v in settings.items() if k in allowed}
+    await notification_settings_repository.upsert_settings(user["id"], clean)
+
+    # Keep mobile preference row in sync for FCM preference checks
+    mobile_sync = {}
+    for src, dst in (
+        ("meal_reminders", "meal_reminders"),
+        ("shopping_reminders", "shopping_reminders"),
+        ("weekly_plan_reminder", "weekly_plan_reminder"),
+    ):
+        if src in clean:
+            mobile_sync[dst] = clean[src]
+    if mobile_sync:
+        pool = await get_db()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        async with pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT user_id FROM mobile_notification_settings WHERE user_id = $1",
+                user["id"],
+            )
+            if existing:
+                sets = ", ".join(f"{k} = ${i+1}" for i, k in enumerate(mobile_sync.keys()))
+                vals = list(mobile_sync.values()) + [now, user["id"]]
+                await conn.execute(
+                    f"UPDATE mobile_notification_settings SET {sets}, updated_at = ${len(mobile_sync)+1} WHERE user_id = ${len(mobile_sync)+2}",
+                    *vals,
+                )
+            else:
+                cols = ", ".join(["user_id"] + list(mobile_sync.keys()) + ["updated_at"])
+                placeholders = ", ".join(f"${i+1}" for i in range(len(mobile_sync) + 2))
+                await conn.execute(
+                    f"INSERT INTO mobile_notification_settings ({cols}) VALUES ({placeholders})",
+                    user["id"],
+                    *mobile_sync.values(),
+                    now,
+                )
 
     return {"message": "Settings updated"}
+
+
+@router.get("/vapid-public-key")
+async def get_vapid_public_key():
+    """Public VAPID key for Web Push subscribe (empty if not configured)."""
+    from services.notifications import get_vapid_keys
+    public, _, _ = get_vapid_keys()
+    return {"publicKey": public or ""}
+
+
+@router.post("/reminders/run")
+async def run_reminders_now(user: dict = Depends(get_current_user)):
+    """Manually trigger a reminder sweep (admin or self-test)."""
+    from services.reminders import run_all_reminder_sweeps
+    # Allow any authenticated user in debug; admins always
+    is_admin = user.get("role") == "admin"
+    debug = os.environ.get("DEBUG_MODE", "false").lower() == "true"
+    if not is_admin and not debug:
+        raise HTTPException(status_code=403, detail="Admin only")
+    results = await run_all_reminder_sweeps()
+    return {"ok": True, "results": results}
 
 
 # =============================================================================
@@ -91,6 +156,7 @@ async def get_mobile_notification_settings(user: dict = Depends(get_current_user
             shopping_list_updates=True,
             shopping_reminders=True,
             meal_reminders=True,
+            weekly_plan_reminder=True,
             expiry_alerts=True,
             import_complete=True,
             ai_complete=True,
@@ -122,6 +188,7 @@ async def get_mobile_notification_settings(user: dict = Depends(get_current_user
         shopping_reminders=data.get("shopping_reminders", True),
         # App
         meal_reminders=data.get("meal_reminders", True),
+        weekly_plan_reminder=data.get("weekly_plan_reminder", True),
         expiry_alerts=data.get("expiry_alerts", True),
         import_complete=data.get("import_complete", True),
         ai_complete=data.get("ai_complete", True),

@@ -8,14 +8,41 @@ Configure via environment variables:
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
-from dependencies import create_token, get_current_user, user_repository, oauth_account_repository, oauth_state_repository
+from dependencies import create_token, get_current_user, user_repository, oauth_account_repository, oauth_state_repository, session_repository
 from utils.activity_logger import log_action, log_user_activity
+from utils.subscription import user_subscription_fields
 from datetime import datetime, timezone
 import uuid
 import os
 import httpx
 
 router = APIRouter(prefix="/oauth", tags=["OAuth"])
+
+
+def _oauth_user_payload(user: dict) -> dict:
+    """Return user dict without password, with seamless Pro/owner fields."""
+    data = {k: v for k, v in user.items() if k != "password"}
+    data.update(user_subscription_fields(user))
+    return data
+
+
+async def _create_oauth_session(user_id: str, token: str, request: Request = None) -> None:
+    """Persist session so JWT logout/revoke works the same as password login."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    ua = "OAuth"
+    ip = "Unknown"
+    if request is not None:
+        ua = request.headers.get("User-Agent", "OAuth")
+        ip = request.client.host if request.client else "Unknown"
+    await session_repository.create({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "token": token,
+        "user_agent": ua,
+        "ip_address": ip,
+        "created_at": now,
+        "last_active": now,
+    })
 
 # =============================================================================
 # CONFIGURATION
@@ -218,8 +245,8 @@ async def google_callback(data: OAuthCallback):
         )
 
         token = create_token(user["id"])
-        user.pop("password", None)
-        return {"token": token, "user": user, "is_new": False}
+        await _create_oauth_session(user["id"], token)
+        return {"token": token, "user": _oauth_user_payload(user), "is_new": False}
 
     existing_user = await user_repository.find_by_email(email)
 
@@ -242,8 +269,8 @@ async def google_callback(data: OAuthCallback):
         )
 
         token = create_token(existing_user["id"])
-        user_data = {k: v for k, v in existing_user.items() if k != "password"}
-        return {"token": token, "user": user_data, "is_new": False}
+        await _create_oauth_session(existing_user["id"], token)
+        return {"token": token, "user": _oauth_user_payload(existing_user), "is_new": False}
 
     user_id = str(uuid.uuid4())
     user_count = await user_repository.count()
@@ -281,9 +308,8 @@ async def google_callback(data: OAuthCallback):
     )
 
     token = create_token(user_id)
-    user_data = {k: v for k, v in user_doc.items() if k != "password"}
-
-    return {"token": token, "user": user_data, "is_new": True}
+    await _create_oauth_session(user_id, token)
+    return {"token": token, "user": _oauth_user_payload(user_doc), "is_new": True}
 
 # =============================================================================
 # GITHUB OAUTH
@@ -414,8 +440,8 @@ async def github_callback(data: OAuthCallback):
         )
 
         token = create_token(user["id"])
-        user.pop("password", None)
-        return {"token": token, "user": user, "is_new": False}
+        await _create_oauth_session(user["id"], token)
+        return {"token": token, "user": _oauth_user_payload(user), "is_new": False}
 
     existing_user = await user_repository.find_by_email(email)
 
@@ -438,8 +464,8 @@ async def github_callback(data: OAuthCallback):
         )
 
         token = create_token(existing_user["id"])
-        user_data = {k: v for k, v in existing_user.items() if k != "password"}
-        return {"token": token, "user": user_data, "is_new": False}
+        await _create_oauth_session(existing_user["id"], token)
+        return {"token": token, "user": _oauth_user_payload(existing_user), "is_new": False}
 
     user_id = str(uuid.uuid4())
     user_count = await user_repository.count()
@@ -477,9 +503,8 @@ async def github_callback(data: OAuthCallback):
     )
 
     token = create_token(user_id)
-    user_data = {k: v for k, v in user_doc.items() if k != "password"}
-
-    return {"token": token, "user": user_data, "is_new": True}
+    await _create_oauth_session(user_id, token)
+    return {"token": token, "user": _oauth_user_payload(user_doc), "is_new": True}
 
 # =============================================================================
 # ACCOUNT LINKING

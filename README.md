@@ -16,6 +16,12 @@
   <a href="#configuration">Configuration</a>
 </p>
 
+<p align="center">
+  <a href="https://vibeappscanner.com/verify/2d378d8cd8825e008c77a436e04e60cfb0bd5ecac4d3dbf2f626146d18712c8e">
+    <img src="https://api.vibeappscanner.com/badge/2d378d8cd8825e008c77a436e04e60cfb0bd5ecac4d3dbf2f626146d18712c8e.svg" alt="Audited by VAS">
+  </a>
+</p>
+
 ---
 
 ## What is Laro?
@@ -23,6 +29,9 @@
 Laro is a **self-hosted recipe manager** for home cooks. Import recipes from any website with AI, track your pantry, plan weekly meals, generate shopping lists, and cook with step-by-step guidance.
 
 **Your data stays on your server.** No cloud required.
+
+> This public repo is a **sanitized self-host artefact** generated from the production codebase.
+> Production `laro.food` is not deployed from this tree.
 
 ---
 
@@ -45,12 +54,12 @@ cd Laro
 
 # Copy and configure environment
 cp backend/.env.example backend/.env
-# Edit backend/.env with your settings
+# Edit backend/.env with your settings (JWT_SECRET, DATABASE_URL, …)
 
 # Start services
-docker-compose up -d
+docker compose up -d
 
-# Open http://localhost:3000
+# Open http://localhost:3000 (API on :8001 via compose)
 # First user becomes admin!
 ```
 
@@ -65,17 +74,19 @@ pip install -r requirements.txt
 
 # Configure
 cp .env.example .env
-# Edit .env with your database and settings
+# Edit .env — then export it (config.py does not auto-load .env)
+set -a && source .env && set +a
 
-# Run
-uvicorn main:app --host 0.0.0.0 --port 8000
+# Run (module is server:app on port 8001)
+./venv/bin/uvicorn server:app --host 0.0.0.0 --port 8001
 ```
 
-**Frontend (Node 18+):**
+**Frontend (Node 18+, CRA/craco):**
 ```bash
 npm install
-npm run dev
-# Open http://localhost:5173
+# Prefer mixed hostnames so the SPA does not collapse API port to same-origin:
+PORT=3000 BROWSER=none HOST=0.0.0.0 REACT_APP_BACKEND_URL=http://localhost:8001 npm start
+# Open http://127.0.0.1:3000
 ```
 
 **Database (PostgreSQL 15+):**
@@ -196,7 +207,7 @@ OAUTH_REDIRECT_BASE_URL=https://yourdomain.com
 
 | Component | Technology |
 |-----------|------------|
-| Web | React, TypeScript, Tailwind CSS, Vite |
+| Web | React, Tailwind CSS, CRA/craco |
 | Backend | FastAPI (Python), PostgreSQL |
 | AI | Ollama, OpenAI, Claude, Gemini |
 

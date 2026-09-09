@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { cn } from '../lib/utils';
+import { cn, getUnsplashFoodImage } from '../lib/utils';
 
 /**
  * OptimizedImage - An image component with loading state and error handling
@@ -15,7 +15,7 @@ export const OptimizedImage = ({
   alt,
   className,
   containerClassName,
-  fallbackSrc = 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=800&q=80',
+  fallbackSrc = getUnsplashFoodImage(alt || 'laro-default'),
   eager = false,
   ...props
 }) => {

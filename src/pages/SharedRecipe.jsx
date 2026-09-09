@@ -21,6 +21,7 @@ import {
 import { Button } from '../components/ui/button';
 import api from '../lib/api';
 import { toast } from 'sonner';
+import { IngredientSubstituteButton } from '../components/IngredientSubstituteButton';
 
 // WhatsApp icon component
 const WhatsAppIcon = ({ className }) => (
@@ -213,6 +214,42 @@ ${allInstructions || 'No instructions listed'}`;
               </div>
             )}
 
+            {/* Nutrition on image — per serving */}
+            {(() => {
+              const n = recipe.nutrition || {};
+              const chips = [
+                n.calories != null && { label: 'cal', value: n.calories },
+                n.protein != null && { label: 'protein', value: `${n.protein}g` },
+                n.carbs != null && { label: 'carbs', value: `${n.carbs}g` },
+                n.fat != null && { label: 'fat', value: `${n.fat}g` },
+              ].filter(Boolean);
+              if (!chips.length) return null;
+              return (
+                <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap gap-1.5">
+                  {chips.map((chip) => (
+                    <div
+                      key={chip.label}
+                      className="rounded-full bg-black/55 backdrop-blur-sm text-white px-2.5 py-1 shadow-sm"
+                    >
+                      <span className="text-sm font-semibold leading-none">{chip.value}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-white/75 ml-1">
+                        {chip.label}
+                      </span>
+                    </div>
+                  ))}
+                  {data.nutrition_estimated || n.nutrition_estimated ? (
+                    <span className="rounded-full bg-black/40 backdrop-blur-sm text-white/80 text-[10px] px-2 py-1 self-center">
+                      est. / serving
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-black/40 backdrop-blur-sm text-white/80 text-[10px] px-2 py-1 self-center">
+                      / serving
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
@@ -351,14 +388,37 @@ ${allInstructions || 'No instructions listed'}`;
                       Ingredients
                     </h2>
                     <ul className="space-y-2">
-                      {recipe.ingredients?.map((ingredient, index) => (
+                      {recipe.ingredients?.map((ingredient, index) => {
+                        const label =
+                          typeof ingredient === 'string'
+                            ? ingredient
+                            : [
+                                ingredient.amount,
+                                ingredient.unit,
+                                ingredient.text || ingredient.name,
+                              ]
+                                .filter(Boolean)
+                                .join(' ');
+                        const name =
+                          typeof ingredient === 'string'
+                            ? ingredient
+                            : ingredient.name || ingredient.text || '';
+                        return (
                         <li key={`ingredient-${index}`} className="flex items-start gap-3 text-sm">
                           <span className="w-5 h-5 bg-cream-subtle dark:bg-muted rounded flex-shrink-0 flex items-center justify-center text-xs font-medium">
                             {index + 1}
                           </span>
-                          <span>{typeof ingredient === 'string' ? ingredient : ingredient.text || ingredient.name}</span>
+                          <span className="flex-1 min-w-0 pt-0.5">{label}</span>
+                          <IngredientSubstituteButton
+                            ingredientName={name}
+                            previewForGuests
+                            canApply={false}
+                            shareCode={shareCode}
+                            recipeContext={recipe}
+                          />
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </section>
 
@@ -382,38 +442,40 @@ ${allInstructions || 'No instructions listed'}`;
                     </ol>
                   </section>
 
-                  {/* Nutrition (if available) */}
-                  {recipe.nutrition && Object.keys(recipe.nutrition).length > 0 && (
-                    <section>
-                      <h2 className="font-heading text-lg font-semibold mb-3">Nutrition</h2>
-                      <div className="grid grid-cols-4 gap-2">
-                        {recipe.nutrition.calories && (
-                          <div className="text-center p-2 bg-cream-subtle dark:bg-muted rounded-xl">
-                            <p className="text-lg font-bold text-laro">{recipe.nutrition.calories}</p>
-                            <p className="text-xs text-muted-foreground">cal</p>
-                          </div>
-                        )}
-                        {recipe.nutrition.protein && (
-                          <div className="text-center p-2 bg-cream-subtle dark:bg-muted rounded-xl">
-                            <p className="text-lg font-bold text-laro">{recipe.nutrition.protein}g</p>
-                            <p className="text-xs text-muted-foreground">protein</p>
-                          </div>
-                        )}
-                        {recipe.nutrition.carbs && (
-                          <div className="text-center p-2 bg-cream-subtle dark:bg-muted rounded-xl">
-                            <p className="text-lg font-bold text-laro">{recipe.nutrition.carbs}g</p>
-                            <p className="text-xs text-muted-foreground">carbs</p>
-                          </div>
-                        )}
-                        {recipe.nutrition.fat && (
-                          <div className="text-center p-2 bg-cream-subtle dark:bg-muted rounded-xl">
-                            <p className="text-lg font-bold text-laro">{recipe.nutrition.fat}g</p>
-                            <p className="text-xs text-muted-foreground">fat</p>
-                          </div>
-                        )}
-                      </div>
-                    </section>
-                  )}
+                  {/* Nutrition (if available) — hero already shows chips; keep for print/full view */}
+                  {(() => {
+                    const n = recipe.nutrition || {};
+                    const cells = [
+                      n.calories != null && { key: 'cal', value: n.calories, label: 'cal' },
+                      n.protein != null && { key: 'protein', value: `${n.protein}g`, label: 'protein' },
+                      n.carbs != null && { key: 'carbs', value: `${n.carbs}g`, label: 'carbs' },
+                      n.fat != null && { key: 'fat', value: `${n.fat}g`, label: 'fat' },
+                    ].filter(Boolean);
+                    if (!cells.length) return null;
+                    return (
+                      <section>
+                        <h2 className="font-heading text-lg font-semibold mb-3">
+                          Nutrition
+                          {(data.nutrition_estimated || n.nutrition_estimated) && (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                              estimated / serving
+                            </span>
+                          )}
+                        </h2>
+                        <div className="grid grid-cols-4 gap-2">
+                          {cells.map((cell) => (
+                            <div
+                              key={cell.key}
+                              className="text-center p-2 bg-cream-subtle dark:bg-muted rounded-xl"
+                            >
+                              <p className="text-lg font-bold text-laro">{cell.value}</p>
+                              <p className="text-xs text-muted-foreground">{cell.label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    );
+                  })()}
                 </div>
               </motion.div>
             )}

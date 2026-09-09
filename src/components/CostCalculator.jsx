@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from './ui/button';
 import { costApi } from '../lib/api';
 import {
-  DollarSign,
+  Banknote,
   TrendingDown,
   TrendingUp,
   ChevronDown,
@@ -11,10 +11,23 @@ import {
   Loader2,
   Save,
   Calculator,
-  ShoppingCart,
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const currencySymbol = (code) => {
+  const c = String(code || 'GBP').toUpperCase();
+  if (c === 'GBP') return '£';
+  if (c === 'EUR') return '€';
+  if (c === 'USD') return '$';
+  return `${c} `;
+};
+
+const formatMoney = (value, code) => {
+  const n = Number(value);
+  if (Number.isNaN(n)) return `${currencySymbol(code)}—`;
+  return `${currencySymbol(code)}${n.toFixed(2)}`;
+};
 
 export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
   const [cost, setCost] = useState(null);
@@ -51,6 +64,8 @@ export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
     }
   };
 
+  const currency = cost?.currency || 'GBP';
+
   return (
     <div className="bg-white dark:bg-card rounded-2xl border border-border/60 overflow-hidden" data-testid="cost-calculator">
       {/* Header */}
@@ -64,11 +79,11 @@ export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
         className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-sunny" />
+          <Banknote className="w-5 h-5 text-sunny" />
           <span className="font-medium">Cost Estimate</span>
           {cost && (
             <span className="text-sm text-muted-foreground">
-              (${cost.cost_per_serving}/serving)
+              ({formatMoney(cost.cost_per_serving, currency)}/serving)
             </span>
           )}
         </div>
@@ -103,11 +118,11 @@ export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
                   {/* Summary */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="text-center p-4 bg-sunny-light rounded-xl">
-                      <p className="text-3xl font-bold text-sunny">${cost.total_cost}</p>
+                      <p className="text-3xl font-bold text-sunny">{formatMoney(cost.total_cost, currency)}</p>
                       <p className="text-sm text-sunny-dark">Total Cost</p>
                     </div>
                     <div className="text-center p-4 bg-laro-light rounded-xl">
-                      <p className="text-3xl font-bold text-laro">${cost.cost_per_serving}</p>
+                      <p className="text-3xl font-bold text-laro">{formatMoney(cost.cost_per_serving, currency)}</p>
                       <p className="text-sm text-laro-dark">Per Serving</p>
                       <p className="text-xs text-muted-foreground">({cost.servings} servings)</p>
                     </div>
@@ -122,7 +137,7 @@ export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
                       </>
                     ) : cost.cost_per_serving < 8 ? (
                       <>
-                        <DollarSign className="w-5 h-5 text-tangerine" />
+                        <Banknote className="w-5 h-5 text-tangerine" />
                         <span className="text-sm text-tangerine font-medium">Moderate Cost</span>
                       </>
                     ) : (
@@ -139,11 +154,16 @@ export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
                       <p className="text-sm font-medium mb-2">Cost Breakdown</p>
                       <div className="space-y-1 max-h-40 overflow-y-auto">
                         {cost.breakdown.map((item, i) => (
-                          <div key={`${item.ingredient}-${i}`} className="flex items-center justify-between text-sm py-1 border-b border-border/30">
+                          <div key={`${item.ingredient}-${i}`} className="flex items-center justify-between text-sm py-1 border-b border-border/30 gap-2">
                             <span className="text-muted-foreground truncate flex-1">
                               {item.ingredient}
+                              {item.store && item.source === 'open_prices_uk' && (
+                                <span className="text-[10px] text-muted-foreground/80 ml-1">
+                                  · {item.store}
+                                </span>
+                              )}
                             </span>
-                            <span className="font-medium ml-2">${item.estimated_cost}</span>
+                            <span className="font-medium ml-2 shrink-0">{formatMoney(item.estimated_cost, currency)}</span>
                           </div>
                         ))}
                       </div>
@@ -189,7 +209,27 @@ export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
                   </div>
 
                   <p className="text-xs text-center text-muted-foreground">
-                    Prices are estimates based on average US grocery costs
+                    {cost.attribution
+                      ? (
+                        <>
+                          {cost.attribution}
+                          {cost.attribution_url ? (
+                            <>
+                              {' · '}
+                              <a
+                                href={cost.attribution_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline underline-offset-2"
+                              >
+                                Open Prices
+                              </a>
+                            </>
+                          ) : null}
+                          {` (${currency})`}
+                        </>
+                      )
+                      : `Prices are rough UK supermarket estimates (${currency})`}
                   </p>
                 </div>
               ) : (
@@ -214,11 +254,12 @@ export const CostCalculator = ({ recipeId, servings = 1, onSave }) => {
 // Compact cost badge for recipe cards
 export const CostBadge = ({ cost }) => {
   if (!cost?.per_serving) return null;
+  const currency = cost.currency || 'GBP';
 
   return (
     <div className="flex items-center gap-1 text-xs">
-      <DollarSign className="w-3 h-3 text-sunny" />
-      <span className="text-muted-foreground">${cost.per_serving}/serving</span>
+      <Banknote className="w-3 h-3 text-sunny" />
+      <span className="text-muted-foreground">{formatMoney(cost.per_serving, currency)}/serving</span>
     </div>
   );
 };
