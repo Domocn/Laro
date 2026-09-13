@@ -3,83 +3,62 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import {
-  Sparkles,
-  CalendarDays,
-  ShoppingCart,
+  Flame,
   Refrigerator,
-  Users,
-  ChefHat,
+  Smartphone,
+  Focus,
   ArrowRight,
   ArrowLeft,
   X,
+  Sparkles,
 } from 'lucide-react';
 
+/** Laro-shaped tour: calm / neurodiversity first.
+ *  Import, meal plan, shopping = product functions, not tour focus. */
 const WALKTHROUGH_SLIDES = [
   {
-    id: 'welcome',
-    icon: ChefHat,
-    iconBg: 'bg-laro-light',
-    iconColor: 'text-laro',
-    title: 'Welcome to Laro',
-    subtitle: 'Your Kitchen Sidekick',
-    description: 'The self-hostable recipe app that helps you organize recipes, plan meals, and cook with confidence.',
-    image: 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=800&q=80',
-    gradient: 'from-laro/20 to-teal/10',
-  },
-  {
-    id: 'import',
-    icon: Sparkles,
-    iconBg: 'bg-tangerine-light',
-    iconColor: 'text-tangerine',
-    title: 'AI-Powered Import',
-    subtitle: 'Paste any URL',
-    description: 'Simply paste a recipe URL and let our AI extract the ingredients, steps, and photos automatically. No more copy-pasting!',
-    image: 'https://images.unsplash.com/photo-1466637574441-749b8f19452f?auto=format&fit=crop&w=800&q=80',
-    gradient: 'from-tangerine/20 to-sunny/10',
-  },
-  {
-    id: 'mealplan',
-    icon: CalendarDays,
+    id: 'calm',
+    icon: Focus,
     iconBg: 'bg-teal-light',
     iconColor: 'text-teal',
-    title: 'Meal Planning',
-    subtitle: 'Plan your week',
-    description: 'Drag and drop recipes onto your calendar. See your whole week at a glance and never wonder "what\'s for dinner" again.',
-    image: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?auto=format&fit=crop&w=800&q=80',
+    title: 'Dinner without the noise',
+    subtitle: 'Your recipes. Your kitchen.',
+    description: 'You add the recipes. Laro keeps them calm to cook from. Focus mode and quieter screens help everyone, shaped with ADHD and neurospicy cooks in mind.',
+    image: '/images/dish-plated.jpg',
     gradient: 'from-teal/20 to-laro/10',
   },
   {
-    id: 'shopping',
-    icon: ShoppingCart,
-    iconBg: 'bg-coral-light',
-    iconColor: 'text-coral',
-    title: 'Smart Shopping Lists',
-    subtitle: 'Auto-generated',
-    description: 'One tap generates a shopping list from your meal plan. Ingredients are combined and organized by aisle.',
-    image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80',
-    gradient: 'from-coral/20 to-tangerine/10',
+    id: 'cook',
+    icon: Flame,
+    iconBg: 'bg-laro-light',
+    iconColor: 'text-laro',
+    title: 'One step at the hob',
+    subtitle: 'When your hands are full',
+    description: 'Cook Mode shows the next move only: big type and timers. Finish dinner first. Read the full recipe later if you want.',
+    image: '/images/hero-kitchen.jpg',
+    gradient: 'from-laro/20 to-teal/10',
   },
   {
     id: 'fridge',
     icon: Refrigerator,
-    iconBg: 'bg-sunny-light',
-    iconColor: 'text-sunny',
-    title: "What's in My Fridge?",
-    subtitle: 'Cook what you have',
-    description: 'Enter the ingredients you have on hand and discover recipes you can make right now. Reduce waste and save money.',
-    image: 'https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?auto=format&fit=crop&w=800&q=80',
-    gradient: 'from-sunny/20 to-teal/10',
+    iconBg: 'bg-coral-light',
+    iconColor: 'text-coral',
+    title: 'Start from what’s home',
+    subtitle: 'From your own recipe box',
+    description: 'Tell Laro what’s in the fridge. It shortlists from recipes you added, meals you can cook tonight, not a random content feed.',
+    image: '/images/produce-fresh.jpg',
+    gradient: 'from-coral/20 to-sunny/10',
   },
   {
-    id: 'family',
-    icon: Users,
-    iconBg: 'bg-lavender-light',
-    iconColor: 'text-lavender',
-    title: 'Family Sharing',
-    subtitle: 'Cook together',
-    description: 'Share recipes and meal plans with your household. Everyone can add favorites, plan meals, and contribute to shopping lists.',
-    image: 'https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=800&q=80',
-    gradient: 'from-lavender/20 to-laro/10',
+    id: 'android',
+    icon: Smartphone,
+    iconBg: 'bg-sunny-light',
+    iconColor: 'text-sunny',
+    title: 'Web and Android',
+    subtitle: 'Same calm flow everywhere',
+    description: 'Plan on the laptop, shop from your phone, cook at the hob. Native Android on Play Store, not a stretched website.',
+    image: '/images/pantry-ingredients.jpg',
+    gradient: 'from-sunny/20 to-coral/10',
   },
 ];
 
@@ -217,9 +196,9 @@ export const FeatureWalkthrough = ({ onComplete, onSkip }) => {
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ type: 'spring', delay: 0.1 }}
-                className={`w-16 h-16 ${slide.iconBg} rounded-2xl flex items-center justify-center mb-6 shadow-lg`}
+                className={`w-14 h-14 ${slide.iconBg} rounded-2xl flex items-center justify-center mb-6 shadow-soft ring-1 ring-border/40`}
               >
-                <Icon className={`w-8 h-8 ${slide.iconColor}`} />
+                <Icon className={`w-7 h-7 ${slide.iconColor}`} />
               </motion.div>
 
               {/* Subtitle */}
@@ -227,7 +206,7 @@ export const FeatureWalkthrough = ({ onComplete, onSkip }) => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.15 }}
-                className={`text-sm font-semibold ${slide.iconColor} uppercase tracking-wider mb-2`}
+                className={`text-xs font-semibold ${slide.iconColor} uppercase tracking-[0.14em] mb-2`}
               >
                 {slide.subtitle}
               </motion.p>

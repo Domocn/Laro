@@ -1,12 +1,14 @@
 """
 Cost Tracking Router - Track ingredient costs and recipe expenses
+
+Persists to `ingredient_costs` (household_id, ingredient_name, cost, unit, store)
+and optional recipe cost columns (cost_total, cost_per_serving, ...).
 """
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Any
 from dependencies import get_current_user, recipe_repository, ingredient_cost_repository
 from datetime import datetime, timezone
-import uuid
 
 router = APIRouter(prefix="/costs", tags=["Cost Tracking"])
 
@@ -18,7 +20,7 @@ class IngredientPrice(BaseModel):
     name: str
     price: float
     unit: str  # per unit (e.g., "lb", "kg", "each")
-    quantity: float = 1.0  # quantity for this price
+    quantity: float = 1.0  # quantity for this price (API compat; stored as unit cost)
     store: Optional[str] = None
     notes: Optional[str] = None
 
@@ -39,65 +41,84 @@ class CostReport(BaseModel):
     end_date: Optional[str] = None
 
 # =============================================================================
-# DEFAULT PRICES (Common ingredients, USD)
+# DEFAULT PRICES (Common ingredients, rough UK supermarket GBP estimates)
 # =============================================================================
+
+DEFAULT_CURRENCY = "GBP"
 
 DEFAULT_PRICES = {
     # Proteins
-    "chicken breast": {"price": 3.99, "unit": "lb"},
-    "chicken thigh": {"price": 2.99, "unit": "lb"},
-    "ground beef": {"price": 5.99, "unit": "lb"},
-    "beef": {"price": 8.99, "unit": "lb"},
-    "pork": {"price": 3.99, "unit": "lb"},
-    "salmon": {"price": 9.99, "unit": "lb"},
-    "shrimp": {"price": 8.99, "unit": "lb"},
-    "eggs": {"price": 4.99, "unit": "dozen"},
-    "egg": {"price": 0.42, "unit": "each"},
-    "tofu": {"price": 2.49, "unit": "block"},
+    "chicken breast": {"price": 3.50, "unit": "pack"},
+    "chicken thigh": {"price": 2.80, "unit": "pack"},
+    "ground beef": {"price": 3.50, "unit": "pack"},
+    "beef": {"price": 5.50, "unit": "pack"},
+    "beef mince": {"price": 3.50, "unit": "pack"},
+    "pork": {"price": 3.20, "unit": "pack"},
+    "salmon": {"price": 5.00, "unit": "pack"},
+    "shrimp": {"price": 4.50, "unit": "pack"},
+    "eggs": {"price": 2.50, "unit": "dozen"},
+    "egg": {"price": 0.25, "unit": "each"},
+    "tofu": {"price": 1.80, "unit": "pack"},
 
     # Dairy
-    "milk": {"price": 3.99, "unit": "gallon"},
-    "butter": {"price": 4.99, "unit": "lb"},
-    "cheese": {"price": 5.99, "unit": "lb"},
-    "cream": {"price": 3.99, "unit": "pint"},
-    "yogurt": {"price": 1.29, "unit": "cup"},
-    "sour cream": {"price": 2.49, "unit": "cup"},
+    "milk": {"price": 1.25, "unit": "litre"},
+    "butter": {"price": 2.20, "unit": "pack"},
+    "cheese": {"price": 2.80, "unit": "pack"},
+    "cream": {"price": 1.50, "unit": "pot"},
+    "yogurt": {"price": 1.20, "unit": "pot"},
+    "yoghurt": {"price": 1.20, "unit": "pot"},
+    "greek yoghurt": {"price": 1.50, "unit": "pot"},
+    "skyr": {"price": 1.80, "unit": "pot"},
+    "sour cream": {"price": 1.20, "unit": "pot"},
 
     # Grains
-    "flour": {"price": 3.49, "unit": "5lb"},
-    "rice": {"price": 2.99, "unit": "lb"},
-    "pasta": {"price": 1.49, "unit": "lb"},
-    "bread": {"price": 3.49, "unit": "loaf"},
-    "tortillas": {"price": 3.49, "unit": "pack"},
+    "flour": {"price": 1.20, "unit": "bag"},
+    "rice": {"price": 1.50, "unit": "bag"},
+    "pasta": {"price": 0.85, "unit": "pack"},
+    "bread": {"price": 1.20, "unit": "loaf"},
+    "tortillas": {"price": 1.50, "unit": "pack"},
+    "potato": {"price": 1.20, "unit": "bag"},
+    "potatoes": {"price": 1.20, "unit": "bag"},
 
     # Vegetables
-    "onion": {"price": 1.29, "unit": "lb"},
-    "garlic": {"price": 0.50, "unit": "head"},
-    "tomato": {"price": 1.99, "unit": "lb"},
-    "potato": {"price": 0.99, "unit": "lb"},
-    "carrot": {"price": 1.29, "unit": "lb"},
-    "celery": {"price": 1.99, "unit": "bunch"},
-    "bell pepper": {"price": 1.49, "unit": "each"},
-    "broccoli": {"price": 1.99, "unit": "lb"},
-    "spinach": {"price": 2.99, "unit": "bag"},
-    "lettuce": {"price": 1.99, "unit": "head"},
+    "onion": {"price": 0.80, "unit": "bag"},
+    "garlic": {"price": 0.40, "unit": "bulb"},
+    "tomato": {"price": 1.50, "unit": "pack"},
+    "carrot": {"price": 0.60, "unit": "bag"},
+    "carrots": {"price": 0.60, "unit": "bag"},
+    "celery": {"price": 0.80, "unit": "pack"},
+    "bell pepper": {"price": 1.00, "unit": "each"},
+    "broccoli": {"price": 1.00, "unit": "head"},
+    "cauliflower": {"price": 1.20, "unit": "head"},
+    "spinach": {"price": 1.20, "unit": "bag"},
+    "lettuce": {"price": 0.80, "unit": "head"},
+    "peas": {"price": 0.75, "unit": "bag"},
+    "sweetcorn": {"price": 0.65, "unit": "tin"},
 
     # Oils & Condiments
-    "olive oil": {"price": 8.99, "unit": "bottle"},
-    "vegetable oil": {"price": 4.99, "unit": "bottle"},
-    "soy sauce": {"price": 3.49, "unit": "bottle"},
-    "honey": {"price": 7.99, "unit": "jar"},
-    "sugar": {"price": 2.99, "unit": "bag"},
-    "salt": {"price": 1.49, "unit": "container"},
-    "pepper": {"price": 4.99, "unit": "jar"},
+    "olive oil": {"price": 4.50, "unit": "bottle"},
+    "vegetable oil": {"price": 2.00, "unit": "bottle"},
+    "soy sauce": {"price": 1.80, "unit": "bottle"},
+    "honey": {"price": 2.50, "unit": "jar"},
+    "sugar": {"price": 1.00, "unit": "bag"},
+    "salt": {"price": 0.60, "unit": "tub"},
+    "pepper": {"price": 1.50, "unit": "jar"},
+    "black pepper": {"price": 1.50, "unit": "jar"},
+
+    # Fruit / nuts
+    "banana": {"price": 0.90, "unit": "bunch"},
+    "pear": {"price": 1.50, "unit": "pack"},
+    "almonds": {"price": 2.50, "unit": "bag"},
+    "banana chips": {"price": 1.50, "unit": "bag"},
 
     # Spices
-    "cumin": {"price": 4.99, "unit": "jar"},
-    "paprika": {"price": 4.99, "unit": "jar"},
-    "oregano": {"price": 3.99, "unit": "jar"},
-    "basil": {"price": 2.99, "unit": "bunch"},
-    "cilantro": {"price": 1.49, "unit": "bunch"},
-    "parsley": {"price": 1.49, "unit": "bunch"},
+    "cumin": {"price": 1.20, "unit": "jar"},
+    "paprika": {"price": 1.20, "unit": "jar"},
+    "garlic granules": {"price": 1.20, "unit": "jar"},
+    "oregano": {"price": 1.00, "unit": "jar"},
+    "basil": {"price": 0.80, "unit": "bunch"},
+    "cilantro": {"price": 0.60, "unit": "bunch"},
+    "parsley": {"price": 0.60, "unit": "bunch"},
 }
 
 # =============================================================================
@@ -114,31 +135,63 @@ def normalize_ingredient_name(name: str) -> str:
             name = name[len(prefix):]
     return name
 
-async def get_ingredient_price(user_id: str, ingredient_name: str) -> dict:
-    """Get price for an ingredient, checking user prices first, then defaults"""
+
+def cost_scope_id(user: dict) -> str:
+    """Household-scoped costs; solo users use their user id as the scope key."""
+    return user.get("household_id") or user["id"]
+
+
+def row_to_api_price(row: dict) -> dict:
+    """Map DB ingredient_costs row to the API price shape the frontend expects."""
+    return {
+        "id": row.get("id"),
+        "name": row.get("ingredient_name"),
+        "name_normalized": normalize_ingredient_name(row.get("ingredient_name") or ""),
+        "price": row.get("cost"),
+        "unit": row.get("unit"),
+        "quantity": 1.0,
+        "store": row.get("store"),
+        "updated_at": row.get("updated_at"),
+        "source": "custom",
+        "household_id": row.get("household_id"),
+    }
+
+
+async def get_ingredient_price(
+    scope_id: str,
+    ingredient_name: str,
+    *,
+    amount: Any = None,
+    unit: Optional[str] = None,
+) -> dict:
+    """Get price for an ingredient: custom → Open Prices (UK) → local defaults."""
     normalized = normalize_ingredient_name(ingredient_name)
 
-    # Check user's custom prices using ingredient_cost_repository
-    # Note: The ingredient_cost_repository uses household_id, but we can adapt for user_id
-    from database.connection import get_db, dict_from_row
+    custom = await ingredient_cost_repository.find_by_household(scope_id)
+    for row in custom:
+        row_name = normalize_ingredient_name(row.get("ingredient_name") or "")
+        if row_name == normalized or normalized in row_name or row_name in normalized:
+            return {
+                "price": row["cost"],
+                "unit": row.get("unit") or "each",
+                "quantity": 1,
+                "source": "custom",
+                "store": row.get("store"),
+                "currency": DEFAULT_CURRENCY,
+            }
 
-    pool = await get_db()
-    async with pool.acquire() as conn:
-        query = """
-            SELECT * FROM ingredient_costs
-            WHERE user_id = $1 AND name_normalized = $2
-            LIMIT 1
-        """
-        row = await conn.fetchrow(query, user_id, normalized)
+    # Crowdsourced UK supermarket prices (Open Food Facts — Open Prices)
+    try:
+        from services.uk_open_prices import lookup_uk_ingredient_price
 
-    if row:
-        user_price = dict_from_row(row)
-        return {
-            "price": user_price["price"],
-            "unit": user_price["unit"],
-            "quantity": user_price.get("quantity", 1),
-            "source": "custom"
-        }
+        uk = await lookup_uk_ingredient_price(ingredient_name, amount=amount, unit=unit)
+        if uk:
+            return uk
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Open Prices lookup failed for %r: %s", ingredient_name, e
+        )
 
     # Check defaults
     for default_name, default_price in DEFAULT_PRICES.items():
@@ -147,53 +200,81 @@ async def get_ingredient_price(user_id: str, ingredient_name: str) -> dict:
                 "price": default_price["price"],
                 "unit": default_price["unit"],
                 "quantity": 1,
-                "source": "default"
+                "source": "default",
+                "currency": DEFAULT_CURRENCY,
             }
 
     return None
 
-async def calculate_recipe_cost(user_id: str, ingredients: list) -> dict:
+
+async def calculate_recipe_cost(scope_id: str, ingredients: list) -> dict:
     """Calculate total cost of a recipe"""
     total = 0.0
     breakdown = []
     unknown = []
+    sources_used = set()
 
     for ing in ingredients:
         if isinstance(ing, dict):
             name = ing.get("name", "")
             amount = ing.get("amount", "1")
+            unit = ing.get("unit") or ""
         else:
             name = str(ing)
             amount = "1"
+            unit = ""
 
         # Try to parse amount
         try:
-            amount_num = float(amount.replace("/", ".").split()[0]) if amount else 1
+            amount_num = float(str(amount).replace(",", "").replace("/", ".").split()[0]) if amount else 1
         except (ValueError, AttributeError, IndexError):
             amount_num = 1
 
-        price_info = await get_ingredient_price(user_id, name)
+        price_info = await get_ingredient_price(
+            scope_id, name, amount=amount, unit=unit or None
+        )
 
         if price_info:
-            # Estimate cost based on amount
-            estimated_cost = (price_info["price"] / price_info["quantity"]) * (amount_num / 10)  # Rough estimate
-            estimated_cost = round(max(0.10, min(estimated_cost, price_info["price"])), 2)
+            if price_info.get("estimated_cost") is not None:
+                estimated_cost = float(price_info["estimated_cost"])
+            else:
+                # Estimate cost based on amount (rough heuristic — same as before)
+                estimated_cost = (price_info["price"] / price_info["quantity"]) * (amount_num / 10)
+                estimated_cost = round(max(0.10, min(estimated_cost, price_info["price"])), 2)
 
             total += estimated_cost
+            sources_used.add(price_info.get("source") or "unknown")
             breakdown.append({
                 "ingredient": name,
                 "amount": amount,
                 "unit_price": price_info["price"],
                 "estimated_cost": estimated_cost,
-                "source": price_info["source"]
+                "source": price_info["source"],
+                "store": price_info.get("store"),
+                "matched_product": price_info.get("matched_product"),
+                "observed_date": price_info.get("observed_date"),
+                "currency": price_info.get("currency") or DEFAULT_CURRENCY,
             })
         else:
             unknown.append(name)
 
+    provider = None
+    attribution = None
+    attribution_url = None
+    if "open_prices_uk" in sources_used:
+        provider = "Open Prices (UK)"
+        attribution = "Data © Open Food Facts Open Prices contributors (ODbL)"
+        attribution_url = "https://prices.openfoodfacts.org"
+
     return {
         "total": round(total, 2),
         "breakdown": breakdown,
-        "unknown_ingredients": unknown
+        "unknown_ingredients": unknown,
+        "currency": DEFAULT_CURRENCY,
+        "provider": provider,
+        "attribution": attribution,
+        "attribution_url": attribution_url,
+        "sources_used": sorted(sources_used),
     }
 
 # =============================================================================
@@ -202,18 +283,11 @@ async def calculate_recipe_cost(user_id: str, ingredients: list) -> dict:
 
 @router.get("/prices")
 async def list_ingredient_prices(user: dict = Depends(get_current_user)):
-    """List all ingredient prices (user's custom + defaults)"""
-    # Get user's custom prices
-    from database.connection import get_db, rows_to_dicts
+    """List all ingredient prices (custom + defaults)"""
+    scope_id = cost_scope_id(user)
+    rows = await ingredient_cost_repository.find_by_household(scope_id)
+    custom_prices = [row_to_api_price(r) for r in rows]
 
-    pool = await get_db()
-    async with pool.acquire() as conn:
-        query = "SELECT * FROM ingredient_costs WHERE user_id = $1"
-        rows = await conn.fetch(query, user["id"])
-
-    custom_prices = rows_to_dicts(rows)
-
-    # Format defaults
     defaults = [
         {"name": name, **info, "source": "default"}
         for name, info in DEFAULT_PRICES.items()
@@ -222,8 +296,9 @@ async def list_ingredient_prices(user: dict = Depends(get_current_user)):
     return {
         "custom_prices": custom_prices,
         "default_prices": defaults,
-        "currency": "USD"
+        "currency": DEFAULT_CURRENCY
     }
+
 
 @router.post("/prices")
 async def add_ingredient_price(
@@ -231,51 +306,38 @@ async def add_ingredient_price(
     user: dict = Depends(get_current_user)
 ):
     """Add or update a custom ingredient price"""
-    from database.connection import get_db
-
-    pool = await get_db()
+    scope_id = cost_scope_id(user)
     normalized = normalize_ingredient_name(data.name)
-    updated_at = datetime.now(timezone.utc).isoformat()
+    # asyncpg expects a datetime for TIMESTAMP columns (not ISO strings)
+    updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    async with pool.acquire() as conn:
-        # Check if exists
-        query = "SELECT id FROM ingredient_costs WHERE user_id = $1 AND name_normalized = $2"
-        existing = await conn.fetchrow(query, user["id"], normalized)
+    # Store unit cost; quantity is API-only (per-pack size). Divide if provided.
+    unit_cost = data.price / data.quantity if data.quantity else data.price
 
-        if existing:
-            # Update
-            await conn.execute(
-                """
-                UPDATE ingredient_costs
-                SET price = $1, unit = $2, quantity = $3, store = $4, notes = $5, updated_at = $6
-                WHERE user_id = $7 AND name_normalized = $8
-                """,
-                data.price, data.unit, data.quantity, data.store, data.notes, updated_at, user["id"], normalized
-            )
-        else:
-            # Insert
-            price_id = str(uuid.uuid4())
-            await conn.execute(
-                """
-                INSERT INTO ingredient_costs (id, user_id, name, name_normalized, price, unit, quantity, store, notes, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                """,
-                price_id, user["id"], data.name, normalized, data.price, data.unit, data.quantity, data.store, data.notes, updated_at
-            )
+    saved = await ingredient_cost_repository.upsert_cost(
+        household_id=scope_id,
+        ingredient_name=normalized,
+        cost=unit_cost,
+        unit=data.unit,
+        store=data.store,
+        updated_at=updated_at,
+    )
 
     price_doc = {
-        "user_id": user["id"],
         "name": data.name,
         "name_normalized": normalized,
-        "price": data.price,
+        "price": unit_cost,
         "unit": data.unit,
-        "quantity": data.quantity,
+        "quantity": 1.0,
         "store": data.store,
         "notes": data.notes,
-        "updated_at": updated_at
+        "updated_at": updated_at.isoformat(),
+        "household_id": scope_id,
+        **{k: saved.get(k) for k in ("ingredient_name", "cost") if k in saved},
     }
 
     return {"message": "Price saved", "price": price_doc}
+
 
 @router.delete("/prices/{price_id}")
 async def delete_ingredient_price(
@@ -283,21 +345,14 @@ async def delete_ingredient_price(
     user: dict = Depends(get_current_user)
 ):
     """Delete a custom ingredient price"""
-    from database.connection import get_db
-
-    pool = await get_db()
-    async with pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM ingredient_costs WHERE id = $1 AND user_id = $2",
-            price_id, user["id"]
-        )
-
-    # Parse rowcount from result string (e.g., "DELETE 1")
-    rowcount = int(result.split()[-1]) if result else 0
-    if rowcount == 0:
+    scope_id = cost_scope_id(user)
+    existing = await ingredient_cost_repository.find_one({"id": price_id})
+    if not existing or existing.get("household_id") != scope_id:
         raise HTTPException(status_code=404, detail="Price not found")
 
+    await ingredient_cost_repository.delete_cost(price_id)
     return {"message": "Price deleted"}
+
 
 @router.get("/recipe/{recipe_id}")
 async def get_recipe_cost(
@@ -311,9 +366,9 @@ async def get_recipe_cost(
         raise HTTPException(status_code=404, detail="Recipe not found")
 
     ingredients = recipe.get("ingredients", [])
-    servings = recipe.get("servings", 1)
+    servings = recipe.get("servings", 1) or 1
 
-    cost_data = await calculate_recipe_cost(user["id"], ingredients)
+    cost_data = await calculate_recipe_cost(cost_scope_id(user), ingredients)
 
     return {
         "recipe_id": recipe_id,
@@ -323,8 +378,47 @@ async def get_recipe_cost(
         "servings": servings,
         "breakdown": cost_data["breakdown"],
         "unknown_ingredients": cost_data["unknown_ingredients"],
-        "currency": "USD"
+        "currency": DEFAULT_CURRENCY,
+        "provider": cost_data.get("provider"),
+        "attribution": cost_data.get("attribution"),
+        "attribution_url": cost_data.get("attribution_url"),
+        "sources_used": cost_data.get("sources_used") or [],
     }
+
+
+@router.post("/recipe/{recipe_id}")
+async def calculate_recipe_cost_post(
+    recipe_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Android/legacy alias — same as GET /recipe/{id}."""
+    return await get_recipe_cost(recipe_id, user)
+
+
+@router.get("/uk-catalog")
+async def get_uk_open_prices_catalog(
+    user: dict = Depends(get_current_user),
+    limit: int = 5000,
+):
+    """
+    Export the synced UK Open Prices catalog for offline clients (Android).
+    Data is served from the local DB — no live Open Prices call.
+    """
+    from services.uk_open_prices import get_offline_catalog
+
+    return await get_offline_catalog(limit=min(max(limit, 1), 10000))
+
+
+@router.post("/uk-catalog/sync")
+async def sync_uk_open_prices_now(
+    user: dict = Depends(get_current_user),
+    force: bool = True,
+):
+    """Manually refresh the UK Open Prices catalog (also runs every 12h via Celery)."""
+    from services.uk_open_prices import sync_uk_open_prices
+
+    return await sync_uk_open_prices(force=force)
+
 
 @router.post("/recipe/{recipe_id}/save")
 async def save_recipe_cost(
@@ -337,14 +431,14 @@ async def save_recipe_cost(
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    cost_data = await calculate_recipe_cost(user["id"], recipe.get("ingredients", []))
-    servings = recipe.get("servings", 1)
+    cost_data = await calculate_recipe_cost(cost_scope_id(user), recipe.get("ingredients", []))
+    servings = recipe.get("servings", 1) or 1
 
     cost_info = {
         "cost_total": cost_data["total"],
         "cost_per_serving": round(cost_data["total"] / servings, 2),
         "cost_calculated_at": datetime.now(timezone.utc).isoformat(),
-        "cost_currency": "USD"
+        "cost_currency": DEFAULT_CURRENCY
     }
 
     await recipe_repository.update_recipe(recipe_id, cost_info)
@@ -359,10 +453,10 @@ async def save_recipe_cost(
         }
     }
 
+
 @router.get("/summary")
 async def get_cost_summary(user: dict = Depends(get_current_user)):
     """Get cost summary across all recipes"""
-    # Get all user's recipes with cost info
     from database.connection import get_db, rows_to_dicts
 
     pool = await get_db()
@@ -376,7 +470,7 @@ async def get_cost_summary(user: dict = Depends(get_current_user)):
 
     recipes = rows_to_dicts(rows)
 
-    recipes_with_cost = [r for r in recipes if r.get("cost_total")]
+    recipes_with_cost = [r for r in recipes if r.get("cost_total") is not None]
 
     if not recipes_with_cost:
         return {
@@ -389,7 +483,7 @@ async def get_cost_summary(user: dict = Depends(get_current_user)):
         }
 
     costs = [r["cost_total"] for r in recipes_with_cost]
-    per_servings = [r["cost_per_serving"] for r in recipes_with_cost]
+    per_servings = [r["cost_per_serving"] for r in recipes_with_cost if r.get("cost_per_serving") is not None]
 
     cheapest = min(recipes_with_cost, key=lambda x: x["cost_total"])
     expensive = max(recipes_with_cost, key=lambda x: x["cost_total"])
@@ -398,7 +492,7 @@ async def get_cost_summary(user: dict = Depends(get_current_user)):
         "total_recipes": len(recipes),
         "recipes_with_cost": len(recipes_with_cost),
         "average_cost": round(sum(costs) / len(costs), 2),
-        "average_per_serving": round(sum(per_servings) / len(per_servings), 2),
+        "average_per_serving": round(sum(per_servings) / len(per_servings), 2) if per_servings else 0,
         "cheapest_recipe": {
             "id": cheapest["id"],
             "title": cheapest["title"],
@@ -409,8 +503,9 @@ async def get_cost_summary(user: dict = Depends(get_current_user)):
             "title": expensive["title"],
             "cost": expensive["cost_total"]
         },
-        "currency": "USD"
+        "currency": DEFAULT_CURRENCY
     }
+
 
 @router.get("/budget")
 async def get_budget_friendly_recipes(
@@ -426,6 +521,7 @@ async def get_budget_friendly_recipes(
             SELECT id, title, cost_total, cost_per_serving, servings, image_url
             FROM recipes
             WHERE author_id = $1
+            AND cost_total IS NOT NULL
             AND cost_total <= $2
             ORDER BY cost_total ASC
             LIMIT 50
@@ -434,7 +530,6 @@ async def get_budget_friendly_recipes(
 
     recipes = rows_to_dicts(rows)
 
-    # Format cost info
     for r in recipes:
         r["cost"] = {
             "total": r.pop("cost_total", None),

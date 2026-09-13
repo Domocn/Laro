@@ -9,7 +9,7 @@ const STATIC_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('Mise: Caching static assets');
+      console.log('Laro: Caching static assets');
       return cache.addAll(STATIC_ASSETS);
     })
   );
@@ -73,7 +73,7 @@ self.addEventListener('fetch', (event) => {
 
 // Handle push notifications
 self.addEventListener('push', (event) => {
-  console.log('Mise: Push notification received');
+  console.log('Laro: Push notification received');
   
   let data = {
     title: 'Mise',
@@ -121,7 +121,7 @@ self.addEventListener('push', (event) => {
 
 // Handle notification clicks
 self.addEventListener('notificationclick', (event) => {
-  console.log('Mise: Notification clicked');
+  console.log('Laro: Notification clicked');
   event.notification.close();
 
   const urlToOpen = event.notification.data?.url || '/';
@@ -158,12 +158,12 @@ self.addEventListener('notificationclick', (event) => {
 
 // Handle notification close
 self.addEventListener('notificationclose', (event) => {
-  console.log('Mise: Notification closed', event.notification.tag);
+  console.log('Laro: Notification closed', event.notification.tag);
 });
 
 // Background sync for offline actions (future feature)
 self.addEventListener('sync', (event) => {
-  console.log('Mise: Background sync', event.tag);
+  console.log('Laro: Background sync', event.tag);
   
   if (event.tag === 'sync-recipes') {
     event.waitUntil(syncRecipes());
@@ -172,7 +172,7 @@ self.addEventListener('sync', (event) => {
 
 async function syncRecipes() {
   // Future: sync offline recipe changes
-  console.log('Mise: Syncing recipes...');
+  console.log('Laro: Syncing recipes...');
 }
 
 // Periodic background sync for meal reminders
@@ -184,5 +184,5 @@ self.addEventListener('periodicsync', (event) => {
 
 async function checkMealReminders() {
   // This would be called periodically to check for upcoming meals
-  console.log('Mise: Checking meal reminders...');
+  console.log('Laro: Checking meal reminders...');
 }

@@ -4,6 +4,8 @@ const ChatContext = createContext(null);
 
 export const ChatProvider = ({ children }) => {
   const [isChatOpen, setIsChatOpen] = useState(false);
+  /** Active recipe when the user is on a recipe page: { id, title, ... } */
+  const [recipeContext, setRecipeContextState] = useState(null);
 
   const openChat = useCallback(() => {
     setIsChatOpen(true);
@@ -14,11 +16,39 @@ export const ChatProvider = ({ children }) => {
   }, []);
 
   const toggleChat = useCallback(() => {
-    setIsChatOpen(prev => !prev);
+    setIsChatOpen((prev) => !prev);
+  }, []);
+
+  const setRecipeContext = useCallback((ctx) => {
+    if (!ctx || !ctx.id) {
+      setRecipeContextState(null);
+      return;
+    }
+    setRecipeContextState({
+      id: ctx.id,
+      title: ctx.title || '',
+      description: ctx.description || '',
+      ingredients: ctx.ingredients || [],
+      instructions: ctx.instructions || [],
+    });
+  }, []);
+
+  const clearRecipeContext = useCallback(() => {
+    setRecipeContextState(null);
   }, []);
 
   return (
-    <ChatContext.Provider value={{ isChatOpen, openChat, closeChat, toggleChat }}>
+    <ChatContext.Provider
+      value={{
+        isChatOpen,
+        openChat,
+        closeChat,
+        toggleChat,
+        recipeContext,
+        setRecipeContext,
+        clearRecipeContext,
+      }}
+    >
       {children}
     </ChatContext.Provider>
   );

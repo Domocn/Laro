@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional, List
 from dependencies import get_current_user, recipe_repository, review_repository
+from utils.authorization import require_recipe_view
 from utils.activity_logger import log_action
 from datetime import datetime, timezone
 import uuid
@@ -81,6 +82,11 @@ async def update_recipe_rating(recipe_id: str):
     reviews = await review_repository.find_by_recipe(recipe_id)
 
     if not reviews:
+        await recipe_repository.update_recipe(recipe_id, {
+            "rating_average": None,
+            "rating_count": 0,
+            "would_make_again_percent": None,
+        })
         return
 
     total_rating = sum(r["rating"] for r in reviews)
@@ -119,10 +125,11 @@ async def create_review(
     if data.difficulty_rating and not 1 <= data.difficulty_rating <= 5:
         raise HTTPException(status_code=400, detail="Difficulty rating must be between 1 and 5")
 
-    # Check recipe exists
+    # Check recipe exists and is visible to this user
     recipe = await recipe_repository.find_by_id(data.recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     # Check if user already reviewed this recipe
     existing = await review_repository.find_by_user_and_recipe(user["id"], data.recipe_id)
@@ -133,6 +140,7 @@ async def create_review(
             detail="You've already reviewed this recipe. Edit your existing review instead."
         )
 
+    comment = data.comment
     review = {
         "id": str(uuid.uuid4()),
         "recipe_id": data.recipe_id,
@@ -140,7 +148,9 @@ async def create_review(
         "user_name": user.get("name", "Anonymous"),
         "rating": data.rating,
         "title": data.title,
-        "comment": data.comment,
+        # Dual-write: legacy schema used `content`; API/UI use `comment`
+        "content": comment,
+        "comment": comment,
         "would_make_again": data.would_make_again,
         "difficulty_rating": data.difficulty_rating,
         "tags": data.tags or [],
@@ -170,10 +180,12 @@ async def get_recipe_reviews(
     user: dict = Depends(get_current_user)
 ):
     """Get all reviews for a recipe"""
-    reviews = await review_repository.find_by_recipe(recipe_id)
-
-    # Get recipe rating stats
     recipe = await recipe_repository.find_by_id(recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
+
+    reviews = await review_repository.find_by_recipe(recipe_id)
 
     # Calculate rating distribution
     distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
@@ -199,17 +211,15 @@ async def get_recipe_reviews(
     user_review = next((r for r in reviews if r["user_id"] == user["id"]), None)
 
     # Format rating summary
-    rating_summary = None
-    if recipe:
-        rating_summary = {
-            "average": recipe.get("rating_average"),
-            "count": recipe.get("rating_count"),
-            "would_make_again_percent": recipe.get("would_make_again_percent")
-        }
+    rating_summary = {
+        "average": recipe.get("rating_average"),
+        "count": recipe.get("rating_count"),
+        "would_make_again_percent": recipe.get("would_make_again_percent")
+    }
 
     return {
         "recipe_id": recipe_id,
-        "recipe_title": recipe.get("title") if recipe else None,
+        "recipe_title": recipe.get("title"),
         "rating_summary": rating_summary,
         "rating_distribution": distribution,
         "common_tags": [{"tag": t[0], "count": t[1]} for t in common_tags],
@@ -337,6 +347,8 @@ async def update_review(
         raise HTTPException(status_code=400, detail="Difficulty rating must be between 1 and 5")
 
     update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    if "comment" in update_data:
+        update_data["content"] = update_data["comment"]
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     await review_repository.update_review(review_id, update_data)

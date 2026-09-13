@@ -13,7 +13,7 @@ Usage:
 import os
 import logging
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 from pathlib import Path
 import httpx
@@ -195,6 +195,7 @@ class NotificationType(str, Enum):
     REFERRAL_SUCCESS = "referral_success"
     HOUSEHOLD_INVITE = "household_invite"
     HOUSEHOLD_JOINED = "household_joined"  # Someone joined your household
+    FRIEND_REQUEST = "friend_request"
     RECIPE_SHARED = "recipe_shared"
     COOKBOOK_UPDATED = "cookbook_updated"  # New recipe in shared cookbook
 
@@ -205,6 +206,7 @@ class NotificationType(str, Enum):
     # App
     IMPORT_COMPLETE = "import_complete"
     MEAL_REMINDER = "meal_reminder"
+    WEEKLY_PLAN_REMINDER = "weekly_plan_reminder"
     EXPIRY_ALERT = "expiry_alert"
     AI_COMPLETE = "ai_complete"  # AI task finished (meal plan, etc.)
 
@@ -295,6 +297,13 @@ NOTIFICATION_TEMPLATES = {
         "push": True,
         "email": True
     },
+    NotificationType.FRIEND_REQUEST: {
+        "title": "New friend request",
+        "body": "{from_name} wants to connect on Laro.",
+        "email_func": None,
+        "push": True,
+        "email": False
+    },
     NotificationType.RECIPE_SHARED: {
         "title": "New recipe shared with you",
         "body": "{sharer_name} shared '{recipe_name}' with you!",
@@ -314,7 +323,14 @@ NOTIFICATION_TEMPLATES = {
         "body": "'{recipe_name}' is on your meal plan for today.",
         "email_func": None,
         "push": True,
-        "email": False
+        "email": True
+    },
+    NotificationType.WEEKLY_PLAN_REMINDER: {
+        "title": "Plan next week's meals",
+        "body": "Your meal plan for {week_label} is still light — add a few dinners when you have a quiet moment.",
+        "email_func": None,
+        "push": True,
+        "email": True
     },
     NotificationType.EXPIRY_ALERT: {
         "title": "Ingredient expiring soon",
@@ -356,7 +372,7 @@ NOTIFICATION_TEMPLATES = {
         "body": "You have {item_count} items on your shopping list.",
         "email_func": None,
         "push": True,
-        "email": False
+        "email": True
     },
     NotificationType.AI_COMPLETE: {
         "title": "✨ {task_type} ready!",
@@ -465,6 +481,7 @@ NOTIFICATION_PREFERENCE_MAP = {
     NotificationType.REFERRAL_SUCCESS: "household_updates",
     NotificationType.HOUSEHOLD_INVITE: "household_updates",
     NotificationType.HOUSEHOLD_JOINED: "household_updates",
+    NotificationType.FRIEND_REQUEST: "household_updates",
     NotificationType.RECIPE_SHARED: "recipe_shared",
     NotificationType.COOKBOOK_UPDATED: "cookbook_updates",
 
@@ -475,6 +492,7 @@ NOTIFICATION_PREFERENCE_MAP = {
     # App
     NotificationType.IMPORT_COMPLETE: "import_complete",
     NotificationType.MEAL_REMINDER: "meal_reminders",
+    NotificationType.WEEKLY_PLAN_REMINDER: "weekly_plan_reminder",
     NotificationType.EXPIRY_ALERT: "expiry_alerts",
     NotificationType.AI_COMPLETE: "ai_complete",
 
@@ -487,8 +505,8 @@ NOTIFICATION_PREFERENCE_MAP = {
 }
 
 
-async def get_user_notification_preferences(user_id: str) -> Dict[str, bool]:
-    """Get user's notification preferences from database"""
+async def get_user_notification_preferences(user_id: str) -> Dict[str, Any]:
+    """Get user's notification preferences (mobile row + web reminder toggles)."""
     from database.connection import get_db
 
     pool = await get_db()
@@ -497,10 +515,13 @@ async def get_user_notification_preferences(user_id: str) -> Dict[str, bool]:
             "SELECT * FROM mobile_notification_settings WHERE user_id = $1",
             user_id
         )
+        web = await conn.fetchrow(
+            "SELECT * FROM notification_settings WHERE user_id = $1",
+            user_id
+        )
 
     if not row:
-        # Return defaults (all enabled)
-        return {
+        prefs = {
             "push_enabled": True,
             "email_enabled": True,
             "subscription_alerts": True,
@@ -513,14 +534,74 @@ async def get_user_notification_preferences(user_id: str) -> Dict[str, bool]:
             "shopping_list_updates": True,
             "shopping_reminders": True,
             "meal_reminders": True,
+            "weekly_plan_reminder": True,
             "expiry_alerts": True,
             "import_complete": True,
             "ai_complete": True,
             "security_alerts": True,
-            "fcm_token": None
+            "fcm_token": None,
+            "web_enabled": False,
         }
+    else:
+        prefs = dict(row)
+        prefs.setdefault("weekly_plan_reminder", True)
 
-    return dict(row)
+    if web:
+        prefs["web_enabled"] = bool(web.get("enabled"))
+        # Web Settings is authoritative for reminder toggles when the user
+        # has configured the web notification panel.
+        if web.get("enabled"):
+            prefs["meal_reminders"] = bool(web.get("meal_reminders", True))
+            prefs["shopping_reminders"] = bool(web.get("shopping_reminders", True))
+            prefs["weekly_plan_reminder"] = bool(web.get("weekly_plan_reminder", True))
+    else:
+        prefs.setdefault("web_enabled", False)
+
+    return prefs
+
+
+def get_vapid_keys() -> Tuple[Optional[str], Optional[str], str]:
+    """Return (public_key, private_key_pem_or_b64, claim_email)."""
+    public = os.environ.get("VAPID_PUBLIC_KEY", "").strip() or None
+    private = os.environ.get("VAPID_PRIVATE_KEY", "").strip() or None
+    claim = os.environ.get("VAPID_CLAIM_EMAIL", "mailto:noreply@laro.food").strip()
+    # Allow PEM path
+    if private and private.startswith("/") and os.path.isfile(private):
+        with open(private, "r", encoding="utf-8") as f:
+            private = f.read()
+    return public, private, claim
+
+
+async def send_web_push_notification(
+    subscription: dict,
+    title: str,
+    body: str,
+    data: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Send a Web Push notification via pywebpush (requires VAPID keys)."""
+    public_key, private_key, claim = get_vapid_keys()
+    if not public_key or not private_key:
+        logger.debug("VAPID keys not configured — skipping web push")
+        return False
+    try:
+        from pywebpush import webpush, WebPushException
+        import json as _json
+
+        payload = _json.dumps({
+            "title": title,
+            "body": body,
+            "data": data or {},
+        })
+        webpush(
+            subscription_info=subscription,
+            data=payload,
+            vapid_private_key=private_key,
+            vapid_claims={"sub": claim},
+        )
+        return True
+    except Exception as e:
+        logger.warning("Web push failed: %s", e)
+        return False
 
 
 async def notify_user(
@@ -548,7 +629,12 @@ async def notify_user(
     from dependencies import user_repository
     from database.connection import get_db
 
-    result = {"email_sent": False, "push_sent": False, "skipped_preference": False}
+    result = {
+        "email_sent": False,
+        "push_sent": False,
+        "web_push_sent": False,
+        "skipped_preference": False,
+    }
     data = data or {}
 
     # Get template
@@ -593,7 +679,6 @@ async def notify_user(
     if (template["email"] or force_email) and EMAIL_ENABLED and user_email and email_allowed:
         email_func_name = template.get("email_func")
         if email_func_name:
-            # Use specific email function
             email_func = globals().get(email_func_name)
             if email_func:
                 try:
@@ -602,13 +687,29 @@ async def notify_user(
                 except Exception as e:
                     logger.error(f"Email send error: {e}")
         else:
-            # TODO: Generic email template
-            logger.info(f"No email function for {notification_type}, skipping email")
+            # Generic HTML email for reminder-style notifications
+            try:
+                from services.email import send_email
+                html = (
+                    f"<p>Hi {user_name},</p>"
+                    f"<p><strong>{title}</strong></p>"
+                    f"<p>{body}</p>"
+                    f"<p>— Laro</p>"
+                )
+                result["email_sent"] = await send_email(
+                    to=user_email,
+                    subject=title,
+                    html_body=html,
+                    text_body=f"{title}\n\n{body}",
+                )
+            except Exception as e:
+                logger.error(f"Generic email send error: {e}")
 
-    # Check master push toggle
+    # Check master push toggle (mobile FCM). Web push uses web_enabled instead.
     push_allowed = prefs.get("push_enabled", True) or force_push or ignore_preferences
+    web_push_allowed = prefs.get("web_enabled", False) or force_push or ignore_preferences
 
-    # Send push if enabled for this notification type
+    # Send FCM push if enabled for this notification type
     if (template["push"] or force_push) and push_allowed:
         fcm_token = prefs.get("fcm_token")
 
@@ -617,11 +718,41 @@ async def notify_user(
                 fcm_token=fcm_token,
                 title=title,
                 body=body,
-                data={"type": notification_type.value, **data}
+                data={"type": notification_type.value, **{k: str(v) for k, v in data.items()}}
             )
             result["push_sent"] = push_result
 
-    logger.info(f"Notification {notification_type} to {user_id}: email={result['email_sent']}, push={result['push_sent']}")
+    # Send Web Push subscriptions when the web panel is enabled
+    if (template["push"] or force_push) and web_push_allowed:
+        try:
+            from dependencies import push_subscription_repository
+            subs = await push_subscription_repository.find_by_user(user_id)
+            for sub in subs or []:
+                subscription = sub.get("subscription")
+                if not subscription:
+                    continue
+                if isinstance(subscription, str):
+                    import json as _json
+                    try:
+                        subscription = _json.loads(subscription)
+                    except Exception:
+                        continue
+                ok = await send_web_push_notification(
+                    subscription=subscription,
+                    title=title,
+                    body=body,
+                    data={"type": notification_type.value, **data},
+                )
+                if ok:
+                    result["web_push_sent"] = True
+        except Exception as e:
+            logger.warning(f"Web push lookup/send error: {e}")
+
+    logger.info(
+        f"Notification {notification_type} to {user_id}: "
+        f"email={result['email_sent']}, push={result['push_sent']}, "
+        f"web_push={result['web_push_sent']}"
+    )
     return result
 
 

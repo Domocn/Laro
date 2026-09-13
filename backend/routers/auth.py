@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 # Import activity logger
 from utils.activity_logger import log_user_activity
+from utils.subscription import user_subscription_fields
+
+
+def _subscription_user_fields(user: dict) -> dict:
+    """Attach Pro / lifetime fields so clients (Android) detect owner forever."""
+    return user_subscription_fields(user)
 
 # Import debug utilities
 try:
@@ -60,7 +66,9 @@ class UserCreateExtended(BaseModel):
     name: str
     role: Optional[str] = None
     invite_code: Optional[str] = None
-    referral_code: Optional[str] = None  # Friend code for 1st month free
+    referral_code: Optional[str] = None  # Friend code → 2-week Pro trial
+    language: Optional[str] = None  # en-US, en-GB, es, …
+    country: Optional[str] = None  # ISO country code
 
     @field_validator("name")
     @classmethod
@@ -272,22 +280,27 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         None, hash_password, user.password
     )
 
-    # Handle referral code - gives 1st month free to new user
-    # Referrer gets their free month only when referred user subscribes
+    # Handle referral code — new user gets a 2-week Pro trial immediately.
+    # Referrer is rewarded (another 2 weeks) only when the referred user subscribes.
+    from utils.subscription import REFERRAL_TRIAL_DAYS
+
     referred_by = None
     referral_trial_end = None
     if user.referral_code:
         referrer = await user_repository.find_by_friend_code(user.referral_code.strip().upper())
-        if referrer:
+        if referrer and referrer.get("id") != user_id:
             referred_by = referrer["id"]
             now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
-            # Grant 30-day trial for the new user immediately
-            referral_trial_end = now_utc + timedelta(days=30)
+            referral_trial_end = now_utc + timedelta(days=REFERRAL_TRIAL_DAYS)
 
-            # Track pending referral reward for the referrer
-            # They'll get their free month when this user subscribes
             pending_rewards = referrer.get("pending_referral_rewards", [])
+            if isinstance(pending_rewards, str):
+                import json
+                try:
+                    pending_rewards = json.loads(pending_rewards) or []
+                except Exception:
+                    pending_rewards = []
             pending_rewards.append({
                 "referred_user_id": user_id,
                 "created_at": now_utc.isoformat()
@@ -296,6 +309,18 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
             await user_repository.update_user(referrer["id"], {
                 "pending_referral_rewards": pending_rewards
             })
+
+            # Referrer earns points immediately when friend signs up
+            try:
+                from utils.rewards import credit_points, POINTS_SIGNUP
+                await credit_points(
+                    referrer["id"],
+                    POINTS_SIGNUP,
+                    reason=f"referral_signup:{user_id}",
+                    meta={"referred_user_id": user_id},
+                )
+            except Exception as e:
+                logger.warning("Failed to credit signup referral points: %s", e)
 
     # Generate email verification token
     verification_token = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
@@ -323,10 +348,44 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         "email_verification_token": verification_token,
         "email_verification_expires": verification_expires
     }
+    # Mirror referral trial onto subscription columns so Pro works on web + API
+    if referral_trial_end:
+        user_doc["subscription_status"] = "trial"
+        user_doc["subscription_expires"] = referral_trial_end
+        user_doc["subscription_source"] = "referral"
+    # When outbound email isn't configured, auto-verify so registration
+    # isn't a dead end (no verification mail can ever arrive).
+    email_ready = is_email_configured()
+    if not email_ready:
+        user_doc["email_verified"] = True
+        user_doc["email_verification_token"] = None
+        user_doc["email_verification_expires"] = None
+
     await user_repository.create(user_doc)
 
-    # Send verification email in background
-    if is_email_configured():
+    # Seed locale preferences from signup country / language
+    try:
+        from utils.locales import (
+            normalize_country,
+            normalize_language,
+            defaults_for_country,
+            DEFAULT_COUNTRY,
+        )
+
+        country = normalize_country(user.country) if user.country else DEFAULT_COUNTRY
+        defaults = defaults_for_country(country)
+        language = normalize_language(user.language) if user.language else defaults["language"]
+        await user_preferences_repository.upsert_preferences(user_id, {
+            "language": language,
+            "country": country,
+            "measurementUnit": defaults["measurementUnit"],
+            "updated_at": now,
+        })
+    except Exception as e:
+        logger.warning("Failed to seed locale preferences for %s: %s", user_id, e)
+
+    # Send verification email in background (only when mail works)
+    if email_ready:
         background_tasks.add_task(send_verification_email, user.email, user.name, verification_token)
 
     # Log registration activity
@@ -334,7 +393,7 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         user_id=user_id,
         user_email=user.email,
         action="register",
-        details={"role": role, "invite_used": bool(invite_doc)},
+        details={"role": role, "invite_used": bool(invite_doc), "email_auto_verified": not email_ready},
         ip_address=ip_address
     )
 
@@ -355,18 +414,43 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         "last_active": now
     })
 
-    # Don't return a token until email is verified
-    # This prevents the client from accessing authenticated endpoints
-    return {
-        "requires_verification": True,
-        "message": "Please check your email to verify your account",
-        "email": user.email,
-        "user": {
-            "id": user_id,
+    if email_ready:
+        # Don't return a token until email is verified
+        return {
+            "requires_verification": True,
+            "message": "Please check your email to verify your account",
             "email": user.email,
-            "name": user.name,
-            "email_verified": False
+            "user": {
+                "id": user_id,
+                "email": user.email,
+                "name": user.name,
+                "email_verified": False,
+                "has_referral_trial": bool(referral_trial_end),
+                "referral_trial_end": referral_trial_end.isoformat() if referral_trial_end else None,
+            }
         }
+
+    # No mail provider — log the user in immediately
+    created_user = {
+        "id": user_id,
+        "email": user.email,
+        "name": user.name,
+        "role": role,
+        "email_verified": True,
+        "referral_trial_end": referral_trial_end.isoformat() if referral_trial_end else None,
+        "has_referral_trial": bool(referral_trial_end),
+        "referral_count": 0,
+        **_subscription_user_fields(user_doc),
+    }
+    return {
+        "token": token,
+        "requires_verification": False,
+        "message": (
+            f"Account created — {REFERRAL_TRIAL_DAYS}-day Pro trial started"
+            if referral_trial_end
+            else "Account created"
+        ),
+        "user": created_user,
     }
 
 
@@ -376,6 +460,13 @@ async def login(user: LoginWithTOTP, request: Request, background_tasks: Backgro
     user_agent = request.headers.get("User-Agent", "Unknown")
     if _debug_available:
         Loggers.auth.info("Login attempt", email=user.email[:3] + "***", ip=ip_address)
+
+    # Per-IP login rate limit (in addition to account lockout)
+    from utils.security import login_rate_limiter
+    rate_key = f"login:{ip_address or 'unknown'}"
+    allowed, rate_msg = login_rate_limiter.is_allowed(rate_key)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=rate_msg or "Too many login attempts. Please try again later.")
 
     # Check IP access
     if ip_address:
@@ -590,7 +681,8 @@ async def login(user: LoginWithTOTP, request: Request, background_tasks: Backgro
             "name_update_required": name_update_required,
             "referral_trial_end": referral_trial_end,
             "has_referral_trial": has_referral_trial,
-            "referral_count": db_user.get("referral_count", 0)
+            "referral_count": db_user.get("referral_count", 0),
+            **_subscription_user_fields(db_user),
         }
     }
 
@@ -745,7 +837,8 @@ async def get_me(user: dict = Depends(get_current_user)):
         "created_at": created_at,
         "referral_trial_end": referral_trial_end,
         "has_referral_trial": has_referral_trial,
-        "referral_count": user.get("referral_count", 0)
+        "referral_count": user.get("referral_count", 0),
+        **_subscription_user_fields(user),
     }
 
 
@@ -780,7 +873,8 @@ async def get_me_extended(user: dict = Depends(get_current_user)):
         "totp_enabled": user.get("totp_enabled", False),
         "oauth_only": user.get("oauth_only", False),
         "linked_oauth": linked_providers,
-        "force_password_change": user.get("force_password_change", False)
+        "force_password_change": user.get("force_password_change", False),
+        **_subscription_user_fields(user),
     }
 
 

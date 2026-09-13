@@ -4,12 +4,12 @@ from pathlib import Path
 
 def _get_version() -> str:
     """Get version from VERSION file or environment variable."""
-    # First check environment variable (set during Docker build)
-    env_version = os.getenv("APP_VERSION")
-    if env_version:
-        return env_version.strip()
+    # Dockerfile defaults APP_VERSION to 0.0.0-dev — treat that as unset so a
+    # real VERSION file (copied into the image) can win.
+    env_version = (os.getenv("APP_VERSION") or "").strip()
+    if env_version and env_version != "0.0.0-dev":
+        return env_version
 
-    # Try to read from VERSION file (development or local deployment)
     version_paths = [
         Path(__file__).parent.parent / "VERSION",  # ../VERSION from backend/
         Path(__file__).parent / "VERSION",          # VERSION in backend/
@@ -18,9 +18,11 @@ def _get_version() -> str:
 
     for version_path in version_paths:
         if version_path.exists():
-            return version_path.read_text().strip()
+            text = version_path.read_text().strip()
+            if text:
+                return text
 
-    return "0.0.0-dev"
+    return env_version or "0.0.0-dev"
 
 
 class Settings:
@@ -33,10 +35,27 @@ class Settings:
 
         # JWT_SECRET must be set in production - generate with: openssl rand -base64 32
         jwt_secret = os.getenv("JWT_SECRET")
-        if not jwt_secret:
+        weak_placeholders = {
+            "",
+            "change-this-secret-key",
+            "your-super-secret-key-change-me",
+            "changeme",
+            "secret",
+        }
+        is_production = bool(
+            os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("IS_CLOUD", "").lower() == "true"
+            or os.getenv("LARO_ENV", "").lower() == "production"
+            or os.getenv("ENVIRONMENT", "").lower() == "production"
+        )
+        if not jwt_secret or jwt_secret.strip() in weak_placeholders:
+            if is_production:
+                raise RuntimeError(
+                    "JWT_SECRET must be set to a strong random value in production. "
+                    "Generate with: openssl rand -base64 32"
+                )
             import warnings
             import secrets as crypto_secrets
-            # Generate a random secret for this session (tokens won't persist across restarts)
             jwt_secret = crypto_secrets.token_urlsafe(32)
             warnings.warn(
                 "JWT_SECRET not set! Generated random secret for this session. "
@@ -47,12 +66,27 @@ class Settings:
         self.jwt_algorithm: str = "HS256"
 
         self.llm_provider: str = os.getenv("LLM_PROVIDER", "ollama")
-        self.ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
+        self.ollama_api_key: str | None = os.getenv("OLLAMA_API_KEY")
+        # When an Ollama Cloud API key is present, default host to ollama.com
+        default_ollama = "https://ollama.com" if self.ollama_api_key else "http://localhost:11434"
+        self.ollama_url: str = os.getenv("OLLAMA_URL", default_ollama)
+        # Cloud-friendly default; override with OLLAMA_MODEL for local llama3 etc.
+        default_model = "gpt-oss:20b" if self.ollama_api_key else "llama3"
+        self.ollama_model: str = os.getenv("OLLAMA_MODEL", default_model)
+        # Vision/OCR (receipts, cookbook photos). Text models like gpt-oss are not multimodal.
+        # Ollama Cloud currently exposes multimodal models such as gemma4 (llama3.2-vision is not hosted).
+        self.ollama_vision_model: str = os.getenv(
+            "OLLAMA_VISION_MODEL",
+            "gemma4" if self.ollama_api_key else "llava",
+        )
         self.openai_api_key: str | None = os.getenv("OPENAI_API_KEY")
         self.anthropic_api_key: str | None = os.getenv("ANTHROPIC_API_KEY")
         self.groq_api_key: str | None = os.getenv("GROQ_API_KEY")
         self.groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        # Free AI LLM calls before upgrade is required (JSON-LD scrape is unlimited)
+        self.free_ai_uses: int = int(os.getenv("FREE_AI_USES", "3"))
+        # Scanned (image-only) PDF OCR — max pages rendered into one vision call
+        self.scanned_pdf_max_pages: int = int(os.getenv("SCANNED_PDF_MAX_PAGES", "5"))
 
         # CORS_ORIGINS should be set in production (comma-separated list)
         if os.getenv("RAILWAY_ENVIRONMENT"):
@@ -66,6 +100,9 @@ class Settings:
         # OAuth Settings (configure to enable)
         self.google_client_id: str | None = os.getenv("GOOGLE_CLIENT_ID")
         self.google_client_secret: str | None = os.getenv("GOOGLE_CLIENT_SECRET")
+        # Optional dedicated OAuth client for Google Health (falls back to GOOGLE_CLIENT_*)
+        self.google_health_client_id: str | None = os.getenv("GOOGLE_HEALTH_CLIENT_ID")
+        self.google_health_client_secret: str | None = os.getenv("GOOGLE_HEALTH_CLIENT_SECRET")
         self.github_client_id: str | None = os.getenv("GITHUB_CLIENT_ID")
         self.github_client_secret: str | None = os.getenv("GITHUB_CLIENT_SECRET")
         self.oauth_redirect_base_url: str = os.getenv("OAUTH_REDIRECT_BASE_URL", "http://localhost:3001")
@@ -97,6 +134,15 @@ class Settings:
         # Redis Settings (for Pub/Sub and caching)
         self.redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
         self.redis_pubsub_enabled: bool = os.getenv("REDIS_PUBSUB_ENABLED", "true").lower() == "true"
+
+        # Open Prices (Open Food Facts) — crowdsourced UK supermarket prices
+        self.open_prices_enabled: bool = (
+            os.getenv("OPEN_PRICES_ENABLED", "true").lower() == "true"
+        )
+        # During Open Prices sync, scrape category consensus + clamp wild £/kg
+        self.open_prices_scrape_corrections: bool = (
+            os.getenv("OPEN_PRICES_SCRAPE_CORRECTIONS", "true").lower() == "true"
+        )
 
         # Supabase Settings (for auth)
         self.supabase_url: str | None = os.getenv("SUPABASE_URL")

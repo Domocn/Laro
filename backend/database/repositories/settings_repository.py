@@ -173,7 +173,17 @@ class CustomPromptsRepository(BaseRepository):
 class UserPreferencesRepository(BaseRepository):
     """Repository for user preferences"""
 
-    JSON_FIELDS = ["dietary", "dietaryRestrictions", "allergens", "dislikedIngredients", "favoriteCuisines"]
+    JSON_FIELDS = [
+        "dietary",
+        "dietaryRestrictions",
+        "allergens",
+        "dislikedIngredients",
+        "kidVetoIngredients",
+        "favoriteCuisines",
+        "preferredRecipeSites",
+        "wfhDays",
+        "gymDays",
+    ]
 
     def __init__(self):
         super().__init__("user_preferences")

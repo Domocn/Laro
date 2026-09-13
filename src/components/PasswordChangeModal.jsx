@@ -114,10 +114,10 @@ export const PasswordChangeModal = () => {
             />
           </div>
 
-          {/* Password requirements checklist */}
+          {/* Requirements checklist */}
           {newPassword.length > 0 && (
-            <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground mb-1">Password requirements:</p>
+            <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Requirements</p>
               {checks.map((check, i) => (
                 <div key={i} className="flex items-center gap-2 text-sm">
                   {check.met ? (

@@ -19,6 +19,10 @@ class MealPlanRepository(BaseRepository):
         """Create a new meal plan"""
         return await self.insert(plan_data)
 
+    async def update_plan(self, plan_id: str, data: dict) -> int:
+        """Update a meal plan by id"""
+        return await self.update({"id": plan_id}, data)
+
     async def delete_plan(self, plan_id: str) -> int:
         """Delete a meal plan"""
         return await self.delete({"id": plan_id})
@@ -81,6 +85,22 @@ class MealPlanRepository(BaseRepository):
             from ..connection import dict_from_row
             return dict_from_row(row)
         return None
+
+    async def delete_in_date_range(
+        self,
+        household_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> int:
+        """Delete meal plans for a household between start_date and end_date inclusive."""
+        pool = await self._get_db()
+        query = """
+            DELETE FROM meal_plans
+            WHERE household_id = $1 AND date >= $2 AND date <= $3
+        """
+        async with pool.acquire() as conn:
+            result = await conn.execute(query, household_id, start_date, end_date)
+        return int(result.split()[-1]) if result else 0
 
     async def delete_by_household(self, household_id: str) -> int:
         """Delete all meal plans for a household"""

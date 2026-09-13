@@ -227,10 +227,10 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
     # Paths and their cache durations in seconds
     CACHE_RULES = {
         "/api/categories": 3600,      # 1 hour - rarely changes
-        "/api/config": 3600,          # 1 hour - server config
+        "/api/config": 0,             # No cache — is_cloud / LLM flags must be fresh
         "/api/health": 0,             # No cache - always fresh
         "/api/v1/categories": 3600,
-        "/api/v1/config": 3600,
+        "/api/v1/config": 0,
         "/api/v1/health": 0,
     }
 

@@ -2,13 +2,29 @@
 Recipes Router - CRUD operations with live refresh support
 """
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query, Request
-from models import RecipeCreate, RecipeResponse, UserRatingCreate, UserRatingResponse
+from models import (
+    RecipeCreate,
+    RecipeResponse,
+    UserRatingCreate,
+    UserRatingResponse,
+    RecipeBulkDelete,
+    CheckVetoRequest,
+    CheckVetoResponse,
+    IngredientSubstitutionRequest,
+    IngredientSubstitutionResponse,
+)
 from dependencies import get_current_user, recipe_repository, recipe_share_repository, user_repository, user_preferences_repository
 from database.connection import get_pool
 from database.websocket_manager import ws_manager, EventType
 from config import settings
 from utils.activity_logger import log_action
 from utils.security import validate_image_content
+from utils.authorization import require_recipe_view, require_recipe_edit
+from utils.recipe_fields import (
+    nutrition_to_columns,
+    prepare_recipe_for_response,
+)
+from utils.veto_replacements import check_ingredients_for_vetoes, suggest_ingredient_substitutions
 import uuid
 import aiofiles
 import re
@@ -109,16 +125,104 @@ def ensure_upload_dir() -> Path:
     return UPLOAD_DIR
 
 
+@router.post("/check-veto", response_model=CheckVetoResponse)
+async def check_recipe_veto(
+    body: CheckVetoRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Check ingredients against the user's adult (dislikedIngredients) and
+    kid (kidVetoIngredients, when kid-friendly meals apply) veto lists.
+
+    Returns hits plus category-aware replacement suggestions.
+    """
+    prefs = await user_preferences_repository.find_by_user(user["id"]) or {}
+    result = check_ingredients_for_vetoes(body.ingredients or [], prefs)
+    return CheckVetoResponse(**result)
+
+
+@router.post("/substitutions", response_model=IngredientSubstitutionResponse)
+async def get_ingredient_substitutions(
+    body: IngredientSubstitutionRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Suggest substitutions for a single ingredient (Honeydew-style swap button).
+
+    When recipe context is provided (or recipe_id resolves), Laro AI ranks swaps
+    so they fit this dish. Falls back to curated/function/food_db maps.
+    """
+    name = (body.ingredient or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Ingredient is required")
+    prefs = await user_preferences_repository.find_by_user(user["id"]) or {}
+    limit = body.limit if body.limit is not None else 5
+    limit = max(1, min(int(limit), 8))
+
+    recipe_title = (body.recipe_title or "").strip()
+    recipe_description = (body.recipe_description or "").strip()
+    ingredients = list(body.ingredients or [])
+    instructions = list(body.instructions or [])
+
+    if body.recipe_id and (not recipe_title or not ingredients):
+        recipe = await recipe_repository.find_by_id(body.recipe_id)
+        if recipe:
+            require_recipe_view(user, recipe)
+            recipe_title = recipe_title or (recipe.get("title") or "")
+            recipe_description = recipe_description or (recipe.get("description") or "")
+            if not ingredients:
+                ingredients = list(recipe.get("ingredients") or [])
+            if not instructions:
+                instructions = list(recipe.get("instructions") or [])
+
+    local = suggest_ingredient_substitutions(name, prefs, limit=limit)
+    suggestions = list(local.get("suggestions") or [])
+    ai_used = False
+    source = "local"
+
+    use_ai = body.use_ai is not False
+    has_context = bool(recipe_title or ingredients)
+    if use_ai and has_context:
+        from utils.ai_substitutions import ai_rank_substitutions
+        from utils.preference_context import format_veto_exclusion_lines
+
+        diet_notes = "\n".join(format_veto_exclusion_lines(prefs) or [])
+        ai_result = await ai_rank_substitutions(
+            name,
+            recipe_title=recipe_title,
+            recipe_description=recipe_description,
+            ingredients=ingredients,
+            instructions=instructions,
+            seed_suggestions=suggestions,
+            diet_notes=diet_notes,
+            limit=limit,
+            user=user,
+            meter_quota=True,
+        )
+        if ai_result.get("suggestions"):
+            suggestions = ai_result["suggestions"]
+            ai_used = True
+            source = "ai"
+
+    return IngredientSubstitutionResponse(
+        ingredient=name,
+        suggestions=suggestions,
+        category=local.get("category"),
+        roles=local.get("roles"),
+        ai_used=ai_used,
+        source=source,
+    )
+
+
 @router.post("", response_model=RecipeResponse)
 async def create_recipe(recipe: RecipeCreate, request: Request, user: dict = Depends(get_current_user)):
+    from utils.subscription import assert_can_create_recipes
+
+    await assert_can_create_recipes(user, recipe_repository, 1)
+
     recipe_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    # Build nutrition dict if provided
-    nutrition_data = None
-    if recipe.nutrition:
-        nutrition_data = recipe.nutrition.model_dump()
-
+    # DB stores flat nutrition_* columns (not a JSON "nutrition" blob)
     recipe_doc = {
         "id": recipe_id,
         "title": recipe.title,
@@ -137,9 +241,22 @@ async def create_recipe(recipe: RecipeCreate, request: Request, user: dict = Dep
         "updated_at": now,
         "dietary_tags": recipe.dietary_tags or [],
         "difficulty": recipe.difficulty,
-        "nutrition": nutrition_data
+        **nutrition_to_columns(recipe.nutrition),
     }
+    if recipe.cookbook_id:
+        recipe_doc["cookbook_id"] = recipe.cookbook_id
+        recipe_doc["source_type"] = recipe.source_type or "cookbook"
+    elif recipe.source_type:
+        recipe_doc["source_type"] = recipe.source_type
+    if recipe.source_url:
+        recipe_doc["source_url"] = recipe.source_url
+    if recipe.source_author:
+        recipe_doc["source_author"] = recipe.source_author.strip().lstrip("@")
+    if recipe.cookbook_page is not None:
+        recipe_doc["cookbook_page"] = recipe.cookbook_page
     await recipe_repository.create(recipe_doc)
+
+    response_doc = prepare_recipe_for_response(recipe_doc)
 
     # Log user activity
     await log_action(
@@ -154,10 +271,10 @@ async def create_recipe(recipe: RecipeCreate, request: Request, user: dict = Dep
         user_id=user["id"],
         household_id=user.get("household_id"),
         event_type=EventType.RECIPE_CREATED,
-        data=recipe_doc
+        data=response_doc
     )
 
-    return RecipeResponse(**recipe_doc)
+    return RecipeResponse(**response_doc)
 
 
 @router.get("", response_model=List[RecipeResponse])
@@ -185,17 +302,19 @@ async def get_recipes(
         favorites_only=favorites_only
     )
 
-    # Add is_favorite flag to each recipe
+    # Add is_favorite flag and shape nutrition/dietary fields for the API
+    shaped = []
     for r in recipes:
         r["is_favorite"] = r["id"] in user_favorites
+        shaped.append(prepare_recipe_for_response(r))
 
     # Apply pagination if specified
     if offset is not None:
-        recipes = recipes[offset:]
+        shaped = shaped[offset:]
     if limit is not None:
-        recipes = recipes[:limit]
+        shaped = shaped[:limit]
 
-    return [RecipeResponse(**r) for r in recipes]
+    return [RecipeResponse(**r) for r in shaped]
 
 
 @router.get("/{recipe_id}")
@@ -203,7 +322,9 @@ async def get_recipe(recipe_id: str, user: dict = Depends(get_current_user)):
     recipe = await recipe_repository.find_by_id(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
+    recipe = prepare_recipe_for_response(recipe)
     user_favorites = user.get("favorites", [])
     recipe["is_favorite"] = recipe["id"] in user_favorites
 
@@ -226,13 +347,7 @@ async def update_recipe(recipe_id: str, recipe: RecipeCreate, request: Request, 
     if not existing:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    if existing["author_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    # Build nutrition dict if provided
-    nutrition_data = None
-    if recipe.nutrition:
-        nutrition_data = recipe.nutrition.model_dump()
+    require_recipe_edit(user, existing)
 
     update_data = {
         "title": recipe.title,
@@ -248,11 +363,12 @@ async def update_recipe(recipe_id: str, recipe: RecipeCreate, request: Request, 
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "dietary_tags": recipe.dietary_tags or [],
         "difficulty": recipe.difficulty,
-        "nutrition": nutrition_data
+        **nutrition_to_columns(recipe.nutrition),
     }
 
     await recipe_repository.update_recipe(recipe_id, update_data)
     updated = await recipe_repository.find_by_id(recipe_id)
+    updated = prepare_recipe_for_response(updated)
 
     # Log user activity
     await log_action(
@@ -273,14 +389,68 @@ async def update_recipe(recipe_id: str, recipe: RecipeCreate, request: Request, 
     return RecipeResponse(**updated)
 
 
+@router.delete("/bulk")
+async def delete_recipes_bulk(
+    bulk: RecipeBulkDelete,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Delete multiple recipes the user is allowed to edit (author or admin).
+    Unauthorized / missing ids are skipped and reported in the response.
+    """
+    ids = [i for i in (bulk.recipe_ids or []) if i]
+    if not ids:
+        raise HTTPException(status_code=400, detail="recipe_ids required")
+    if len(ids) > 200:
+        raise HTTPException(status_code=400, detail="At most 200 recipes per bulk delete")
+
+    deleted = []
+    skipped = []
+    for recipe_id in ids:
+        existing = await recipe_repository.find_by_id(recipe_id)
+        if not existing:
+            skipped.append({"id": recipe_id, "reason": "not_found"})
+            continue
+        try:
+            require_recipe_edit(user, existing)
+        except HTTPException:
+            skipped.append({"id": recipe_id, "reason": "forbidden"})
+            continue
+
+        title = existing.get("title", "Unknown")
+        await recipe_repository.delete_recipe(recipe_id)
+        deleted.append({"id": recipe_id, "title": title})
+
+        await log_action(
+            user, "recipe_deleted", request,
+            target_type="recipe",
+            target_id=recipe_id,
+            details={"title": title, "bulk": True},
+        )
+        await ws_manager.broadcast_to_household_or_user(
+            user_id=user["id"],
+            household_id=user.get("household_id"),
+            event_type=EventType.RECIPE_DELETED,
+            data={"id": recipe_id},
+        )
+
+    return {
+        "message": f"Deleted {len(deleted)} recipes",
+        "deleted_count": len(deleted),
+        "skipped_count": len(skipped),
+        "deleted": deleted,
+        "skipped": skipped,
+    }
+
+
 @router.delete("/{recipe_id}")
 async def delete_recipe(recipe_id: str, request: Request, user: dict = Depends(get_current_user)):
     existing = await recipe_repository.find_by_id(recipe_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    if existing["author_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
+    require_recipe_edit(user, existing)
 
     # Store title before deletion for logging
     recipe_title = existing.get("title", "Unknown")
@@ -312,6 +482,7 @@ async def toggle_favorite(recipe_id: str, request: Request, user: dict = Depends
     recipe = await recipe_repository.find_by_id(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     user_favorites = user.get("favorites", [])
 
@@ -353,6 +524,7 @@ async def get_scaled_recipe(
     recipe = await recipe_repository.find_by_id(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     original_servings = recipe.get("servings", 4)
     if original_servings <= 0:
@@ -406,6 +578,7 @@ async def get_print_recipe(recipe_id: str, user: dict = Depends(get_current_user
     recipe = await recipe_repository.find_by_id(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     total_time = (recipe.get("prep_time", 0) or 0) + (recipe.get("cook_time", 0) or 0)
 
@@ -431,6 +604,7 @@ async def check_recipe_allergens(recipe_id: str, user: dict = Depends(get_curren
     recipe = await recipe_repository.find_by_id(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     user_allergens = await get_user_allergens(user["id"], user)
     warnings = check_allergens_in_recipe(
@@ -453,9 +627,7 @@ async def upload_recipe_image(recipe_id: str, file: UploadFile = File(...), user
     if not existing:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
-    # Authorization check - only recipe author can upload images
-    if existing["author_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Not authorized to modify this recipe")
+    require_recipe_edit(user, existing)
 
     # Whitelist allowed extensions
     ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
@@ -479,7 +651,7 @@ async def upload_recipe_image(recipe_id: str, file: UploadFile = File(...), user
     # Ensure upload directory exists before writing
     ensure_upload_dir()
 
-    filename = f"{recipe_id}.{ext}"
+    filename = f"{uuid.uuid4().hex}.{ext}"
     file_path = UPLOAD_DIR / filename
 
     async with aiofiles.open(file_path, 'wb') as f:
@@ -488,15 +660,18 @@ async def upload_recipe_image(recipe_id: str, file: UploadFile = File(...), user
     image_url = f"/api/uploads/{filename}"
     await recipe_repository.update_recipe(recipe_id, {"image_url": image_url})
 
+    from utils.upload_tokens import sign_upload_path
+    signed_url = sign_upload_path(image_url)
+
     # Broadcast update
     await ws_manager.broadcast_to_household_or_user(
         user_id=user["id"],
         household_id=user.get("household_id"),
         event_type=EventType.RECIPE_UPDATED,
-        data={"id": recipe_id, "image_url": image_url}
+        data={"id": recipe_id, "image_url": signed_url}
     )
 
-    return {"image_url": image_url}
+    return {"image_url": signed_url}
 
 
 @router.post("/{recipe_id}/share")
@@ -558,6 +733,7 @@ async def set_rating(recipe_id: str, rating_data: UserRatingCreate, user: dict =
     recipe = await recipe_repository.find_by_id(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     pool = await get_pool()
     now = datetime.now(timezone.utc).isoformat()

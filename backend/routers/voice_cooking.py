@@ -35,7 +35,17 @@ class VoiceSettings(BaseModel):
 # =============================================================================
 
 VOICE_COMMANDS = {
-    "next": ["next", "next step", "continue", "go on", "forward"],
+    "next": [
+        "nexty",
+        "nexte",
+        "next step",
+        "next please",
+        "next",
+        "continue",
+        "go on",
+        "forward",
+        "skip",
+    ],
     "previous": ["previous", "back", "go back", "last step"],
     "repeat": ["repeat", "again", "say again", "what was that"],
     "first": ["first", "start over", "beginning", "go to start"],
@@ -55,8 +65,10 @@ SUPPORTED_LANGUAGES = {
     "fr-FR": "French",
     "de-DE": "German",
     "it-IT": "Italian",
-    "pt-BR": "Portuguese",
-    "zh-CN": "Chinese",
+    "pt-BR": "Portuguese (Brazil)",
+    "pt-PT": "Portuguese (Portugal)",
+    "zh-CN": "Chinese (Simplified)",
+    "zh-HK": "Cantonese",
     "ja-JP": "Japanese",
     "ko-KR": "Korean",
 }
@@ -75,6 +87,8 @@ def parse_voice_command(text: str) -> tuple:
                 return command, phrase
 
     return None, None
+
+from utils.step_amounts import enrich_step_with_amounts
 
 def format_step_for_speech(step_text: str, step_num: int, total_steps: int) -> str:
     """Format a cooking step for text-to-speech"""
@@ -288,15 +302,17 @@ async def prepare_recipe_for_voice(
         raise HTTPException(status_code=404, detail="Recipe not found")
 
     instructions = recipe.get("instructions", [])
+    ingredients = recipe.get("ingredients", [])
     total_steps = len(instructions)
 
     prepared_steps = []
     for i, step in enumerate(instructions):
+        enriched = enrich_step_with_amounts(step, ingredients)
         prepared_steps.append({
             "step_number": i + 1,
             "total_steps": total_steps,
-            "original_text": step,
-            "speech_text": format_step_for_speech(step, i + 1, total_steps),
+            "original_text": enriched,
+            "speech_text": format_step_for_speech(enriched, i + 1, total_steps),
             "estimated_duration": estimate_step_duration(step)
         })
 

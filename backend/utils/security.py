@@ -5,7 +5,7 @@ import re
 import html
 import logging
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +157,17 @@ def is_safe_external_url(url: str) -> tuple[bool, Optional[str]]:
                 return False, "URLs to link-local addresses are not allowed"
 
         except socket.gaierror:
-            # Could not resolve - might be fine (DNS issues), let it through
-            # The actual request will fail if hostname is invalid
-            pass
+            # Fail closed — do not fetch unresolved hostnames (SSRF / DNS rebinding risk)
+            return False, "Could not resolve hostname"
+
+        # Also block cloud metadata endpoints by hostname
+        blocked_hosts = {
+            "metadata.google.internal",
+            "metadata.goog",
+            "169.254.169.254",
+        }
+        if hostname.lower() in blocked_hosts:
+            return False, "URLs to metadata endpoints are not allowed"
 
         return True, None
 

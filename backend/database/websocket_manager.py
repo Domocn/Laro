@@ -44,6 +44,9 @@ class EventType(str, Enum):
     COOK_SESSION_STARTED = "cook_session:started"
     COOK_SESSION_COMPLETED = "cook_session:completed"
 
+    # Presence (who is viewing a list/recipe)
+    PRESENCE_UPDATED = "presence:updated"
+
     # General events
     DATA_SYNC = "data:sync"
     PING = "ping"
@@ -77,6 +80,8 @@ class WebSocketManager:
         self._lock = asyncio.Lock()
         # Connection counter for unique IDs
         self._counter = 0
+        # resource_key ("shopping_list:ID" / "recipe:ID") -> {connection_id: {user_id, name, last_seen}}
+        self._presence: Dict[str, Dict[str, dict]] = {}
 
         # Redis Pub/Sub support
         self._redis_client: Optional[redis.Redis] = None
@@ -279,11 +284,14 @@ class WebSocketManager:
 
     async def disconnect(self, connection_id: str):
         """Remove a WebSocket connection"""
+        resources_to_notify = []
+        household_id = None
         async with self._lock:
             if connection_id not in self._connections:
                 return
 
             connection = self._connections[connection_id]
+            household_id = connection.household_id
 
             # Remove from user connections
             if connection.user_id in self._user_connections:
@@ -297,8 +305,19 @@ class WebSocketManager:
                 if not self._household_connections[connection.household_id]:
                     del self._household_connections[connection.household_id]
 
+            # Drop presence seats for this connection
+            for key, seats in list(self._presence.items()):
+                if connection_id in seats:
+                    del seats[connection_id]
+                    resources_to_notify.append(key)
+                    if not seats:
+                        del self._presence[key]
+
             del self._connections[connection_id]
             logger.info(f"WebSocket disconnected: {connection_id}")
+
+        for key in resources_to_notify:
+            await self._broadcast_presence(key, household_id)
 
     async def update_household(self, connection_id: str, household_id: Optional[str]):
         """Update the household association for a connection"""
@@ -389,10 +408,13 @@ class WebSocketManager:
     ):
         """
         Broadcast to household if user is in one, otherwise to user only.
-        This is the main method for data updates that should be shared within households.
+        Always also notify the acting user so other devices/tabs (web vs app)
+        update even if household registration differs between connections.
         """
         if household_id:
             await self.broadcast_to_household(household_id, event_type, data, exclude_connection)
+            # Ensure the actor's other sessions get the event too (dedupe by connection id)
+            await self.broadcast_to_user(user_id, event_type, data, exclude_connection)
         else:
             await self.broadcast_to_user(user_id, event_type, data, exclude_connection)
 
@@ -430,6 +452,69 @@ class WebSocketManager:
             subscription = message.get("subscription")
             if subscription and connection_id in self._connections:
                 self._connections[connection_id].subscriptions.discard(subscription)
+        elif msg_type in ("presence:join", "presence:heartbeat", "presence:leave"):
+            await self._handle_presence(connection_id, message)
+
+
+    def _presence_key(self, resource_type: str, resource_id: str) -> str:
+        return f"{resource_type}:{resource_id}"
+
+    def _viewers_for(self, key: str) -> list:
+        seats = self._presence.get(key, {})
+        by_user = {}
+        for seat in seats.values():
+            uid = seat.get("user_id")
+            if uid and uid not in by_user:
+                by_user[uid] = {"user_id": uid, "name": seat.get("name") or "Someone"}
+        return list(by_user.values())
+
+    async def _broadcast_presence(self, key: str, household_id: Optional[str]):
+        if ":" not in key:
+            return
+        resource_type, resource_id = key.split(":", 1)
+        payload = {
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "viewers": self._viewers_for(key),
+        }
+        if household_id:
+            await self.broadcast_to_household(household_id, EventType.PRESENCE_UPDATED, payload)
+        else:
+            for viewer in payload["viewers"]:
+                await self.broadcast_to_user(viewer["user_id"], EventType.PRESENCE_UPDATED, payload)
+
+    async def _handle_presence(self, connection_id: str, message: dict):
+        conn = self._connections.get(connection_id)
+        if not conn:
+            return
+        resource_type = (message.get("resource_type") or "").strip()
+        resource_id = (message.get("resource_id") or "").strip()
+        if resource_type not in ("shopping_list", "recipe") or not resource_id:
+            return
+        key = self._presence_key(resource_type, resource_id)
+        msg_type = message.get("type")
+        name = (message.get("display_name") or message.get("name") or "").strip() or "Someone"
+        import time
+        now = time.time()
+
+        async with self._lock:
+            if msg_type == "presence:leave":
+                seats = self._presence.get(key, {})
+                seats.pop(connection_id, None)
+                if not seats and key in self._presence:
+                    del self._presence[key]
+            else:
+                seats = self._presence.setdefault(key, {})
+                seats[connection_id] = {
+                    "user_id": conn.user_id,
+                    "name": name,
+                    "last_seen": now,
+                }
+                stale = [cid for cid, s in seats.items() if now - s.get("last_seen", 0) > 90]
+                for cid in stale:
+                    seats.pop(cid, None)
+
+        await self._broadcast_presence(key, conn.household_id)
 
     def get_connection_count(self) -> int:
         """Get total number of active connections"""
