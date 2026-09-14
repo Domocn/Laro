@@ -30,11 +30,12 @@ async def get_homeassistant_config():
         ],
         "integration_note": "For the full Home Assistant integration, install the custom component from the Laro repository.",
         "example_config": """
-# configuration.yaml
+# configuration.yaml — self-hosted Laro on your LAN
 rest:
   - resource: http://YOUR_LARO_IP:8001/api/homeassistant/today
     headers:
       Authorization: Bearer YOUR_TOKEN
+      User-Agent: HomeAssistant-Laro/REST
     sensor:
       - name: "Today's Meals"
         value_template: "{{ value_json.summary }}"
@@ -44,6 +45,7 @@ rest:
   - resource: http://YOUR_LARO_IP:8001/api/homeassistant/shopping
     headers:
       Authorization: Bearer YOUR_TOKEN
+      User-Agent: HomeAssistant-Laro/REST
     sensor:
       - name: "Shopping List"
         value_template: "{{ value_json.summary }}"
@@ -51,6 +53,10 @@ rest:
           - items
           - unchecked
           - total
+
+# Or use the cloud app (preferred: install the Laro custom integration):
+#   resource: https://laro.food/api/homeassistant/today
+# Prefer the custom component over raw REST when possible.
 """
     }
 
