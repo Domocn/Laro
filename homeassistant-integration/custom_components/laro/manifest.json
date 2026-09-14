@@ -1,18 +1,18 @@
 {
   "domain": "laro",
-  "name": "Laro Recipe Manager",
+  "name": "Laro",
   "codeowners": [
     "@Domocn"
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/Domocn/laro-priv",
+  "documentation": "https://github.com/Domocn/Laro",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/Domocn/laro-priv/issues",
+  "issue_tracker": "https://github.com/Domocn/Laro/issues",
   "requirements": [
     "aiohttp>=3.8.0"
   ],
-  "version": "1.2.1",
+  "version": "1.4.0",
   "zeroconf": [
     "_laro._tcp.local."
   ]
