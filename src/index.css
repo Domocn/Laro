@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
-/* OpenDyslexic font - using Comic Sans MS as fallback which is proven dyslexia-friendly */
+/* Warm confident café system: Manrope (SoDoSans stand-in) + Lora for brand moments. */
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+/* OpenDyslexic remains available via a11y preference */
 
 @tailwind base;
 @tailwind components;
@@ -7,55 +8,78 @@
 
 @layer base {
     :root {
-        /* Laro Brand Colors - Sage Green Theme */
-        --background: 40 33% 97%;
-        --foreground: 215 28% 17%;
+        /*
+         * Laro ← Starbucks-inspired warm confident retail flagship
+         * Neutral Warm canvas, four-tier green, whisper shadows, pill CTAs.
+         */
+        --background: 40 21% 94%;            /* Neutral Warm #f2f0eb */
+        --foreground: 0 0% 13%;              /* Text Black ~rgba(0,0,0,0.87) */
         --card: 0 0% 100%;
-        --card-foreground: 215 28% 17%;
+        --card-foreground: 0 0% 13%;
         --popover: 0 0% 100%;
-        --popover-foreground: 215 28% 17%;
-        --primary: 150 45% 63%;
+        --popover-foreground: 0 0% 13%;
+        --primary: 158 100% 23%;             /* Green Accent #00754A (CTAs) */
         --primary-foreground: 0 0% 100%;
-        --secondary: 258 85% 85%;
-        --secondary-foreground: 215 28% 17%;
-        --muted: 40 20% 94%;
-        --muted-foreground: 215 15% 40%;
-        --accent: 258 85% 85%;
-        --accent-foreground: 215 28% 17%;
-        --destructive: 0 72% 55%;
+        --secondary: 160 32% 87%;            /* Green Light #d4e9e2 */
+        --secondary-foreground: 158 100% 19%; /* Starbucks Green #006241 */
+        --muted: 30 11% 92%;                 /* Ceramic #edebe9 */
+        --muted-foreground: 0 0% 42%;        /* Text Black Soft ~0.58 */
+        --accent: 43 55% 96%;                /* Gold Lightest #faf6ee */
+        --accent-foreground: 158 100% 19%;
+        --destructive: 4 82% 43%;            /* #c82014 */
         --destructive-foreground: 0 0% 100%;
-        --border: 40 15% 88%;
-        --input: 40 20% 94%;
-        --ring: 150 45% 63%;
-        --radius: 1rem;
-        --chart-1: 150 45% 63%;
-        --chart-2: 258 85% 85%;
-        --chart-3: 45 100% 60%;
-        --chart-4: 173 100% 41%;
-        --chart-5: 32 100% 63%;
+        --border: 200 8% 85%;
+        --input: 30 11% 92%;
+        --ring: 158 100% 23%;
+        --radius: 0.75rem;                   /* 12px cards */
+        --chart-1: 158 100% 23%;
+        --chart-2: 158 100% 19%;
+        --chart-3: 39 48% 57%;               /* Gold #cba258 */
+        --chart-4: 4 82% 43%;
+        --chart-5: 160 31% 17%;              /* House Green #1E3932 */
+        --laro-ink: 0 0% 13%;
+        --laro-stone: 40 21% 94%;
+        --laro-champagne: 39 48% 57%;        /* Gold — premium moments only */
+        --laro-brand: #006241;               /* Starbucks Green — headings */
+        --laro-house: #1E3932;               /* House Green — feature bands */
+        --laro-uplift: #2b5148;
+        --laro-gold: #cba258;
+        --letter-spacing: -0.01em;
+        --button-active-scale: 0.95;
+        /* User-selectable accent (ThemeContext overwrites these) — default Green Accent */
+        --laro-accent: #00754A;
+        --laro-accent-light: #d4e9e2;
+        --laro-accent-dark: #006241;
+        --laro-accent-secondary: #2b5148;
+        --laro-accent-rgb: 0 117 74;
+        --laro-accent-light-rgb: 212 233 226;
+        --laro-accent-dark-rgb: 0 98 65;
+        --laro-primary: #00754A;
+        --laro-secondary: #2b5148;
+        --card-shadow: 0 0 0.5px rgba(0, 0, 0, 0.14), 0 1px 1px rgba(0, 0, 0, 0.24);
+        --nav-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 2px 2px rgba(0, 0, 0, 0.06), 0 0 2px rgba(0, 0, 0, 0.07);
     }
 
     .dark {
-        /* Laro Dark Theme */
-        --background: 215 28% 17%;
-        --foreground: 210 20% 98%;
-        --card: 215 23% 23%;
-        --card-foreground: 210 20% 98%;
-        --popover: 215 23% 23%;
-        --popover-foreground: 210 20% 98%;
-        --primary: 150 50% 70%;
-        --primary-foreground: 215 28% 17%;
-        --secondary: 258 70% 80%;
-        --secondary-foreground: 215 28% 17%;
-        --muted: 215 20% 25%;
-        --muted-foreground: 215 15% 65%;
-        --accent: 258 70% 80%;
-        --accent-foreground: 210 20% 98%;
-        --destructive: 0 62% 60%;
+        --background: 160 31% 10%;           /* House-green dark */
+        --foreground: 40 21% 94%;
+        --card: 160 28% 14%;
+        --card-foreground: 40 21% 94%;
+        --popover: 160 28% 14%;
+        --popover-foreground: 40 21% 94%;
+        --primary: 158 55% 42%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 160 20% 18%;
+        --secondary-foreground: 40 21% 94%;
+        --muted: 160 18% 16%;
+        --muted-foreground: 40 10% 70%;
+        --accent: 39 30% 18%;
+        --accent-foreground: 40 21% 94%;
+        --destructive: 4 70% 55%;
         --destructive-foreground: 0 0% 100%;
-        --border: 215 20% 30%;
-        --input: 215 20% 25%;
-        --ring: 150 50% 70%;
+        --border: 160 15% 22%;
+        --input: 160 18% 16%;
+        --ring: 158 55% 42%;
     }
 }
 
@@ -65,24 +89,53 @@
     }
     body {
         @apply bg-background font-sans text-foreground antialiased;
-        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-        background-blend-mode: overlay;
-        background-size: 150px;
+        letter-spacing: var(--letter-spacing);
+        /* Solid warm canvas — no structural gradients (DESIGN (1) color-block) */
+        background-image: none;
     }
     .dark body {
         background-image: none;
     }
     h1, h2, h3, h4, h5, h6 {
         @apply font-heading tracking-tight;
+        letter-spacing: -0.16px;
+    }
+    /* Weight + brand green carry H1 hierarchy (DESIGN (1)) */
+    h1 {
+        color: var(--laro-brand, #006241);
+        font-weight: 600;
+    }
+    .dark h1 {
+        color: hsl(var(--foreground));
     }
 }
 
 @layer utilities {
     .glass {
-        @apply bg-white/80 backdrop-blur-md dark:bg-gray-900/80;
+        @apply bg-white/95 backdrop-blur-md dark:bg-[hsl(160_28%_14%/0.95)] border-border/40;
+        box-shadow: var(--nav-shadow);
     }
     .text-balance {
         text-wrap: balance;
+    }
+    .surface-premium {
+        @apply bg-card border-0;
+        box-shadow: var(--card-shadow);
+        border-radius: 12px;
+    }
+    .nav-pill-active {
+        @apply bg-laro-light text-laro-dark;
+        box-shadow: var(--card-shadow);
+    }
+    .house-band {
+        background-color: var(--laro-house, #1E3932);
+        color: #ffffff;
+    }
+    .btn-press {
+        transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    }
+    .btn-press:active:not(:disabled) {
+        transform: scale(var(--button-active-scale, 0.95));
     }
 }
 
@@ -91,26 +144,89 @@
     @apply bg-background;
 }
 .dark .bg-cream-subtle {
-    background-color: hsl(215 20% 20%);
+    background-color: hsl(160 18% 16%);
 }
 .dark .bg-cream-paper {
-    background-color: hsl(215 23% 23%);
+    background-color: hsl(160 28% 14%);
 }
 .dark .bg-white {
-    background-color: hsl(215 23% 23%);
+    background-color: hsl(160 28% 14%);
 }
-.dark .bg-laro-light,
-.dark .bg-laro-light {
-    background-color: hsl(150 30% 25%);
-}
-.dark .text-laro,
-.dark .text-laro {
-    color: hsl(150 50% 70%);
-}
-.dark .border-laro,
+/* Accent colors (bg-laro / text-laro / border-laro) follow --laro-accent* from ThemeContext */
 .dark .border-laro {
-    border-color: hsl(150 50% 70%);
+    border-color: var(--laro-accent-secondary, var(--laro-accent));
 }
+
+/* In dark mode ThemeContext turns --laro-accent-light into a DARK tint (26% accent
+   over House Green) but leaves --laro-accent-rgb at the unlifted brand green. So
+   `bg-laro-light text-laro` — used by every recipe tag pill, e.g. needs-review,
+   imported-pdf, imported-meal-plan — rendered dark green on dark green at about
+   1.8:1 contrast, far below the 4.5:1 AA floor for this size of text.
+   --laro-primary-l is the accent already lifted +12 for dark mode (it drives
+   --primary/--ring); +8 more takes the pill text to ~5.6:1 while still reading
+   as brand green rather than neon. Follows whatever accent the user picked. */
+.dark .text-laro,
+/* Same problem, worse: text-laro-dark resolves to the accent's `secondary`
+   (#2b5148 for the greens) which lands at ~1.2:1 on that tint — the active nav
+   pill was effectively invisible. */
+.dark .text-laro-dark {
+    color: hsl(
+        var(--laro-primary-h)
+        var(--laro-primary-s)
+        calc(var(--laro-primary-l) + 8%)
+    );
+}
+
+/* =============================================
+   Dark-mode semantic tints (DESIGN alpha ladder)
+   Light pastel notice/warning/error surfaces become
+   translucent tints over the House-Green dark canvas
+   ============================================= */
+.dark .bg-amber-50 { background-color: rgba(251, 191, 36, 0.24); }
+.dark .bg-amber-100 { background-color: rgba(251, 191, 36, 0.30); }
+.dark .bg-amber-50\/80 { background-color: rgba(251, 191, 36, 0.26); }
+.dark .bg-yellow-50 { background-color: rgba(251, 191, 36, 0.22); }
+.dark .bg-yellow-100 { background-color: rgba(251, 191, 36, 0.28); }
+.dark .bg-green-50 { background-color: rgba(117, 200, 156, 0.24); }
+.dark .bg-green-100 { background-color: rgba(117, 200, 156, 0.30); }
+.dark .bg-red-50 { background-color: rgba(252, 165, 165, 0.24); }
+.dark .bg-red-100 { background-color: rgba(252, 165, 165, 0.30); }
+.dark .bg-orange-50 { background-color: rgba(253, 186, 116, 0.24); }
+.dark .bg-orange-100 { background-color: rgba(253, 186, 116, 0.30); }
+.dark .bg-blue-50 { background-color: rgba(147, 197, 253, 0.24); }
+.dark .bg-blue-100 { background-color: rgba(147, 197, 253, 0.30); }
+.dark .bg-purple-100 { background-color: rgba(196, 181, 253, 0.30); }
+
+/* Paired text shades readable on the dark tints */
+.dark .text-amber-600,
+.dark .text-amber-700,
+.dark .text-amber-800 { color: #fcd34d; }
+.dark .text-yellow-700,
+.dark .text-yellow-800 { color: #fde047; }
+.dark .text-green-600,
+.dark .text-green-700,
+.dark .text-green-800 { color: #86efac; }
+.dark .text-red-600,
+.dark .text-red-700 { color: #fca5a5; }
+.dark .text-orange-600,
+.dark .text-orange-700,
+.dark .text-orange-800 { color: #fdba74; }
+.dark .text-blue-600,
+.dark .text-blue-700 { color: #93c5fd; }
+.dark .text-purple-600,
+.dark .text-purple-700 { color: #c4b5fd; }
+
+/* Tinted borders on dark surfaces */
+.dark .border-amber-200,
+.dark .border-amber-300,
+.dark .border-amber-400 { border-color: rgba(251, 191, 36, 0.5); }
+.dark .border-yellow-200 { border-color: rgba(251, 191, 36, 0.5); }
+.dark .border-green-200 { border-color: rgba(117, 200, 156, 0.5); }
+.dark .border-red-200,
+.dark .border-red-300 { border-color: rgba(252, 165, 165, 0.5); }
+.dark .border-orange-200,
+.dark .border-orange-300 { border-color: rgba(253, 186, 116, 0.5); }
+.dark .border-blue-200 { border-color: rgba(147, 197, 253, 0.5); }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
@@ -119,29 +235,29 @@
 }
 
 ::-webkit-scrollbar-track {
-    background: #F0F9F4;
+    background: var(--laro-accent-light, #d4e9e2);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #A8D8B9;
+    background: color-mix(in srgb, var(--laro-accent, #00754A) 55%, #ffffff);
     border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #7BC89C;
+    background: var(--laro-accent, #00754A);
 }
 
 .dark ::-webkit-scrollbar-track {
-    background: hsl(215 20% 20%);
+    background: hsl(160 18% 14%);
 }
 
 .dark ::-webkit-scrollbar-thumb {
-    background: hsl(215 20% 35%);
+    background: color-mix(in srgb, var(--laro-accent, #00754A) 45%, #1E3932);
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-    background: hsl(150 50% 70%);
+    background: var(--laro-accent-secondary, var(--laro-accent));
 }
 
 /* Animation helpers */
@@ -177,6 +293,22 @@
 /* ========================================
    NEURODIVERSITY ACCESSIBILITY FEATURES
    ======================================== */
+
+@font-face {
+    font-family: 'OpenDyslexic';
+    src: url('./fonts/OpenDyslexic-Regular.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'OpenDyslexic';
+    src: url('./fonts/OpenDyslexic-Bold.otf') format('opentype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
 
 /* Dyslexic Font Support */
 .dyslexic-font,
@@ -236,7 +368,7 @@
     line-height: 2.2 !important;
 }
 
-/* Focus Mode (ADHD Support) - Reduce distractions */
+/* Focus Mode (ADHD / neurospicy) - Reduce distractions */
 .focus-mode {
     /* Simplify background */
     background-image: none !important;
@@ -244,22 +376,32 @@
 
 .focus-mode .sidebar,
 .focus-mode [class*="sidebar"],
-.focus-mode nav:not(.breadcrumb) {
-    opacity: 0.6;
-    transition: opacity 0.2s;
+.focus-mode nav:not(.breadcrumb):not([data-a11y-nav]) {
+    opacity: 0.7;
+    transition: opacity 0.15s;
 }
 
 .focus-mode .sidebar:hover,
 .focus-mode [class*="sidebar"]:hover,
-.focus-mode nav:not(.breadcrumb):hover {
+.focus-mode nav:not(.breadcrumb):not([data-a11y-nav]):hover {
     opacity: 1;
 }
 
-/* Hide non-essential decorative elements in focus mode */
+/* Hide non-essential decorative / promo clutter in focus mode */
 .focus-mode [class*="decoration"],
 .focus-mode [class*="badge"]:not(.status-badge),
-.focus-mode [class*="pattern"] {
+.focus-mode [class*="pattern"],
+.focus-mode [data-distraction],
+.focus-mode .promo,
+.focus-mode .stat-strip,
+.focus-mode .getting-started {
     display: none !important;
+}
+
+/* Keep primary actions and cook chrome readable */
+.focus-mode [data-a11y-keep] {
+    display: revert !important;
+    opacity: 1 !important;
 }
 
 /* Simplified Mode - Cleaner UI */
@@ -272,6 +414,129 @@
 .simplified-mode .glass {
     background: var(--background) !important;
     backdrop-filter: none !important;
+}
+
+/* Cook Mode — warm kitchen atmosphere with filled step card */
+.cook-mode-root {
+    background: #121612;
+    color: #fff;
+}
+.cook-mode-wash {
+    background:
+        radial-gradient(120% 80% at 50% -10%, rgba(240, 194, 122, 0.18), transparent 55%),
+        radial-gradient(90% 70% at 85% 100%, rgba(91, 176, 128, 0.16), transparent 50%),
+        linear-gradient(180deg, #1b221c 0%, #121612 45%, #0d110e 100%);
+}
+.cook-mode-glow {
+    background: radial-gradient(circle, rgba(123, 200, 156, 0.22) 0%, transparent 70%);
+    filter: blur(8px);
+}
+.cook-mode-floor {
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+}
+.cook-mode-dock {
+    background: linear-gradient(to top, rgba(8, 12, 9, 0.92) 40%, rgba(8, 12, 9, 0.55) 100%);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cook-mode-card {
+    background:
+        linear-gradient(165deg, rgba(255, 252, 245, 0.97) 0%, rgba(244, 237, 224, 0.95) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 1.35rem;
+    padding: 1.25rem 1.35rem 1.4rem;
+    box-shadow:
+        0 18px 40px rgba(0, 0, 0, 0.28),
+        0 1px 0 rgba(255, 255, 255, 0.55) inset;
+    color: #1f2a22;
+}
+.cook-mode-card-focus {
+    box-shadow:
+        0 18px 40px rgba(0, 0, 0, 0.28),
+        0 0 0 3px rgba(91, 176, 128, 0.35),
+        0 1px 0 rgba(255, 255, 255, 0.55) inset;
+}
+@media (min-width: 640px) {
+    .cook-mode-card {
+        padding: 1.5rem 1.75rem 1.65rem;
+    }
+}
+.cook-mode-step-badge {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1;
+}
+.cook-mode-step-num {
+    font-size: clamp(1.75rem, 5vw, 2.25rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    background: linear-gradient(180deg, #9edab8 0%, #5bb080 55%, #3d8a62 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+/* Kitchen-readable, not lonely billboard type */
+.cook-mode-step-text {
+    font-size: clamp(1.35rem, 3.6vw, 1.85rem);
+    line-height: 1.35;
+}
+.cook-mode-ing-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid rgba(47, 107, 74, 0.18);
+    background: rgba(255, 255, 255, 0.72);
+    padding: 0.4rem 0.75rem;
+    font-size: 0.875rem;
+    color: #2a332c;
+}
+.cook-mode-timer-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.85rem 1rem;
+    padding: 0.85rem 1rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(47, 107, 74, 0.12);
+}
+.cook-mode-peek {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    border-radius: 0.9rem;
+    padding: 0.55rem 0.85rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.cook-mode-peek:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(123, 200, 156, 0.28);
+}
+.cook-mode-peek-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+}
+.cook-mode-peek-text {
+    font-size: 0.8rem;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.62);
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+@keyframes cook-timer-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.72; }
+}
+.cook-mode-timer-pulse {
+    animation: cook-timer-pulse 1.4s ease-in-out infinite;
 }
 
 /* Highlight Current Step (for cooking mode and lists) */
@@ -558,7 +823,7 @@
 @media print {
     .dyslexic-font,
     .dyslexic-font * {
-        font-family: 'Comic Sans MS', sans-serif !important;
+        font-family: 'OpenDyslexic', 'Comic Sans MS', sans-serif !important;
     }
 
     .step-highlighted {
@@ -567,18 +832,38 @@
     }
 }
 
-/* Ensure touch targets are large enough (WCAG 2.5.5) */
+/* Prevent horizontal page scroll on narrow phones */
+html,
+body {
+    overflow-x: clip;
+    max-width: 100%;
+}
+
+/* Touch targets (WCAG 2.5.5) — height only; width forced 44px blows up icon/checkbox rows */
 button,
 a,
-input[type="checkbox"],
-input[type="radio"],
 select {
     min-height: 44px;
-    min-width: 44px;
+}
+
+/* Compact icon buttons keep their intentional size */
+button.h-8,
+button.h-9,
+button.w-8,
+button.w-9,
+button.size-8,
+button.size-9 {
+    min-height: unset;
+    min-width: unset;
 }
 
 input[type="checkbox"],
-input[type="radio"] {
+input[type="radio"],
+button[role="checkbox"],
+button[role="radio"],
+button[role="switch"] {
+    min-height: 24px;
+    min-width: 24px;
     width: 24px;
     height: 24px;
 }

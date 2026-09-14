@@ -54,7 +54,24 @@ app.conf.update(
 
 # Task routes (optional - for multiple queues)
 app.conf.task_routes = {
-    'workers.tasks.*': {'queue': 'laro-jobs'},
+    # Heavy AI jobs on dedicated queue; reminders stay on default 'celery'
+    'import_recipe_from_url_task': {'queue': 'laro-jobs'},
+    'import_recipe_from_text_task': {'queue': 'laro-jobs'},
+    'generate_meal_plan_task': {'queue': 'laro-jobs'},
+    'fridge_search_task': {'queue': 'laro-jobs'},
+}
+
+# Celery Beat — run reminder sweep every minute (windows are 6 minutes wide)
+# UK Open Prices catalog refreshes every 12 hours for offline cost estimates
+app.conf.beat_schedule = {
+    'laro-reminder-sweep': {
+        'task': 'workers.tasks.run_reminder_sweep',
+        'schedule': 60.0,
+    },
+    'laro-sync-uk-open-prices': {
+        'task': 'workers.tasks.sync_uk_open_prices_task',
+        'schedule': 12 * 60 * 60.0,  # every 12 hours
+    },
 }
 
 if __name__ == '__main__':

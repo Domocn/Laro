@@ -74,13 +74,13 @@ services:
     environment:
       # PostgreSQL database connection
       - DATABASE_URL=postgresql://${POSTGRES_USER:-laro}:${POSTGRES_PASSWORD:-laro-password-change-me}@postgres:5432/${POSTGRES_DB:-laro}
-      - JWT_SECRET=${JWT_SECRET:-your-super-secret-key-change-me}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://laro.food,http://localhost:3000}
       # Redis Pub/Sub for multi-instance support
       - REDIS_URL=redis://redis:6379
       - REDIS_PUBSUB_ENABLED=${REDIS_PUBSUB_ENABLED:-true}
       # Debug/Logging Configuration - logs visible in Portainer
-      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # LLM Configuration - choose one:
       # For local Ollama (no API key needed):
@@ -123,14 +123,14 @@ services:
         - APP_VERSION=${APP_VERSION:-2.0.0}
     container_name: mise-worker
     restart: unless-stopped
-    command: python -m celery -A workers.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=4
+    command: python -m celery -A workers.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=4 -Q celery,laro-jobs
     environment:
       # PostgreSQL database connection
       - DATABASE_URL=postgresql://${POSTGRES_USER:-laro}:${POSTGRES_PASSWORD:-laro-password-change-me}@postgres:5432/${POSTGRES_DB:-laro}
       # Redis connection for job queue
       - REDIS_URL=redis://redis:6379
       # Debug/Logging Configuration - logs visible in Portainer
-      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # LLM Configuration (same as backend)
       - LLM_PROVIDER=ollama

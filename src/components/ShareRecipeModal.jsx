@@ -37,7 +37,7 @@ export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
   const [includeLinksInShare, setIncludeLinksInShare] = useState(true);
 
   // New link options
-  const [expiresInDays, setExpiresInDays] = useState(0); // 0 = never
+  const [expiresInDays, setExpiresInDays] = useState(30);
   const [allowPrint, setAllowPrint] = useState(true);
   const [showAuthor, setShowAuthor] = useState(true);
 
@@ -79,7 +79,7 @@ export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
     try {
       const res = await sharingApi.create({
         recipe_id: recipe.id,
-        expires_in_days: expiresInDays || null,
+        expires_in_days: expiresInDays || 30,
         allow_print: allowPrint,
         show_author: showAuthor,
       });
@@ -300,11 +300,10 @@ ${allInstructions || 'No instructions listed'}`;
                         onChange={(e) => setExpiresInDays(parseInt(e.target.value))}
                         className="w-full mt-1 p-2 rounded-lg border border-border/60 bg-white dark:bg-card text-sm"
                       >
-                        <option value={0}>Never expires</option>
                         <option value={1}>1 day</option>
                         <option value={7}>7 days</option>
                         <option value={30}>30 days</option>
-                        <option value={90}>90 days</option>
+                        <option value={90}>90 days (max)</option>
                       </select>
                     </div>
 

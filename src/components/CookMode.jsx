@@ -1,7 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cookingApi } from '../lib/api';
+import { getImageUrl } from '../lib/utils';
+import {
+  normalizeCookStepsWithAmounts,
+  parseTimeFromStep,
+  formatCookTimer,
+  ingredientsForStep,
+} from '../lib/cookModeSteps';
 import { useAccessibility } from '../context/AccessibilityContext';
+import { useLanguage } from '../context/LanguageContext';
+import { useUserPreferences } from '../hooks/useUserPreferences';
 import { Button } from './ui/button';
 import { CookingAIAssistant, AIAssistantButton } from './CookingAIAssistant';
 import { VoiceCookingControls } from './VoiceCooking';
@@ -9,7 +18,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Clock,
   Play,
   Pause,
   RotateCcw,
@@ -17,23 +25,118 @@ import {
   ThumbsUp,
   ThumbsDown,
   Meh,
-  Volume2,
   ChefHat,
-  Sparkles
+  List,
+  Timer,
+  BookOpen,
+  Cast,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useCookCast } from '../hooks/useCookCast';
+import { useCookMediaSession } from '../hooks/useCookMediaSession';
+
+const QUICK_TIMER_MINUTES = [1, 5, 10, 15, 20];
 
 export const CookMode = ({ recipe, onClose }) => {
-  const { highlightCurrentStep, showProgressIndicators, soundEffects } = useAccessibility();
+  const { t } = useLanguage();
+  const { preferences } = useUserPreferences();
+  const measurementUnit = preferences.measurement_unit || preferences.measurementUnit || 'metric';
+  const {
+    highlightCurrentStep,
+    showProgressIndicators,
+    soundEffects,
+    timerNotifications,
+    hapticFeedback,
+    focusMode,
+  } = useAccessibility();
   const [currentStep, setCurrentStep] = useState(0);
   const [sessionId, setSessionId] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [showIngredients, setShowIngredients] = useState(false);
+  const [showTimerPicker, setShowTimerPicker] = useState(false);
+  const [cookNote, setCookNote] = useState('');
   const [timers, setTimers] = useState({});
+  const [direction, setDirection] = useState(1);
   const wakeLockRef = useRef(null);
   const timerIntervalRef = useRef({});
 
-  // Request wake lock to keep screen on
+  const steps = useMemo(
+    () => normalizeCookStepsWithAmounts(recipe?.instructions, recipe?.ingredients, measurementUnit),
+    [recipe?.instructions, recipe?.ingredients, measurementUnit]
+  );
+  const coverUrl = useMemo(
+    () => getImageUrl(recipe?.image_url, recipe),
+    [recipe?.image_url, recipe?.id, recipe?.title, recipe?.category, recipe]
+  );
+  const totalSteps = steps.length;
+  const progress = totalSteps ? (currentStep + 1) / totalSteps : 0;
+  const currentInstruction = steps[currentStep] || '';
+  const prevInstruction = currentStep > 0 ? steps[currentStep - 1] : '';
+  const nextInstruction =
+    currentStep < totalSteps - 1 ? steps[currentStep + 1] : '';
+  const stepIngredients = useMemo(
+    () => ingredientsForStep(currentInstruction, recipe?.ingredients, measurementUnit),
+    [currentInstruction, recipe?.ingredients, measurementUnit]
+  );
+  const timer = timers[currentStep];
+  const castTimerLabel =
+    timer?.running || (timer?.remaining != null && timer.remaining !== timer.total)
+      ? formatCookTimer(timer.remaining || 0)
+      : '';
+
+  const {
+    castConfigured,
+    castAvailable,
+    castConnected,
+    requestSession,
+    endSession,
+  } = useCookCast({
+    title: recipe?.title || recipe?.name || 'Recipe',
+    steps,
+    stepIndex: currentStep,
+    timerLabel: castTimerLabel,
+    enabled: !showFeedback,
+  });
+
+  useCookMediaSession({
+    title: recipe?.title || recipe?.name || 'Laro',
+    stepIndex: currentStep,
+    totalSteps,
+    stepText: steps[currentStep] || '',
+    artworkUrl: coverUrl,
+    onNext: () => {
+      if (currentStep < totalSteps - 1) {
+        setDirection(1);
+        setCurrentStep((s) => Math.min(s + 1, Math.max(totalSteps - 1, 0)));
+      }
+    },
+    onPrev: () => {
+      if (currentStep > 0) {
+        setDirection(-1);
+        setCurrentStep((s) => Math.max(s - 1, 0));
+      }
+    },
+    enabled: !showFeedback && totalSteps > 0,
+  });
+
+  const handleCastClick = async () => {
+    if (castConnected) {
+      await endSession();
+      toast.message(t('castDisconnected') || 'Cast stopped');
+      return;
+    }
+    if (!castConfigured) {
+      toast.error(
+        t('castNeedsAppId') ||
+          'Chromecast needs a Cast App ID. Set REACT_APP_CAST_APP_ID (receiver: /cast/receiver.html).'
+      );
+      return;
+    }
+    const ok = await requestSession();
+    if (ok) toast.success(t('castConnected') || 'Casting cook mode to your TV');
+  };
+
   useEffect(() => {
     const requestWakeLock = async () => {
       try {
@@ -46,7 +149,6 @@ export const CookMode = ({ recipe, onClose }) => {
     };
     requestWakeLock();
 
-    // Start cooking session
     const startSession = async () => {
       try {
         const res = await cookingApi.startSession(recipe.id);
@@ -58,72 +160,14 @@ export const CookMode = ({ recipe, onClose }) => {
     startSession();
 
     return () => {
-      // Release wake lock
       if (wakeLockRef.current) {
         wakeLockRef.current.release();
       }
-      // Clear all timer intervals
       Object.values(timerIntervalRef.current).forEach(clearInterval);
     };
   }, [recipe.id]);
 
-  // Parse time from step text (e.g., "cook for 10 minutes")
-  const parseTimeFromStep = (step) => {
-    const patterns = [
-      /(\d+)\s*(?:minute|min|m)\b/i,
-      /(\d+)\s*(?:hour|hr|h)\b/i,
-      /(\d+)-(\d+)\s*(?:minute|min)/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = step.match(pattern);
-      if (match) {
-        let minutes = parseInt(match[1]);
-        if (pattern.toString().includes('hour')) {
-          minutes *= 60;
-        }
-        return minutes * 60; // Return seconds
-      }
-    }
-    return null;
-  };
-
-  // Start a timer for a step
-  const startTimer = (stepIndex, seconds) => {
-    if (timerIntervalRef.current[stepIndex]) {
-      clearInterval(timerIntervalRef.current[stepIndex]);
-    }
-
-    setTimers(prev => ({ ...prev, [stepIndex]: { total: seconds, remaining: seconds, running: true } }));
-
-    timerIntervalRef.current[stepIndex] = setInterval(() => {
-      setTimers(prev => {
-        const timer = prev[stepIndex];
-        if (!timer || timer.remaining <= 0) {
-          clearInterval(timerIntervalRef.current[stepIndex]);
-          // Play sound when done
-          playTimerSound();
-          toast.success('Timer done!');
-          return { ...prev, [stepIndex]: { ...timer, remaining: 0, running: false } };
-        }
-        return { ...prev, [stepIndex]: { ...timer, remaining: timer.remaining - 1 } };
-      });
-    }, 1000);
-  };
-
-  const pauseTimer = (stepIndex) => {
-    clearInterval(timerIntervalRef.current[stepIndex]);
-    setTimers(prev => ({ ...prev, [stepIndex]: { ...prev[stepIndex], running: false } }));
-  };
-
-  const resetTimer = (stepIndex, seconds) => {
-    clearInterval(timerIntervalRef.current[stepIndex]);
-    setTimers(prev => ({ ...prev, [stepIndex]: { total: seconds, remaining: seconds, running: false } }));
-  };
-
   const playTimerSound = () => {
-    if (!soundEffects) return; // Respect accessibility settings
-
     try {
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
@@ -140,15 +184,82 @@ export const CookMode = ({ recipe, onClose }) => {
     }
   };
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  const notifyTimerDone = () => {
+    const mode = timerNotifications || 'both';
+    const wantsAudio = mode === 'audio' || mode === 'both';
+    const wantsVisual = mode === 'visual' || mode === 'both';
+    // Prefer timerNotifications; fall back to soundEffects for older prefs
+    if (wantsAudio || (mode !== 'none' && mode !== 'visual' && soundEffects)) {
+      if (mode !== 'visual' && mode !== 'none') playTimerSound();
+    }
+    if (wantsVisual) {
+      toast.success(t('timerDone'));
+    }
+    if (hapticFeedback && typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate([80, 40, 80]);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const startTimer = (stepIndex, seconds) => {
+    if (timerIntervalRef.current[stepIndex]) {
+      clearInterval(timerIntervalRef.current[stepIndex]);
+    }
+
+    setTimers((prev) => ({
+      ...prev,
+      [stepIndex]: { total: seconds, remaining: seconds, running: true },
+    }));
+
+    timerIntervalRef.current[stepIndex] = setInterval(() => {
+      setTimers((prev) => {
+        const timer = prev[stepIndex];
+        if (!timer || timer.remaining <= 0) {
+          clearInterval(timerIntervalRef.current[stepIndex]);
+          notifyTimerDone();
+          return { ...prev, [stepIndex]: { ...timer, remaining: 0, running: false } };
+        }
+        return {
+          ...prev,
+          [stepIndex]: { ...timer, remaining: timer.remaining - 1 },
+        };
+      });
+    }, 1000);
+  };
+
+  const pauseTimer = (stepIndex) => {
+    clearInterval(timerIntervalRef.current[stepIndex]);
+    setTimers((prev) => ({
+      ...prev,
+      [stepIndex]: { ...prev[stepIndex], running: false },
+    }));
+  };
+
+  const resetTimer = (stepIndex, seconds) => {
+    clearInterval(timerIntervalRef.current[stepIndex]);
+    setTimers((prev) => ({
+      ...prev,
+      [stepIndex]: { total: seconds, remaining: seconds, running: false },
+    }));
+  };
+
+  const goToStep = (next) => {
+    setDirection(next > currentStep ? 1 : -1);
+    setCurrentStep(next);
+    setShowTimerPicker(false);
+  };
+
+  const backToRecipe = () => {
+    Object.values(timerIntervalRef.current).forEach(clearInterval);
+    onClose();
   };
 
   const handleNext = () => {
-    if (currentStep < recipe.instructions.length - 1) {
-      setCurrentStep(currentStep + 1);
+    if (currentStep < totalSteps - 1) {
+      goToStep(currentStep + 1);
     } else {
       setShowFeedback(true);
     }
@@ -156,33 +267,60 @@ export const CookMode = ({ recipe, onClose }) => {
 
   const handlePrev = () => {
     if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
+      goToStep(currentStep - 1);
     }
   };
 
   const handleFeedback = async (feedback) => {
     try {
+      const note = cookNote.trim();
       if (sessionId) {
-        await cookingApi.completeSession(sessionId, feedback);
-      } else {
+        await cookingApi.completeSession(sessionId, feedback, note);
+      } else if (note) {
+        await cookingApi.markCooked(recipe.id, { notes: note, feedback });
+      } else if (feedback) {
         await cookingApi.submitFeedback(recipe.id, feedback);
       }
 
       const messages = {
-        yes: "Great! We'll suggest this more often 👍",
-        no: "Got it, we'll show this less 👎",
-        meh: "Noted! Maybe with some tweaks next time"
+        yes: t('feedbackYes'),
+        no: t('feedbackNo'),
+        meh: t('feedbackMeh'),
       };
-      toast.success(messages[feedback]);
+      toast.success(note ? `${messages[feedback]}${t('feedbackNoteSavedSuffix')}` : messages[feedback]);
     } catch (err) {
       console.error('Failed to submit feedback:', err);
     }
-    onClose();
+    backToRecipe();
   };
 
-  const currentInstruction = recipe.instructions[currentStep];
-  const stepTime = parseTimeFromStep(currentInstruction);
-  const timer = timers[currentStep];
+  const handleSkipWithNote = async () => {
+    try {
+      const note = cookNote.trim();
+      if (sessionId) {
+        await cookingApi.completeSession(sessionId, null, note);
+      } else if (note) {
+        await cookingApi.markCooked(recipe.id, { notes: note });
+      }
+      toast.success(note ? t('cookedNoteSaved') : t('niceWorkShort'));
+    } catch (err) {
+      console.error('Failed to complete cook session:', err);
+    }
+    backToRecipe();
+  };
+
+  const detectedSeconds = parseTimeFromStep(currentInstruction);
+  const activeSeconds = timer?.total || detectedSeconds;
+  const timerRemaining = timer?.remaining ?? detectedSeconds ?? 0;
+  const timerTotal = timer?.total ?? detectedSeconds ?? 1;
+  const timerProgress = activeSeconds ? 1 - timerRemaining / timerTotal : 0;
+  const showActiveTimer = Boolean(timer || detectedSeconds);
+
+  const stepVariants = {
+    enter: (dir) => ({ opacity: 0, y: dir > 0 ? 18 : -18, scale: 0.985 }),
+    center: { opacity: 1, y: 0, scale: 1 },
+    exit: (dir) => ({ opacity: 0, y: dir > 0 ? -14 : 14, scale: 0.985 }),
+  };
 
   return (
     <AnimatePresence>
@@ -190,179 +328,445 @@ export const CookMode = ({ recipe, onClose }) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black z-50 flex flex-col"
+        className="fixed inset-0 z-50 flex flex-col cook-mode-root text-white"
+        data-testid="cook-mode"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 bg-gray-900">
-          <div className="flex items-center gap-3">
-            <ChefHat className="w-6 h-6 text-laro" />
-            <span className="font-heading font-semibold text-white truncate max-w-[150px] sm:max-w-[250px]">
-              {recipe.title}
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="text-white hover:bg-gray-800 rounded-full"
-          >
-            <X className="w-6 h-6" />
-          </Button>
+        {/* Atmosphere: warm kitchen wash + optional recipe cover */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+          {coverUrl && (
+            <div
+              className="absolute inset-0 scale-110 bg-cover bg-center opacity-25 blur-2xl"
+              style={{ backgroundImage: `url(${coverUrl})` }}
+            />
+          )}
+          <div className="absolute inset-0 cook-mode-wash" />
+          <div className="absolute -top-24 left-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full cook-mode-glow" />
+          <div className="absolute bottom-0 inset-x-0 h-48 cook-mode-floor" />
         </div>
+
+        {/* Top chrome */}
+        <header className="relative z-10 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="min-w-0 flex items-center gap-3">
+              <div className="shrink-0 w-10 h-10 rounded-2xl bg-laro/20 border border-laro/30 flex items-center justify-center">
+                <ChefHat className="w-5 h-5 text-laro" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/50 font-semibold">
+                  {t('cookModeLabel')}
+                </p>
+                <h1 className="font-heading font-semibold text-white truncate text-base sm:text-lg">
+                  {recipe.title}
+                </h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowIngredients((v) => !v)}
+                className={`rounded-full text-white hover:bg-white/10 ${
+                  showIngredients ? 'bg-white/10 text-laro' : ''
+                }`}
+                aria-label={t('ingredients')}
+                aria-pressed={showIngredients}
+              >
+                <List className="w-5 h-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={backToRecipe}
+                className="rounded-full text-white hover:bg-white/10 h-10 px-3 gap-1.5"
+                aria-label={t('backToRecipe')}
+                data-testid="cook-mode-back-to-recipe"
+              >
+                <BookOpen className="w-4 h-4" />
+                <span className="hidden sm:inline text-sm">{t('backToRecipe')}</span>
+                <X className="w-4 h-4 sm:hidden" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Continuous progress */}
+          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-laro to-emerald-300"
+              initial={false}
+              animate={{ width: `${progress * 100}%` }}
+              transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-xs text-white/50">
+            <span>
+              {t('stepOfTotal', { current: Math.min(currentStep + 1, totalSteps), total: totalSteps })}
+            </span>
+            <span>{Math.round(progress * 100)}%</span>
+          </div>
+        </header>
+
+        {/* Ingredients drawer */}
+        <AnimatePresence>
+          {showIngredients && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="relative z-10 overflow-hidden border-b border-white/10"
+            >
+              <div className="px-4 py-3 bg-black/25 backdrop-blur-md">
+                <p className="text-xs uppercase tracking-wider text-white/45 mb-2 font-semibold">
+                  {t('ingredients')} · {recipe.ingredients?.length || 0}
+                </p>
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                  {recipe.ingredients?.map((ing, i) => (
+                    <div
+                      key={i}
+                      className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm"
+                    >
+                      <span className="text-laro font-medium">
+                        {[ing.amount, ing.unit].filter(Boolean).join(' ')}
+                      </span>
+                      <span className="text-white/85 ml-1.5">{ing.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {!showFeedback ? (
           <>
-            {/* Ingredients sidebar (collapsed on mobile) */}
-            <div className="bg-gray-900 border-b border-gray-800 p-4">
-              <details className="text-gray-300">
-                <summary className="cursor-pointer font-medium text-white mb-2">
-                  Ingredients ({recipe.ingredients?.length || 0})
-                </summary>
-                <ul className="mt-3 space-y-1 text-sm max-h-32 overflow-y-auto">
-                  {recipe.ingredients?.map((ing, i) => (
-                    <li key={i} className="flex gap-2">
-                      <span className="text-laro">{ing.amount} {ing.unit}</span>
-                      <span>{ing.name}</span>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            </div>
-
-            {/* Main content */}
-            <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-              {/* Step counter */}
-              <div className="text-gray-400 mb-4">
-                Step {currentStep + 1} of {recipe.instructions.length}
-              </div>
-
-              {/* Step progress dots */}
-              <div className="flex gap-2 mb-8">
-                {recipe.instructions.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setCurrentStep(i)}
-                    className={`w-2 h-2 rounded-full transition-all ${
-                      i === currentStep
-                        ? 'w-8 bg-laro'
-                        : i < currentStep
-                        ? 'bg-laro/50'
-                        : 'bg-gray-600'
-                    }`}
-                  />
-                ))}
-              </div>
-
-              {/* Instruction */}
-              <motion.div
-                key={currentStep}
-                initial={{ opacity: 0, x: 50 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -50 }}
-                className={`text-center max-w-lg ${highlightCurrentStep ? 'step-highlighted' : ''}`}
-              >
-                {showProgressIndicators && (
-                  <div className="flex items-center justify-center gap-2 mb-4">
-                    <span className="step-counter current">{currentStep + 1}</span>
-                    <span className="text-gray-400 text-sm">of {recipe.instructions.length}</span>
-                  </div>
-                )}
-                <p className="text-white text-2xl sm:text-3xl font-light leading-relaxed">
-                  {currentInstruction}
-                </p>
-              </motion.div>
-
-              {/* Timer (if step has time) */}
-              {stepTime && (
-                <div className="mt-8 flex flex-col items-center">
-                  <div className="text-4xl sm:text-5xl font-mono text-white mb-4">
-                    {timer ? formatTime(timer.remaining) : formatTime(stepTime)}
-                  </div>
-                  <div className="flex gap-2">
-                    {!timer || !timer.running ? (
-                      <Button
-                        onClick={() => startTimer(currentStep, timer?.remaining || stepTime)}
-                        className="rounded-full bg-laro hover:bg-laro-dark"
-                      >
-                        <Play className="w-4 h-4 mr-2" />
-                        Start Timer
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={() => pauseTimer(currentStep)}
-                        variant="outline"
-                        className="rounded-full text-white border-white/30 hover:bg-white/10"
-                      >
-                        <Pause className="w-4 h-4 mr-2" />
-                        Pause
-                      </Button>
-                    )}
+            {/* Main stage: filled card + peeks — not a lonely instruction in a void */}
+            <div className="relative z-10 flex-1 flex flex-col px-4 sm:px-6 py-3 overflow-y-auto">
+              {totalSteps === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="cook-mode-card w-full max-w-lg text-center p-8">
+                    <p className="cook-mode-step-text font-heading font-semibold text-[#2a332c]">
+                      {t('noStepsYet')}
+                    </p>
                     <Button
-                      onClick={() => resetTimer(currentStep, stepTime)}
-                      variant="ghost"
-                      className="rounded-full text-gray-400 hover:text-white"
+                      onClick={backToRecipe}
+                      className="mt-6 rounded-full bg-laro hover:bg-laro-dark text-white"
                     >
-                      <RotateCcw className="w-4 h-4" />
+                      {t('backToRecipe')}
                     </Button>
                   </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col justify-center w-full max-w-xl mx-auto min-h-0 py-1">
+                  {!focusMode && prevInstruction && (
+                    <button
+                      type="button"
+                      onClick={handlePrev}
+                      className="cook-mode-peek cook-mode-peek-prev mb-2 text-left w-full shrink-0"
+                      aria-label={t('goToStep', { n: currentStep })}
+                    >
+                      <span className="cook-mode-peek-label">{t('previousStep')}</span>
+                      <span className="cook-mode-peek-text">{prevInstruction}</span>
+                    </button>
+                  )}
+
+                  <AnimatePresence mode="wait" custom={direction}>
+                    <motion.div
+                      key={currentStep}
+                      custom={direction}
+                      variants={stepVariants}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                      className={`cook-mode-card w-full shrink-0 ${
+                        highlightCurrentStep ? 'cook-mode-card-focus' : ''
+                      }`}
+                      data-testid="cook-mode-step"
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-4">
+                        <div className="inline-flex items-center gap-2 rounded-full bg-[#5bb080]/15 border border-[#5bb080]/30 px-3 py-1">
+                          <span className="cook-mode-step-badge font-heading text-[#2f6b4a]">
+                            {String(currentStep + 1).padStart(2, '0')}
+                          </span>
+                          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[#5a6b5e]">
+                            {t('stepOfTotal', {
+                              current: Math.min(currentStep + 1, totalSteps),
+                              total: totalSteps,
+                            })}
+                          </span>
+                        </div>
+                        {showProgressIndicators && !focusMode && (
+                          <span className="text-xs font-medium tabular-nums text-[#6b7a6f]">
+                            {Math.round(progress * 100)}%
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="cook-mode-step-text font-heading font-semibold leading-snug text-balance text-[#1f2a22]">
+                        {currentInstruction}
+                      </p>
+
+                      {stepIngredients.length > 0 && (
+                        <div className="mt-5" data-testid="cook-mode-step-ingredients">
+                          <p className="text-[11px] uppercase tracking-[0.16em] font-semibold text-[#6b7a6f] mb-2">
+                            {t('forThisStep')}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {stepIngredients.map((ing) => (
+                              <span key={ing.name} className="cook-mode-ing-chip">
+                                {ing.qty ? (
+                                  <>
+                                    <span className="font-semibold text-[#2f6b4a]">{ing.qty}</span>
+                                    <span className="ml-1.5">{ing.name}</span>
+                                  </>
+                                ) : (
+                                  ing.name
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-6"
+                        data-testid="cook-mode-timer"
+                      >
+                        {showActiveTimer ? (
+                          <div className="cook-mode-timer-row">
+                            <div className="relative w-24 h-24 sm:w-28 sm:h-28 shrink-0">
+                              <svg className="absolute inset-0 -rotate-90" viewBox="0 0 120 120">
+                                <circle
+                                  cx="60"
+                                  cy="60"
+                                  r="52"
+                                  fill="none"
+                                  stroke="rgba(47,107,74,0.12)"
+                                  strokeWidth="8"
+                                />
+                                <motion.circle
+                                  cx="60"
+                                  cy="60"
+                                  r="52"
+                                  fill="none"
+                                  stroke="url(#cookTimerGrad)"
+                                  strokeWidth="8"
+                                  strokeLinecap="round"
+                                  strokeDasharray={2 * Math.PI * 52}
+                                  animate={{
+                                    strokeDashoffset:
+                                      2 * Math.PI * 52 * (1 - (timer ? timerProgress : 0)),
+                                  }}
+                                  transition={{ duration: 0.4 }}
+                                  className={timer?.running ? 'cook-mode-timer-pulse' : ''}
+                                />
+                                <defs>
+                                  <linearGradient id="cookTimerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stopColor="#5BB080" />
+                                    <stop offset="100%" stopColor="#C4A46A" />
+                                  </linearGradient>
+                                </defs>
+                              </svg>
+                              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <Timer className="w-3.5 h-3.5 text-[#6b7a6f] mb-0.5" />
+                                <span className="font-mono text-xl sm:text-2xl tabular-nums tracking-tight text-[#1f2a22]">
+                                  {formatCookTimer(timerRemaining)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 flex-1">
+                              {!timer || !timer.running ? (
+                                <Button
+                                  onClick={() =>
+                                    startTimer(
+                                      currentStep,
+                                      timer?.remaining || detectedSeconds || timerTotal
+                                    )
+                                  }
+                                  className="rounded-full bg-laro hover:bg-laro-dark text-white shadow-md shadow-laro/20 px-4 h-11"
+                                  data-testid="cook-mode-start-timer"
+                                >
+                                  <Play className="w-4 h-4 mr-2" />
+                                  {t('startTimer')}
+                                </Button>
+                              ) : (
+                                <Button
+                                  onClick={() => pauseTimer(currentStep)}
+                                  variant="outline"
+                                  className="rounded-full border-[#2f6b4a]/25 bg-white/60 text-[#1f2a22] hover:bg-white px-4 h-11"
+                                >
+                                  <Pause className="w-4 h-4 mr-2" />
+                                  {t('pauseTimer')}
+                                </Button>
+                              )}
+                              <Button
+                                onClick={() =>
+                                  resetTimer(currentStep, detectedSeconds || timer?.total || 60)
+                                }
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full text-[#5a6b5e] hover:bg-black/5 h-11 w-11"
+                                aria-label={t('resetTimer')}
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                onClick={() => setShowTimerPicker((v) => !v)}
+                                variant="ghost"
+                                className="rounded-full text-[#5a6b5e] hover:bg-black/5 h-11 px-3"
+                              >
+                                {t('change')}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => setShowTimerPicker(true)}
+                            variant="outline"
+                            className="rounded-full border-[#2f6b4a]/20 bg-white/50 text-[#1f2a22] hover:bg-white h-11 px-4"
+                            data-testid="cook-mode-add-timer"
+                          >
+                            <Timer className="w-4 h-4 mr-2" />
+                            {t('setATimer')}
+                          </Button>
+                        )}
+
+                        {showTimerPicker && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {QUICK_TIMER_MINUTES.map((m) => (
+                              <Button
+                                key={m}
+                                type="button"
+                                onClick={() => {
+                                  startTimer(currentStep, m * 60);
+                                  setShowTimerPicker(false);
+                                }}
+                                variant="outline"
+                                className="rounded-full border-[#2f6b4a]/20 bg-white/60 text-[#1f2a22] hover:bg-white h-10 px-3"
+                              >
+                                {t('nMin', { n: m })}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    </motion.div>
+                  </AnimatePresence>
+
+                  {!focusMode && nextInstruction && (
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      className="cook-mode-peek cook-mode-peek-next mt-2 text-left w-full"
+                      aria-label={t('goToStep', { n: currentStep + 2 })}
+                    >
+                      <span className="cook-mode-peek-label">{t('upNext')}</span>
+                      <span className="cook-mode-peek-text">{nextInstruction}</span>
+                    </button>
+                  )}
+
+                  {!focusMode && totalSteps > 1 && (
+                    <div className="mt-4 mb-1 flex flex-wrap justify-center gap-1.5">
+                      {steps.map((_, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => goToStep(i)}
+                          aria-label={t('goToStep', { n: i + 1 })}
+                          aria-current={i === currentStep ? 'step' : undefined}
+                          className={`h-2 rounded-full transition-all duration-300 ${
+                            i === currentStep
+                              ? 'w-7 bg-laro shadow-[0_0_10px_rgba(123,200,156,0.4)]'
+                              : i < currentStep
+                              ? 'w-2.5 bg-laro/50'
+                              : 'w-2.5 bg-white/25 hover:bg-white/40'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Navigation */}
-            <div className="p-4 bg-gray-900 border-t border-gray-800">
-              {/* Voice Controls */}
-              <div className="flex justify-center mb-3">
+            {/* Bottom controls — large kitchen-friendly targets */}
+            <div className="relative z-10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 cook-mode-dock">
+              <div className="flex justify-center mb-3 gap-2 flex-wrap">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCastClick}
+                  className={`rounded-full h-10 w-10 ${
+                    castConnected
+                      ? 'bg-laro text-white'
+                      : 'text-white hover:bg-gray-700'
+                  }`}
+                  title={
+                    castConnected
+                      ? 'Stop casting'
+                      : castConfigured
+                        ? 'Cast cook mode to Chromecast'
+                        : 'Chromecast (set Cast App ID)'
+                  }
+                  data-testid="cook-mode-cast"
+                  aria-pressed={castConnected}
+                >
+                  <Cast className={`w-5 h-5 ${castAvailable || castConfigured ? '' : 'opacity-60'}`} />
+                </Button>
                 <VoiceCookingControls
                   recipe={recipe}
                   currentStep={currentStep}
-                  totalSteps={recipe.instructions.length}
+                  totalSteps={totalSteps}
+                  steps={steps}
                   onNavigate={(delta) => {
                     if (delta > 0) handleNext();
                     else handlePrev();
                   }}
-                  onTimerStart={() => stepTime && startTimer(currentStep, stepTime)}
+                  onTimerStart={() => {
+                    const secs = timer?.remaining || detectedSeconds || 5 * 60;
+                    startTimer(currentStep, secs);
+                  }}
                   onTimerStop={() => pauseTimer(currentStep)}
                   timerActive={timer?.running}
                 />
               </div>
-              
-              <div className="flex items-center justify-between max-w-lg mx-auto">
+
+              <div className="flex items-stretch gap-3 max-w-lg mx-auto">
                 <Button
                   variant="ghost"
                   onClick={handlePrev}
-                  disabled={currentStep === 0}
-                  className="text-white hover:bg-gray-800 rounded-full"
+                  disabled={currentStep === 0 || totalSteps === 0}
+                  className="flex-1 h-14 sm:h-16 rounded-2xl text-white/90 hover:bg-white/10 disabled:opacity-30 border border-white/10 text-base"
                 >
-                  <ChevronLeft className="w-5 h-5 mr-1" />
-                  Previous
+                  <ChevronLeft className="w-6 h-6 mr-1" />
+                  {t('back')}
                 </Button>
 
                 <Button
                   onClick={handleNext}
-                  className="rounded-full bg-laro hover:bg-laro-dark px-8"
+                  disabled={totalSteps === 0}
+                  className="flex-[1.4] h-14 sm:h-16 rounded-2xl bg-laro hover:bg-laro-dark text-white text-lg font-semibold shadow-lg shadow-laro/30"
+                  data-testid="cook-mode-next"
                 >
-                  {currentStep === recipe.instructions.length - 1 ? (
+                  {currentStep === totalSteps - 1 ? (
                     <>
-                      Done
-                      <Check className="w-5 h-5 ml-1" />
+                      {t('doneCooking')}
+                      <Check className="w-5 h-5 ml-1.5" />
                     </>
                   ) : (
                     <>
-                      Next
-                      <ChevronRight className="w-5 h-5 ml-1" />
+                      {t('nextStep')}
+                      <ChevronRight className="w-6 h-6 ml-1.5" />
                     </>
                   )}
                 </Button>
               </div>
             </div>
 
-            {/* AI Assistant Button */}
             {!showAIAssistant && (
               <AIAssistantButton onClick={() => setShowAIAssistant(true)} />
             )}
 
-            {/* AI Assistant Panel */}
             <CookingAIAssistant
               recipe={recipe}
               currentStep={currentStep}
@@ -371,53 +775,67 @@ export const CookMode = ({ recipe, onClose }) => {
             />
           </>
         ) : (
-          /* Feedback screen */
-          <div className="flex-1 flex flex-col items-center justify-center p-8">
+          <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-6 sm:p-10">
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="text-center"
+              initial={{ scale: 0.92, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 160, damping: 18 }}
+              className="w-full max-w-md text-center"
             >
-              <ChefHat className="w-16 h-16 mx-auto text-laro mb-6" />
-              <h2 className="text-3xl font-heading font-bold text-white mb-2">
-                Nice work, chef!
+              <motion.div
+                initial={{ rotate: -8, scale: 0.8 }}
+                animate={{ rotate: 0, scale: 1 }}
+                transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
+                className="mx-auto mb-6 w-20 h-20 rounded-3xl bg-laro/20 border border-laro/35 flex items-center justify-center"
+              >
+                <ChefHat className="w-10 h-10 text-laro" />
+              </motion.div>
+              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-white mb-2">
+                {t('niceWorkChef')}
               </h2>
-              <p className="text-xl text-gray-300 mb-8">
-                Would you cook this again?
-              </p>
+              <p className="text-lg text-white/65 mb-8">{t('wouldYouCookAgain')}</p>
 
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <textarea
+                value={cookNote}
+                onChange={(e) => setCookNote(e.target.value)}
+                placeholder={t('cookNotePlaceholder')}
+                className="w-full mb-6 rounded-2xl bg-white/5 border border-white/15 text-white placeholder:text-white/35 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-laro/50"
+                rows={2}
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Button
                   onClick={() => handleFeedback('yes')}
-                  className="rounded-full bg-green-600 hover:bg-green-700 px-8 py-6 text-lg"
+                  className="rounded-2xl h-14 bg-emerald-600 hover:bg-emerald-500 text-white text-base"
                 >
-                  <ThumbsUp className="w-6 h-6 mr-2" />
-                  Yes!
+                  <ThumbsUp className="w-5 h-5 mr-2" />
+                  {t('yes')}
                 </Button>
                 <Button
                   onClick={() => handleFeedback('meh')}
                   variant="outline"
-                  className="rounded-full border-gray-500 text-white hover:bg-gray-800 px-8 py-6 text-lg"
+                  className="rounded-2xl h-14 border-white/20 bg-white/5 text-white hover:bg-white/10 text-base"
                 >
-                  <Meh className="w-6 h-6 mr-2" />
-                  Meh
+                  <Meh className="w-5 h-5 mr-2" />
+                  {t('meh')}
                 </Button>
                 <Button
                   onClick={() => handleFeedback('no')}
                   variant="outline"
-                  className="rounded-full border-red-500 text-red-400 hover:bg-red-500/10 px-8 py-6 text-lg"
+                  className="rounded-2xl h-14 border-red-400/40 text-red-300 hover:bg-red-500/10 text-base"
                 >
-                  <ThumbsDown className="w-6 h-6 mr-2" />
-                  No
+                  <ThumbsDown className="w-5 h-5 mr-2" />
+                  {t('no')}
                 </Button>
               </div>
 
               <Button
                 variant="ghost"
-                onClick={onClose}
-                className="mt-8 text-gray-400 hover:text-white"
+                onClick={handleSkipWithNote}
+                className="mt-6 text-white/45 hover:text-white"
+                data-testid="cook-mode-finish-to-recipe"
               >
-                Skip feedback
+                {cookNote.trim() ? t('saveNoteBackToRecipe') : t('backToRecipe')}
               </Button>
             </motion.div>
           </div>

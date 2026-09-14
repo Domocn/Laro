@@ -9,7 +9,7 @@ from .base_repository import BaseRepository
 class UserRepository(BaseRepository):
     """Repository for user operations"""
 
-    JSON_FIELDS = ["favorites", "allergies", "friends"]
+    JSON_FIELDS = ["favorites", "allergies", "friends", "pending_referral_rewards"]
 
     def __init__(self):
         super().__init__("users")

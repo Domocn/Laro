@@ -328,7 +328,10 @@ def get_feature_row(emoji: str, title: str, description: str = "") -> str:
 
 async def send_verification_email(to: str, name: str, token: str) -> bool:
     """Send email verification link to new user"""
-    verification_url = f"{APP_URL}/#/verify-email?token={token}"
+    # Path-based (no hash): Resend click-tracking and many mail clients strip
+    # `#/...` fragments, which broke HashRouter links. The SPA redirects
+    # /verify-email?token=… → /#/verify-email?token=… (see index.html).
+    verification_url = f"{APP_URL}/verify-email?token={token}"
 
     content = f"""
     <!-- Welcome Header -->
@@ -390,7 +393,7 @@ async def send_verification_email(to: str, name: str, token: str) -> bool:
 
 async def send_password_reset_email(to: str, token: str) -> bool:
     """Send password reset email"""
-    reset_url = f"{APP_URL}/#/reset-password?token={token}"
+    reset_url = f"{APP_URL}/reset-password?token={token}"
 
     content = f"""
     {get_header("Reset Your Password", "", "🔐")}
@@ -576,7 +579,7 @@ async def send_account_locked_notification(to: str, unlock_minutes: int) -> bool
 
 async def send_account_deletion_email(to: str, token: str) -> bool:
     """Send account deletion confirmation email (GDPR compliance)"""
-    deletion_url = f"{APP_URL}/#/delete-account?token={token}"
+    deletion_url = f"{APP_URL}/delete-account?token={token}"
 
     content = f"""
     {get_header("Confirm Account Deletion", "", "🗑️")}
@@ -688,22 +691,22 @@ async def send_subscription_welcome_email(to: str, name: str = "there") -> bool:
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background: #f8faf8; border-radius: 16px; margin: 0 0 28px 0;">
         <tr>
             <td style="padding: 24px;">
-                <p style="margin: 0 0 16px 0; font-size: 13px; font-weight: 600; color: #5BB080; text-transform: uppercase; letter-spacing: 1px;">🔓 Your Pro toolkit</p>
+                <p style="margin: 0 0 16px 0; font-size: 13px; font-weight: 600; color: #5BB080; text-transform: uppercase; letter-spacing: 1px;">Your Pro kitchen</p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
-                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">📚</span> <strong>Unlimited recipes</strong> — your personal cookbook, no limits</td>
+                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">🤖</span> <strong>Unlimited AI meal plans</strong> — "What's for dinner?" solved anytime</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">🤖</span> <strong>AI meal planning</strong> — "What's for dinner?" solved forever</td>
+                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">📷</span> <strong>Photo &amp; video imports</strong> — scan cookbooks and pull recipes from TikTok</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">🛒</span> <strong>Smart shopping lists</strong> — organized by aisle, never forget garlic again</td>
+                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">📚</span> <strong>Unlimited cookbook</strong> — save every recipe you love</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">🥗</span> <strong>Nutrition tracking</strong> — know what's on your plate</td>
+                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">🛒</span> <strong>Barcode &amp; store helpers</strong> — scan products, get reminders near the store</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">💬</span> <strong>Priority support</strong> — real humans who love food</td>
+                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">👨‍👩‍👧</span> <strong>Household kitchen</strong> — share recipes with family and friends</td>
                     </tr>
                 </table>
             </td>
@@ -843,10 +846,10 @@ async def send_subscription_expired_email(to: str, name: str = "there") -> bool:
     {get_info_card('''
         <p style="margin: 0 0 16px 0; font-weight: 600; color: #2D3B2D;">You'll be missing:</p>
         <div style="color: #8B9B8B;">
-            <p style="margin: 8px 0; text-decoration: line-through;"> AI-powered meal planning</p>
-            <p style="margin: 8px 0; text-decoration: line-through;"> Smart shopping lists</p>
-            <p style="margin: 8px 0; text-decoration: line-through;"> Nutrition tracking</p>
-            <p style="margin: 8px 0; text-decoration: line-through;"> Unlimited recipes</p>
+            <p style="margin: 8px 0; text-decoration: line-through;"> Unlimited AI meal plans</p>
+            <p style="margin: 8px 0; text-decoration: line-through;"> Photo &amp; video recipe imports</p>
+            <p style="margin: 8px 0; text-decoration: line-through;"> Barcode &amp; store helpers</p>
+            <p style="margin: 8px 0; text-decoration: line-through;"> Unlimited cookbook</p>
         </div>
     ''')}
 

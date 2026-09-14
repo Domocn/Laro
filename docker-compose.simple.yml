@@ -1,7 +1,7 @@
 version: '3.8'
 
 # ============================================
-# Mise - Your Kitchen Sidekick
+# Laro - Your Kitchen Sidekick
 # Simple deployment using pre-built images
 # ============================================
 # 
@@ -59,19 +59,68 @@ services:
       - "8001:8001"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-laro}:${POSTGRES_PASSWORD:-laro-password-change-me}@postgres:5432/${POSTGRES_DB:-laro}
-      - JWT_SECRET=${JWT_SECRET:-change-this-secret-key}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
       # Redis Pub/Sub for multi-instance support
       - REDIS_URL=redis://redis:6379
       - REDIS_PUBSUB_ENABLED=${REDIS_PUBSUB_ENABLED:-true}
       # Debug/Logging Configuration - logs visible in Portainer
-      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LLM_PROVIDER=ollama
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      # Local default; for Ollama Cloud set OLLAMA_URL=https://ollama.com + OLLAMA_API_KEY
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      # Multimodal model for receipt / photo OCR (text models like gpt-oss cannot see images)
+      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL:-}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      # Instagram/TikTok yt-dlp auth (Netscape cookies.txt). See DEPLOY.md / secrets/README.md
+      - YT_DLP_COOKIES_FILE=${YT_DLP_COOKIES_FILE:-/secrets/yt-dlp-cookies.txt}
+      - YT_DLP_COOKIES=${YT_DLP_COOKIES:-}
+      # SocialFetch.dev — primary social scraper (IG/TT/YT/FB). See DEPLOY.md
+      - SOCIALFETCH_API_KEY=${SOCIALFETCH_API_KEY:-}
+      - REEL_MEDIA_API_URL=${REEL_MEDIA_API_URL:-}
+      - REEL_MEDIA_API_KEY=${REEL_MEDIA_API_KEY:-}
+      # Cobalt optional video filler (SocialFetch → Cobalt → yt-dlp). See DEPLOY.md
+      - COBALT_API_URL=${COBALT_API_URL:-}
+      - COBALT_API_KEY=${COBALT_API_KEY:-}
+      - FREE_AI_USES=${FREE_AI_USES:-3}
+      # When true, Settings shows managed "Laro AI" (no BYO provider picker).
+      # laro.food production must set IS_CLOUD=true alongside Ollama Cloud.
+      - IS_CLOUD=${IS_CLOUD:-false}
+      - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-cowandom79@gmail.com}
+      - REVENUECAT_WEBHOOK_AUTH=${REVENUECAT_WEBHOOK_AUTH:-}
+      - REVENUECAT_WEBHOOK_SECRET=${REVENUECAT_WEBHOOK_SECRET:-}
+      # Secret API key (sk_…) — admin grant/revoke ↔ RC promotional entitlements
+      - REVENUECAT_SECRET_API_KEY=${REVENUECAT_SECRET_API_KEY:-}
+      - REVENUECAT_ENTITLEMENT_ID=${REVENUECAT_ENTITLEMENT_ID:-Laro Pro}
+      # Email (Resend preferred; SMTP works too). Links in mail use OAUTH_REDIRECT_BASE_URL.
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-noreply@laro.food}
+      - EMAIL_LOGO_URL=${EMAIL_LOGO_URL:-}
+      - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-http://localhost:3000}
+      # Google OAuth (login) + Google Health nutrition write
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_HEALTH_CLIENT_ID=${GOOGLE_HEALTH_CLIENT_ID:-}
+      - GOOGLE_HEALTH_CLIENT_SECRET=${GOOGLE_HEALTH_CLIENT_SECRET:-}
+      # Shown in Settings as "Laro v…". Set in .env or pass at image build time.
+      - APP_VERSION=${APP_VERSION:-}
+      # Web Push (generate with: python -c "from py_vapid import Vapid01; …")
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_CLAIM_EMAIL=${VAPID_CLAIM_EMAIL:-mailto:noreply@laro.food}
+      # In-process reminder loop (safe with Celery Beat — deduped in DB)
+      - REMINDERS_INPROCESS=${REMINDERS_INPROCESS:-true}
     volumes:
       - uploads_data:/app/uploads
+      # Instagram/TikTok Netscape cookies for reel import (see secrets/README.md)
+      - ./secrets:/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,23 +134,66 @@ services:
     image: ghcr.io/domocn/laro-backend:latest
     container_name: laro-worker
     restart: unless-stopped
-    command: python -m celery -A workers.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=4
+    command: python -m celery -A workers.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=4 -Q celery,laro-jobs
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-laro}:${POSTGRES_PASSWORD:-laro-password-change-me}@postgres:5432/${POSTGRES_DB:-laro}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
       - REDIS_URL=redis://redis:6379
       # Debug/Logging Configuration - logs visible in Portainer
-      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LLM_PROVIDER=ollama
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      # Multimodal model for receipt / photo OCR (text models like gpt-oss cannot see images)
+      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL:-}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      # Instagram/TikTok yt-dlp auth (Netscape cookies.txt). See DEPLOY.md / secrets/README.md
+      - YT_DLP_COOKIES_FILE=${YT_DLP_COOKIES_FILE:-/secrets/yt-dlp-cookies.txt}
+      - YT_DLP_COOKIES=${YT_DLP_COOKIES:-}
+      # SocialFetch.dev — primary social scraper (IG/TT/YT/FB). See DEPLOY.md
+      - SOCIALFETCH_API_KEY=${SOCIALFETCH_API_KEY:-}
+      - REEL_MEDIA_API_URL=${REEL_MEDIA_API_URL:-}
+      - REEL_MEDIA_API_KEY=${REEL_MEDIA_API_KEY:-}
+      # Cobalt optional video filler (SocialFetch → Cobalt → yt-dlp). See DEPLOY.md
+      - COBALT_API_URL=${COBALT_API_URL:-}
+      - COBALT_API_KEY=${COBALT_API_KEY:-}
+      - FREE_AI_USES=${FREE_AI_USES:-3}
+      # When true, Settings shows managed "Laro AI" (no BYO provider picker).
+      # laro.food production must set IS_CLOUD=true alongside Ollama Cloud.
+      - IS_CLOUD=${IS_CLOUD:-false}
+      - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-cowandom79@gmail.com}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_CLAIM_EMAIL=${VAPID_CLAIM_EMAIL:-mailto:noreply@laro.food}
     volumes:
       - uploads_data:/app/uploads
+      - ./secrets:/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - laro-network
+
+  # Celery Beat — schedules meal/shopping/weekly reminders
+  beat:
+    image: ghcr.io/domocn/laro-backend:latest
+    container_name: laro-beat
+    restart: unless-stopped
+    command: python -m celery -A workers.celery_app beat --loglevel=${LOG_LEVEL:-info}
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-laro}:${POSTGRES_PASSWORD:-laro-password-change-me}@postgres:5432/${POSTGRES_DB:-laro}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - REDIS_URL=redis://redis:6379
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_started
     networks:
       - laro-network
 
@@ -115,6 +207,7 @@ services:
       - "5555:5555"
     environment:
       - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
     depends_on:
       - redis
       - worker
@@ -129,8 +222,12 @@ services:
     ports:
       - "3000:80"
     environment:
-      # Change this to your server's public IP or domain
-      - REACT_APP_BACKEND_URL=http://localhost:8001
+      # Empty = same-origin /api (Caddy proxies to backend). Do NOT set
+      # http://localhost:8001 here — browsers on laro.food cannot reach the
+      # visitor's localhost, so login/register will fail with CORS errors.
+      - REACT_APP_BACKEND_URL=
+      - REACT_APP_REVENUECAT_WEB_API_KEY=${REACT_APP_REVENUECAT_WEB_API_KEY:-}
+      - REACT_APP_CAST_APP_ID=${REACT_APP_CAST_APP_ID:-}
     depends_on:
       - backend
     networks:
@@ -145,6 +242,26 @@ services:
       - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
+    networks:
+      - laro-network
+
+  # Cobalt — free self-hosted social video downloader (TikTok/IG/YouTube/Facebook).
+  # Internal only; backend reaches it at http://cobalt:9000/. Public cobalt.tools
+  # requires Turnstile and is not for third-party apps.
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:11
+    container_name: laro-cobalt
+    init: true
+    read_only: true
+    restart: unless-stopped
+    environment:
+      API_URL: ${COBALT_PUBLIC_URL:-http://cobalt:9000/}
+      API_PORT: "9000"
+      # Cap recipe-reel length to keep memory/CPU bounded on small VPS hosts.
+      DURATION_LIMIT: ${COBALT_DURATION_LIMIT:-600}
+      RATELIMIT_MAX: ${COBALT_RATELIMIT_MAX:-40}
+    ports:
+      - "127.0.0.1:9000:9000"
     networks:
       - laro-network
 

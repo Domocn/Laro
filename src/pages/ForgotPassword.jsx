@@ -8,8 +8,10 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Mail, ArrowRight, Loader2, Check, ArrowLeft, Key, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLanguage } from '../context/LanguageContext';
 
 export const ForgotPassword = () => {
+  const { t } = useLanguage();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -28,9 +30,9 @@ export const ForgotPassword = () => {
         setToken(res.data.token);
       }
       
-      toast.success('Check your email for reset instructions');
+      toast.success(t('toastResetEmailSent'));
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t send the reset email. Please try again. (E-FP001)');
+      toast.error(error.response?.data?.detail || `${t('toastResetEmailFailed')} (E-FP001)`);
     } finally {
       setLoading(false);
     }
@@ -48,7 +50,7 @@ export const ForgotPassword = () => {
         <Link to="/" className="flex justify-center mb-8">
           <img
             src="/laro-banner.png"
-            alt="Laro - Your Kitchen Sidekick"
+            alt="Laro"
             className="h-14"
           />
         </Link>
@@ -58,19 +60,21 @@ export const ForgotPassword = () => {
           {!sent ? (
             <>
               <div className="text-center mb-8">
-                <h1 className="font-heading text-2xl font-bold">Forgot Password</h1>
-                <p className="text-muted-foreground mt-2">Enter your email to reset your password</p>
+                <h1 className="font-heading text-2xl font-bold">{t('forgotPwdTitle')}</h1>
+                <p className="text-muted-foreground mt-2">{t('forgotPwdSubtitle')}</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">{t('email')}</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="email"
+                      name="email"
                       type="email"
-                      placeholder="you@example.com"
+                      autoComplete="username"
+                      placeholder={t('emailPlaceholder')}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-10 rounded-xl bg-cream-subtle border-transparent focus:border-laro"
@@ -89,11 +93,11 @@ export const ForgotPassword = () => {
                   {loading ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
-                      <span className="ml-2">Sending...</span>
+                      <span className="ml-2">{t('sending')}</span>
                     </>
                   ) : (
                     <>
-                      Send Reset Link
+                      {t('sendResetLink')}
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </>
                   )}
@@ -105,17 +109,17 @@ export const ForgotPassword = () => {
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8 text-green-600" />
               </div>
-              <h1 className="font-heading text-2xl font-bold mb-2">Check Your Email</h1>
+              <h1 className="font-heading text-2xl font-bold mb-2">{t('checkYourEmail')}</h1>
               <p className="text-muted-foreground mb-6">
-                We've sent password reset instructions to <strong>{email}</strong>
+                {t('resetEmailSentBody', { email })}
               </p>
               
               {/* Development mode token display */}
               {token && (
                 <div className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-200 text-left">
-                  <p className="text-xs text-amber-800 font-medium mb-2">Development Mode</p>
+                  <p className="text-xs text-amber-800 font-medium mb-2">{t('developmentMode')}</p>
                   <p className="text-xs text-amber-700 mb-2">
-                    Email is disabled. Use this link to reset your password:
+                    {t('devEmailDisabledHint')}
                   </p>
                   <Link 
                     to={`/reset-password?token=${token}`}
@@ -135,7 +139,7 @@ export const ForgotPassword = () => {
                 }}
                 className="rounded-full"
               >
-                Send to different email
+                {t('sendToDifferentEmail')}
               </Button>
             </div>
           )}
@@ -143,7 +147,7 @@ export const ForgotPassword = () => {
           <p className="text-center text-sm text-muted-foreground mt-6">
             <Link to="/login" className="text-laro hover:underline font-medium flex items-center justify-center gap-1">
               <ArrowLeft className="w-4 h-4" />
-              Back to Sign In
+              {t('backToSignIn')}
             </Link>
           </p>
         </div>
@@ -153,6 +157,7 @@ export const ForgotPassword = () => {
 };
 
 export const ResetPassword = () => {
+  const { t } = useLanguage();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get('token') || '';
@@ -168,10 +173,10 @@ export const ResetPassword = () => {
   }, []);
 
   const passwordChecks = [
-    { met: password.length >= policy.min_length, label: `At least ${policy.min_length} characters` },
-    ...(policy.require_uppercase ? [{ met: /[A-Z]/.test(password), label: 'One uppercase letter' }] : []),
-    ...(policy.require_number ? [{ met: /\d/.test(password), label: 'One number' }] : []),
-    ...(policy.require_special ? [{ met: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password), label: 'One special character' }] : []),
+    { met: password.length >= policy.min_length, label: t('atLeastNCharacters', { n: policy.min_length }) },
+    ...(policy.require_uppercase ? [{ met: /[A-Z]/.test(password), label: t('oneUppercaseLetter') }] : []),
+    ...(policy.require_number ? [{ met: /\d/.test(password), label: t('oneNumber') }] : []),
+    ...(policy.require_special ? [{ met: /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password), label: t('oneSpecialCharacter') }] : []),
   ];
   const passwordValid = password.length > 0 && passwordChecks.every(c => c.met);
 
@@ -179,12 +184,12 @@ export const ResetPassword = () => {
     e.preventDefault();
 
     if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
+      toast.error(t('toastPwdsDoNotMatch'));
       return;
     }
 
     if (!passwordValid) {
-      toast.error('Password does not meet all requirements');
+      toast.error(t('toastPwdRequirements'));
       return;
     }
     
@@ -193,10 +198,10 @@ export const ResetPassword = () => {
     try {
       await securityApi.confirmPasswordReset(token, password);
       setSuccess(true);
-      toast.success('Password reset successfully!');
+      toast.success(t('toastPwdResetSuccess'));
       setTimeout(() => navigate('/login'), 2000);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t reset your password. Please try again. (E-FP002)');
+      toast.error(error.response?.data?.detail || `${t('toastPwdResetFailed')} (E-FP002)`);
     } finally {
       setLoading(false);
     }
@@ -206,13 +211,13 @@ export const ResetPassword = () => {
     return (
       <div className="min-h-screen bg-cream flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-card border border-border/60 p-8 max-w-md w-full text-center">
-          <h1 className="font-heading text-2xl font-bold mb-4">Invalid Link</h1>
+          <h1 className="font-heading text-2xl font-bold mb-4">{t('invalidLink')}</h1>
           <p className="text-muted-foreground mb-6">
-            This password reset link is invalid or has expired.
+            {t('invalidResetLinkBody')}
           </p>
           <Link to="/forgot-password">
             <Button className="rounded-full bg-laro hover:bg-laro-dark">
-              Request New Link
+              {t('requestNewLink')}
             </Button>
           </Link>
         </div>
@@ -232,7 +237,7 @@ export const ResetPassword = () => {
         <Link to="/" className="flex justify-center mb-8">
           <img
             src="/laro-banner.png"
-            alt="Laro - Your Kitchen Sidekick"
+            alt="Laro"
             className="h-14"
           />
         </Link>
@@ -242,18 +247,20 @@ export const ResetPassword = () => {
           {!success ? (
             <>
               <div className="text-center mb-8">
-                <h1 className="font-heading text-2xl font-bold">Reset Password</h1>
-                <p className="text-muted-foreground mt-2">Enter your new password</p>
+                <h1 className="font-heading text-2xl font-bold">{t('resetPwdTitle')}</h1>
+                <p className="text-muted-foreground mt-2">{t('resetPwdSubtitle')}</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="password">New Password</Label>
+                  <Label htmlFor="password">{t('newPwdLabel')}</Label>
                   <div className="relative">
                     <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="password"
+                      name="password"
                       type="password"
+                      autoComplete="new-password"
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -263,8 +270,8 @@ export const ResetPassword = () => {
                     />
                   </div>
                   {password.length > 0 && (
-                    <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Password requirements:</p>
+                    <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">{t('pwdRequirements')}</p>
                       {passwordChecks.map((check, i) => (
                         <div key={i} className="flex items-center gap-2 text-sm">
                           {check.met ? (
@@ -282,12 +289,14 @@ export const ResetPassword = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirm Password</Label>
+                  <Label htmlFor="confirm-password">{t('confirmPwdLabel')}</Label>
                   <div className="relative">
                     <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="confirm-password"
+                      name="confirm-password"
                       type="password"
+                      autoComplete="new-password"
                       placeholder="••••••••"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
@@ -307,11 +316,11 @@ export const ResetPassword = () => {
                   {loading ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
-                      <span className="ml-2">Resetting...</span>
+                      <span className="ml-2">{t('resetting')}</span>
                     </>
                   ) : (
                     <>
-                      Reset Password
+                      {t('resetPwdLabel')}
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </>
                   )}
@@ -323,9 +332,9 @@ export const ResetPassword = () => {
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8 text-green-600" />
               </div>
-              <h1 className="font-heading text-2xl font-bold mb-2">Password Reset!</h1>
+              <h1 className="font-heading text-2xl font-bold mb-2">{t('pwdResetSuccessTitle')}</h1>
               <p className="text-muted-foreground mb-6">
-                Your password has been reset successfully. Redirecting to login...
+                {t('pwdResetSuccessBody')}
               </p>
             </div>
           )}

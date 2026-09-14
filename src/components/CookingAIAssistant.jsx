@@ -14,6 +14,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ChatMarkdown } from './ChatMarkdown';
 
 export const CookingAIAssistant = ({ recipe, currentStep, isOpen, onClose }) => {
   const [messages, setMessages] = useState([]);
@@ -43,12 +44,13 @@ export const CookingAIAssistant = ({ recipe, currentStep, isOpen, onClose }) => 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Initialize with a welcome message
+  // Initialize with a welcome that invites a question about this recipe
   useEffect(() => {
     if (isOpen && messages.length === 0) {
+      const title = recipe?.title || 'this recipe';
       setMessages([{
         role: 'assistant',
-        content: `Hi! I'm your cooking assistant. Ask me anything about "${recipe?.title}" or the current step. I can help with substitutions, techniques, timing, and more!`
+        content: `Hi! You're cooking "${title}". Do you have a question about this recipe or the current step? I can help with substitutions, techniques, timing, and more.`,
       }]);
     }
   }, [isOpen, recipe?.title]);
@@ -160,7 +162,11 @@ export const CookingAIAssistant = ({ recipe, currentStep, isOpen, onClose }) => 
                   ? 'bg-laro text-white'
                   : 'bg-gray-800 text-gray-100'
               }`}>
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                {msg.role === 'user' ? (
+                  <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                ) : (
+                  <ChatMarkdown content={msg.content} className="text-gray-100" />
+                )}
               </div>
             </motion.div>
           ))}

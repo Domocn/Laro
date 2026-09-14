@@ -66,11 +66,11 @@ async def add_friend(
     data: AddFriendRequest,
     user: dict = Depends(get_current_user)
 ):
-    """Add a friend by their friend code"""
-    # Normalize the friend code
-    friend_code = data.friend_code.strip().upper()
+    """Send a friend request by friend code — recipient must accept."""
+    from utils.free_limits import assert_can_add_friend
+    await assert_can_add_friend(user)
 
-    # Find user by friend code
+    friend_code = data.friend_code.strip().upper()
     friend = await user_repository.find_by_friend_code(friend_code)
 
     if not friend:
@@ -79,39 +79,236 @@ async def add_friend(
     if friend["id"] == user["id"]:
         raise HTTPException(status_code=400, detail="You cannot add yourself as a friend")
 
-    # Check if already friends
-    current_friends = user.get("friends", [])
+    current_friends = list(user.get("friends") or [])
     if friend["id"] in current_friends:
         raise HTTPException(status_code=400, detail="You are already friends with this user")
 
-    # Add friend to both users' friend lists
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from database.connection import get_db
 
-    # Add to current user's friends
-    current_friends.append(friend["id"])
-    await user_repository.update_user(user["id"], {"friends": current_friends})
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        # Reverse pending request → auto-accept (both sides already expressed intent)
+        reverse = await conn.fetchrow(
+            """
+            SELECT id FROM friend_requests
+            WHERE from_user_id = $1 AND to_user_id = $2 AND status = 'pending'
+            """,
+            friend["id"],
+            user["id"],
+        )
+        if reverse:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            await conn.execute(
+                """
+                UPDATE friend_requests
+                SET status = 'accepted', responded_at = $1
+                WHERE id = $2
+                """,
+                now,
+                reverse["id"],
+            )
+            current_friends.append(friend["id"])
+            await user_repository.update_user(user["id"], {"friends": current_friends})
+            friend_friends = list(friend.get("friends") or [])
+            if user["id"] not in friend_friends:
+                friend_friends.append(user["id"])
+                await user_repository.update_user(friend["id"], {"friends": friend_friends})
+            return {
+                "success": True,
+                "pending": False,
+                "message": "Friend request accepted",
+                "friend": {
+                    "id": friend["id"],
+                    "name": friend.get("name", "Friend"),
+                    "friend_code": friend.get("friend_code", ""),
+                    "added_at": now.isoformat(),
+                },
+            }
 
-    # Add current user to friend's friends list (mutual friendship)
-    friend_friends = friend.get("friends", [])
-    if user["id"] not in friend_friends:
-        friend_friends.append(user["id"])
-        await user_repository.update_user(friend["id"], {"friends": friend_friends})
+        existing = await conn.fetchrow(
+            """
+            SELECT id FROM friend_requests
+            WHERE from_user_id = $1 AND to_user_id = $2 AND status = 'pending'
+            """,
+            user["id"],
+            friend["id"],
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail="Friend request already pending")
+
+        request_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        await conn.execute(
+            """
+            INSERT INTO friend_requests
+                (id, from_user_id, to_user_id, status, created_at)
+            VALUES ($1, $2, $3, 'pending', $4)
+            """,
+            request_id,
+            user["id"],
+            friend["id"],
+            now,
+        )
+
+    try:
+        from services.notifications import notify_user, NotificationType
+        await notify_user(
+            user_id=friend["id"],
+            notification_type=NotificationType.FRIEND_REQUEST,
+            data={"from_name": user.get("name", "Someone"), "request_id": request_id},
+        )
+    except Exception:
+        pass
 
     return {
         "success": True,
+        "pending": True,
+        "message": "Friend request sent — they must accept",
+        "request_id": request_id,
         "friend": {
             "id": friend["id"],
             "name": friend.get("name", "Friend"),
             "friend_code": friend.get("friend_code", ""),
-            "added_at": now.isoformat()
-        }
+        },
     }
+
+
+@router.get("/requests")
+async def list_friend_requests(user: dict = Depends(get_current_user)):
+    """List incoming and outgoing pending friend requests."""
+    from database.connection import get_db, dict_from_row
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        incoming_rows = await conn.fetch(
+            """
+            SELECT fr.id, fr.from_user_id, fr.created_at,
+                   u.name AS from_name, u.friend_code AS from_friend_code
+            FROM friend_requests fr
+            JOIN users u ON u.id = fr.from_user_id
+            WHERE fr.to_user_id = $1 AND fr.status = 'pending'
+            ORDER BY fr.created_at DESC
+            """,
+            user["id"],
+        )
+        outgoing_rows = await conn.fetch(
+            """
+            SELECT fr.id, fr.to_user_id, fr.created_at,
+                   u.name AS to_name, u.friend_code AS to_friend_code
+            FROM friend_requests fr
+            JOIN users u ON u.id = fr.to_user_id
+            WHERE fr.from_user_id = $1 AND fr.status = 'pending'
+            ORDER BY fr.created_at DESC
+            """,
+            user["id"],
+        )
+
+    def _serialize(rows):
+        out = []
+        for row in rows:
+            d = dict_from_row(row)
+            if d.get("created_at") is not None and hasattr(d["created_at"], "isoformat"):
+                d["created_at"] = d["created_at"].isoformat()
+            out.append(d)
+        return out
+
+    return {
+        "incoming": _serialize(incoming_rows),
+        "outgoing": _serialize(outgoing_rows),
+    }
+
+
+@router.post("/requests/{request_id}/accept")
+async def accept_friend_request(request_id: str, user: dict = Depends(get_current_user)):
+    """Accept an incoming friend request."""
+    from utils.free_limits import assert_can_add_friend
+    await assert_can_add_friend(user)
+
+    from database.connection import get_db, dict_from_row
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT * FROM friend_requests
+            WHERE id = $1 AND to_user_id = $2 AND status = 'pending'
+            """,
+            request_id,
+            user["id"],
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Friend request not found")
+        req = dict_from_row(row)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        await conn.execute(
+            """
+            UPDATE friend_requests
+            SET status = 'accepted', responded_at = $1
+            WHERE id = $2
+            """,
+            now,
+            request_id,
+        )
+
+    from_user = await user_repository.find_by_id(req["from_user_id"])
+    if not from_user:
+        raise HTTPException(status_code=404, detail="User no longer exists")
+
+    current_friends = list(user.get("friends") or [])
+    if from_user["id"] not in current_friends:
+        current_friends.append(from_user["id"])
+        await user_repository.update_user(user["id"], {"friends": current_friends})
+
+    from_friends = list(from_user.get("friends") or [])
+    if user["id"] not in from_friends:
+        from_friends.append(user["id"])
+        await user_repository.update_user(from_user["id"], {"friends": from_friends})
+
+    return {
+        "success": True,
+        "friend": {
+            "id": from_user["id"],
+            "name": from_user.get("name", "Friend"),
+            "friend_code": from_user.get("friend_code", ""),
+            "added_at": now.isoformat(),
+        },
+    }
+
+
+@router.post("/requests/{request_id}/decline")
+async def decline_friend_request(request_id: str, user: dict = Depends(get_current_user)):
+    """Decline an incoming friend request."""
+    from database.connection import get_db
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id FROM friend_requests
+            WHERE id = $1 AND to_user_id = $2 AND status = 'pending'
+            """,
+            request_id,
+            user["id"],
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Friend request not found")
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        await conn.execute(
+            """
+            UPDATE friend_requests
+            SET status = 'declined', responded_at = $1
+            WHERE id = $2
+            """,
+            now,
+            request_id,
+        )
+    return {"success": True, "message": "Friend request declined"}
 
 
 @router.get("/list")
 async def list_friends(user: dict = Depends(get_current_user)):
     """Get list of friends"""
-    friend_ids = user.get("friends", [])
+    friend_ids = list(user.get("friends") or [])
 
     friends = []
     for friend_id in friend_ids:
@@ -135,7 +332,7 @@ async def remove_friend(
     user: dict = Depends(get_current_user)
 ):
     """Remove a friend"""
-    current_friends = user.get("friends", [])
+    current_friends = list(user.get("friends") or [])
 
     if friend_id not in current_friends:
         raise HTTPException(status_code=404, detail="Friend not found")
@@ -147,7 +344,7 @@ async def remove_friend(
     # Remove current user from friend's friends list
     friend = await user_repository.find_by_id(friend_id)
     if friend:
-        friend_friends = friend.get("friends", [])
+        friend_friends = list(friend.get("friends") or [])
         if user["id"] in friend_friends:
             friend_friends.remove(user["id"])
             await user_repository.update_user(friend_id, {"friends": friend_friends})
@@ -158,61 +355,69 @@ async def remove_friend(
 @router.get("/count")
 async def get_friend_count(user: dict = Depends(get_current_user)):
     """Get current friend count"""
-    friend_ids = user.get("friends", [])
+    friend_ids = list(user.get("friends") or [])
     return {"count": len(friend_ids)}
 
 
 @router.post("/confirm-subscription")
 async def confirm_subscription(user: dict = Depends(get_current_user)):
     """Called when a user subscribes - grants referrer their reward"""
+    result = await grant_referrer_reward_for_subscriber(user)
+    return result
+
+
+async def grant_referrer_reward_for_subscriber(user: dict) -> dict:
+    """
+    When a referred user subscribes, credit the referrer with subscribe points.
+    Safe to call multiple times — rewards once per referred user.
+    """
     referred_by = user.get("referred_by")
 
     if not referred_by:
         return {"success": True, "message": "No referrer to reward"}
 
-    # Check if we already granted the reward
     if user.get("referral_reward_granted"):
         return {"success": True, "message": "Reward already granted"}
 
-    # Get the referrer
     referrer = await user_repository.find_by_id(referred_by)
     if not referrer:
         return {"success": True, "message": "Referrer not found"}
 
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from utils.rewards import credit_points, POINTS_SUBSCRIBE
 
-    # Grant/extend 30-day trial for the referrer
-    from datetime import timedelta
-    referrer_trial_end = referrer.get("referral_trial_end")
-    if referrer_trial_end and referrer_trial_end > now:
-        # Extend existing trial by 30 days
-        new_referrer_trial = referrer_trial_end + timedelta(days=30)
-    else:
-        # Start new 30-day trial
-        new_referrer_trial = now + timedelta(days=30)
+    referral_count = int(referrer.get("referral_count", 0) or 0) + 1
 
-    # Update referrer's trial and referral count
-    referral_count = referrer.get("referral_count", 0) + 1
-
-    # Remove from pending rewards
     pending_rewards = referrer.get("pending_referral_rewards", [])
+    if isinstance(pending_rewards, str):
+        import json
+        try:
+            pending_rewards = json.loads(pending_rewards) or []
+        except Exception:
+            pending_rewards = []
     pending_rewards = [r for r in pending_rewards if r.get("referred_user_id") != user["id"]]
 
+    credit = await credit_points(
+        referred_by,
+        POINTS_SUBSCRIBE,
+        reason=f"referral_subscribe:{user['id']}",
+        meta={"referred_user_id": user["id"]},
+    )
+
     await user_repository.update_user(referred_by, {
-        "referral_trial_end": new_referrer_trial,
         "referral_count": referral_count,
-        "pending_referral_rewards": pending_rewards
+        "pending_referral_rewards": pending_rewards,
     })
 
-    # Mark this user's referral reward as granted
     await user_repository.update_user(user["id"], {
         "referral_reward_granted": True
     })
 
     return {
         "success": True,
-        "message": "Referrer rewarded with 30 days free",
-        "referrer_new_trial_end": new_referrer_trial.isoformat()
+        "message": f"Referrer rewarded with {POINTS_SUBSCRIBE} points",
+        "points_credited": credit.get("delta", 0),
+        "referrer_points": credit.get("points"),
+        "referral_count": referral_count,
     }
 
 
@@ -234,11 +439,18 @@ async def get_referral_stats(user: dict = Depends(get_current_user)):
         referral_trial_end = referral_trial_end.isoformat() if hasattr(referral_trial_end, 'isoformat') else referral_trial_end
 
     pending_rewards = user.get("pending_referral_rewards", [])
+    if isinstance(pending_rewards, str):
+        import json
+        try:
+            pending_rewards = json.loads(pending_rewards) or []
+        except Exception:
+            pending_rewards = []
 
     return {
         "referral_count": referral_count,
-        "pending_referrals": len(pending_rewards),
+        "pending_referrals": len(pending_rewards) if isinstance(pending_rewards, list) else 0,
         "has_referral_trial": has_referral_trial,
         "referral_trial_end": referral_trial_end,
-        "days_remaining": days_remaining
+        "days_remaining": days_remaining,
+        "reward_points": int(user.get("reward_points") or 0),
     }
