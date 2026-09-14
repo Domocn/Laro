@@ -183,9 +183,9 @@ Two pieces:
    URL = Laro base (no `/api`), token = Settings → API Tokens in Laro (`laro_…`).
    Coordinator prefers `GET /api/homeassistant/all`.
 2. **Supervisor add-on** (runs full Laro inside HA OS): source tree
-   `laro-home-assistant-addon/`. Public store repo: `Domocn/laro-home-assistant-addon`
+   `laro-home-assistant-addon/`. Public store repo: `Domocn/Laro-home-assistant-addon`
    (if that GitHub path is not renamed yet, set `HA_ADDON_REPO_URL` when syncing).
-   Install URL: `https://github.com/Domocn/laro-home-assistant-addon`.
+   Install URL: `https://github.com/Domocn/Laro-home-assistant-addon`.
    Sync workflow source-of-truth copy: `docs/github-workflows/sync-ha-addon.yaml`
    (copy into `.github/workflows/` with a `workflow`-scoped PAT). Manual sync:
    `scripts/sync-ha-addon-repo.sh` when you have push access to the public add-on repo.

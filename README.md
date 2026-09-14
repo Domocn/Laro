@@ -162,7 +162,7 @@ Works with **cloud** ([laro.food](https://laro.food)) and **self-hosted** Laro.
 
 ### Supervisor add-on (run Laro inside HA OS)
 
-Install from [`Domocn/laro-home-assistant-addon`](https://github.com/Domocn/laro-home-assistant-addon).
+Install from [`Domocn/Laro-home-assistant-addon`](https://github.com/Domocn/Laro-home-assistant-addon).
 
 > Using **laro.food**? Skip the add-on — use the custom integration with `https://laro.food`.
 
