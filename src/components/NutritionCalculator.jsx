@@ -43,6 +43,88 @@ const NutritionBar = ({ label, value, unit, color, icon: Icon, max = 100 }) => {
 
 const CORE_MACRO_KEYS = ['calories', 'protein', 'carbs', 'fat'];
 
+const UK_RI = {
+  energy_kcal: 2000,
+  fat_g: 70,
+  carbs_g: 260,
+  protein_g: 50,
+  fibre_g: 30,
+  salt_g: 6,
+  sugars_g: 90,
+  saturates_g: 20,
+};
+
+function computeUkPercentRi(perServing = {}) {
+  const kcal = Number(perServing.calories) || 0;
+  return {
+    energy_kcal_pct: Math.round((1000 * kcal) / UK_RI.energy_kcal) / 10,
+    fat_pct: Math.round((1000 * (Number(perServing.fat) || 0)) / UK_RI.fat_g) / 10,
+    carbs_pct: Math.round((1000 * (Number(perServing.carbs) || 0)) / UK_RI.carbs_g) / 10,
+    protein_pct: Math.round((1000 * (Number(perServing.protein) || 0)) / UK_RI.protein_g) / 10,
+    fibre_pct: Math.round((1000 * (Number(perServing.fiber) || Number(perServing.fibre) || 0)) / UK_RI.fibre_g) / 10,
+    salt_pct: Math.round((1000 * (Number(perServing.salt) || 0)) / UK_RI.salt_g) / 10,
+    sugars_pct: Math.round((1000 * (Number(perServing.sugars) || 0)) / UK_RI.sugars_g) / 10,
+    saturates_pct: Math.round((1000 * (Number(perServing.saturates) || 0)) / UK_RI.saturates_g) / 10,
+  };
+}
+
+const TRAFFIC_COLORS = {
+  green: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  amber: 'bg-amber-100 text-amber-900 border-amber-200',
+  red: 'bg-red-100 text-red-800 border-red-200',
+};
+
+const UkRiChips = ({ perServing, apiRi }) => {
+  const ri = apiRi || computeUkPercentRi(perServing);
+  const chips = [
+    ['Energy', ri.energy_kcal_pct],
+    ['Fat', ri.fat_pct],
+    ['Carbs', ri.carbs_pct],
+    ['Protein', ri.protein_pct],
+  ].filter(([, v]) => v != null && !Number.isNaN(v));
+  if (!chips.length) return null;
+  return (
+    <div className="space-y-2" data-testid="uk-ri-chips">
+      <p className="text-xs font-medium text-muted-foreground">% of UK Reference Intake</p>
+      <div className="flex flex-wrap gap-2">
+        {chips.map(([label, pct]) => (
+          <span
+            key={label}
+            className="text-xs px-2.5 py-1 rounded-full border border-border/70 bg-cream-subtle"
+          >
+            {label} {pct}%
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const UkTrafficLights = ({ lights }) => {
+  if (!lights) return null;
+  const entries = ['fat', 'saturates', 'sugars', 'salt']
+    .map((k) => [k, lights[k]])
+    .filter(([, v]) => v && v.color);
+  if (!entries.length) return null;
+  return (
+    <div className="space-y-2" data-testid="uk-traffic-lights">
+      <p className="text-xs font-medium text-muted-foreground">UK traffic lights (per 100g)</p>
+      <div className="flex flex-wrap gap-2">
+        {entries.map(([key, info]) => (
+          <span
+            key={key}
+            className={`text-xs px-2.5 py-1 rounded-full border capitalize ${TRAFFIC_COLORS[info.color] || ''}`}
+          >
+            {key} {info.value != null ? `${info.value}g` : ''} · {info.color}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
+
 /** Build UI shape from recipe.nutrition (flat macros saved or API-estimated). */
 function fromSavedNutrition(saved, servings = 1) {
   if (!saved) return null;
@@ -254,6 +336,29 @@ export const NutritionCalculator = ({
                       />
                     )}
                   </div>
+
+                  {/* UK %RI + traffic lights */}
+                  <UkRiChips
+                    perServing={perServing}
+                    apiRi={nutrition.uk_percent_ri_per_serving || nutrition.uk_percent_ri_per_100g}
+                  />
+                  <UkTrafficLights lights={nutrition.uk_traffic_lights_per_100g} />
+                  {(nutrition.allergens?.length > 0 || nutrition.categories?.length > 0) && (
+                    <div className="text-xs text-muted-foreground space-y-1" data-testid="off-meta">
+                      {nutrition.allergens?.length > 0 && (
+                        <p>Allergens: {nutrition.allergens.join(', ')}</p>
+                      )}
+                      {nutrition.categories?.length > 0 && (
+                        <p>Categories: {nutrition.categories.slice(0, 6).join(', ')}</p>
+                      )}
+                      {nutrition.suggested_aisle && (
+                        <p>Suggested aisle: {nutrition.suggested_aisle}</p>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    UK FSA guidance for meal planning — not personalised medical advice.
+                  </p>
 
                   {/* Unknown Ingredients */}
                   {nutrition.unknown_ingredients?.length > 0 && (

@@ -6,7 +6,8 @@ from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile, File
 from models import (
     ImportURLRequest, ImportTextRequest, AutoMealPlanRequest, ImportMealPlanRequest,
     ImportMealPlanUrlRequest, ImportFeedbackRequest,
-    FridgeSearchRequest, ImageExtractionRequest, RecipeCreate, RecipeResponse, Ingredient
+    FridgeSearchRequest, ImageExtractionRequest, RecreateStoreMealRequest,
+    RecipeCreate, RecipeResponse, Ingredient
 )
 from dependencies import (
     get_current_user, call_llm, call_llm_with_image, call_llm_with_images, clean_llm_json,
@@ -1721,6 +1722,31 @@ async def list_recent_import_feedback(
     return {"feedback": rows}
 
 
+@router.get("/imports")
+async def list_my_imports(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """List this user's recipe import attempts (in-progress, failed, succeeded)."""
+    from database.repositories.import_attempt_repository import import_attempt_repository
+
+    allowed = {None, "importing", "failed", "succeeded"}
+    if status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="status must be one of: importing, failed, succeeded",
+        )
+    items = await import_attempt_repository.list_for_user(
+        user_id=str(user["id"]),
+        limit=limit,
+        offset=offset,
+        status=status,
+    )
+    return {"imports": items}
+
+
 @router.post("/import-url")
 async def import_recipe_from_url(
     request: Request,
@@ -1916,6 +1942,37 @@ async def import_recipe_from_url(
             logger.info(f"Extracted recipe from WPRM HTML: {wprm_data.get('title', 'Unknown')}")
             trace.finish("success", mode="wprm", **recipe_summary(wprm_data))
             return _ok(wprm_data, used_ai=False)
+
+        # Open-source scrapers (recipe-scrapers / extruct) before Jina or LLM —
+        # saves AI quota on sites with structured recipe markup.
+        try:
+            from services.oss_recipe_scrape import scrape_recipe_oss
+
+            oss_recipe = scrape_recipe_oss(url, html)
+            if oss_recipe and (
+                (oss_recipe.get("ingredients") and oss_recipe.get("instructions"))
+                or (oss_recipe.get("ingredients") and len(oss_recipe["ingredients"]) >= 2)
+            ):
+                _adopt_recipe_author(oss_recipe, via=oss_recipe.get("scrape_engine") or "oss")
+                logger.info(
+                    "OSS scrape succeeded (%s): %s",
+                    oss_recipe.get("scrape_engine"),
+                    oss_recipe.get("title"),
+                )
+                trace.finish(
+                    "success",
+                    mode=f"oss-{oss_recipe.get('scrape_engine') or 'scrape'}",
+                    **recipe_summary(oss_recipe),
+                )
+                return _ok(
+                    oss_recipe,
+                    used_ai=False,
+                    import_mode="oss_scrape",
+                    scrape_engine=oss_recipe.get("scrape_engine"),
+                )
+        except Exception as e:
+            logger.info("OSS scrape skipped/failed for %s: %s", url, e)
+            trace.step("oss_scrape_error", level="info", error=str(e)[:300])
 
         # Check if we got meaningful content from direct fetch
         for element in soup(['script', 'style', 'nav', 'footer', 'header']):
@@ -2142,6 +2199,35 @@ async def import_recipe_from_url(
             logger.info(f"Using meal-pack recipe fallback: {pack_recipe.get('title')}")
             trace.finish("success", mode="meal_pack", **recipe_summary(pack_recipe))
             return _ok(pack_recipe, used_ai=False, import_mode="meal_pack", needs_macros=bool(pack_recipe.get("needs_macros")))
+
+        # Last non-AI chance: OSS scrapers on the (possibly Jina-rendered) HTML
+        try:
+            from services.oss_recipe_scrape import scrape_recipe_oss
+
+            oss_recipe = scrape_recipe_oss(url, html)
+            if oss_recipe and (
+                (oss_recipe.get("ingredients") and oss_recipe.get("instructions"))
+                or (oss_recipe.get("ingredients") and len(oss_recipe["ingredients"]) >= 2)
+            ):
+                _adopt_recipe_author(oss_recipe, via=oss_recipe.get("scrape_engine") or "oss")
+                logger.info(
+                    "OSS scrape pre-LLM succeeded (%s): %s",
+                    oss_recipe.get("scrape_engine"),
+                    oss_recipe.get("title"),
+                )
+                trace.finish(
+                    "success",
+                    mode=f"oss-pre-llm-{oss_recipe.get('scrape_engine') or 'scrape'}",
+                    **recipe_summary(oss_recipe),
+                )
+                return _ok(
+                    oss_recipe,
+                    used_ai=False,
+                    import_mode="oss_scrape",
+                    scrape_engine=oss_recipe.get("scrape_engine"),
+                )
+        except Exception as e:
+            logger.info("OSS pre-LLM scrape failed for %s: %s", url, e)
 
         # Get user's custom prompt or default
         system_prompt = await get_user_prompt(user["id"], "recipe_extraction")
@@ -4703,6 +4789,98 @@ import uuid
 from datetime import datetime, timezone
 
 
+def _safe_int(value, default: int = 0) -> int:
+    """Coerce LLM ints / floats / '5 minutes' strings into ints."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    text = str(value).strip()
+    if not text:
+        return default
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        import re as _re
+        m = _re.search(r"-?\d+(?:\.\d+)?", text)
+        if not m:
+            return default
+        try:
+            return int(float(m.group(0)))
+        except (TypeError, ValueError):
+            return default
+
+
+def _photo_recipe_to_client(
+    recipe: dict,
+    *,
+    user: dict,
+    cookbook: Optional[dict],
+    cookbook_id: Optional[str],
+    cookbook_page: Optional[int],
+) -> dict:
+    """Shape a parsed photo-import recipe for Quick Add preview / save."""
+    import uuid
+    from datetime import datetime, timezone
+
+    ingredients = []
+    for ing in recipe.get("ingredients") or []:
+        if isinstance(ing, dict):
+            ingredients.append(
+                Ingredient(
+                    name=ing.get("name", "") or "",
+                    amount=str(ing.get("amount", "") or ""),
+                    unit=ing.get("unit", "") or "",
+                )
+            )
+        elif isinstance(ing, str) and ing.strip():
+            ingredients.append(Ingredient(name=ing.strip(), amount="", unit=""))
+
+    instructions = recipe.get("instructions") or []
+    if isinstance(instructions, str):
+        instructions = [instructions]
+
+    recipe_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    tags = list(recipe.get("tags") or [])
+    for t in ("needs-review", "imported-photo"):
+        if t not in tags:
+            tags.append(t)
+    nutrition = recipe.get("nutrition") if isinstance(recipe.get("nutrition"), dict) else {}
+    payload = {
+        **RecipeResponse(
+            id=recipe_id,
+            title=recipe.get("title") or "Untitled Recipe",
+            description=recipe.get("description") or "",
+            ingredients=ingredients,
+            instructions=instructions,
+            prep_time=_safe_int(recipe.get("prep_time"), 0),
+            cook_time=_safe_int(recipe.get("cook_time"), 0),
+            servings=_safe_int(recipe.get("servings"), 4) or 4,
+            category=recipe.get("category") or "Other",
+            tags=tags,
+            image_url=recipe.get("image_url") or "",
+            author_id=user["id"],
+            household_id=user.get("household_id"),
+            created_at=now,
+            updated_at=now,
+            is_favorite=False,
+        ).model_dump(),
+        "cookbook_id": cookbook_id or (cookbook["id"] if cookbook else None),
+        "cookbook_page": cookbook_page,
+        "source_type": "cookbook" if cookbook else "photo",
+        "needs_review": True,
+    }
+    if nutrition:
+        payload["nutrition"] = nutrition
+    return payload
+
+
 @router.post("/extract-from-images")
 async def extract_recipe_from_images(
     request: Request,
@@ -4710,180 +4888,181 @@ async def extract_recipe_from_images(
     user: dict = Depends(get_current_user)
 ):
     """
-    Extract recipe from cookbook page images using AI vision.
+    Extract one or many recipes from cookbook page photos using AI vision.
 
-    Supports single or multiple images (for multi-page recipes) — ALL images are
-    sent to the vision model in one call. Returns extracted recipe data ready to save.
+    Each image may be a separate dish (typical) or a continuation page of the same
+    recipe. Returns `recipes` (always) plus `recipe` when exactly one was found.
+    Images are processed in batches so large uploads (e.g. 11 pages) still register.
     """
+    import httpx
+    from services.recipe_pdf_import import (
+        IMPORTED_PHOTO_TAG,
+        MAX_PHOTO_EXTRACT_IMAGES,
+        MULTI_RECIPE_IMAGES_PROMPT,
+        PHOTO_EXTRACT_BATCH_SIZE,
+        dedupe_recipes,
+        normalize_recipe_title,
+        parse_llm_recipes_payload,
+    )
+
     if not data.images:
         raise HTTPException(status_code=400, detail="At least one image is required")
 
-    if len(data.images) > 5:
-        raise HTTPException(status_code=400, detail="Maximum 5 images allowed per extraction")
+    if len(data.images) > MAX_PHOTO_EXTRACT_IMAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {MAX_PHOTO_EXTRACT_IMAGES} images allowed per extraction",
+        )
 
     cookbook = await _resolve_cookbook_for_user(user, data.cookbook_id)
 
-    system_prompt = """You are a recipe extraction assistant. Extract recipe information from cookbook page images.
+    from dependencies import prepare_vision_images
 
-Your task is to carefully read the cookbook page(s) and extract all recipe information.
-
-Return a JSON object with this EXACT structure:
-{
-    "title": "Recipe Title",
-    "description": "Brief description of the dish",
-    "ingredients": [
-        {"name": "ingredient name", "amount": "1", "unit": "cup"},
-        {"name": "another ingredient", "amount": "2", "unit": "tbsp"}
-    ],
-    "instructions": [
-        "First step instruction",
-        "Second step instruction"
-    ],
-    "prep_time": 15,
-    "cook_time": 30,
-    "servings": 4,
-    "category": "Dinner",
-    "tags": ["tag1", "tag2"]
-}
-
-Guidelines:
-- Extract ALL ingredients with amounts and units
-- Keep instructions as separate steps (numbered if possible)
-- Estimate times if not explicitly stated
-- Choose category from: Breakfast, Lunch, Dinner, Dessert, Appetizer, Snack, Beverage, Other
-- Add relevant tags (cuisine type, dietary info, etc.)
-- If text is hard to read, do your best to interpret it
-- For multi-page images, combine all information into one recipe
-- Read EVERY provided page image; do not ignore later pages
-
-Return ONLY the JSON object, no additional text or markdown."""
-
-    n = len(data.images)
-    if n == 1:
-        user_prompt = "Please extract the recipe from this cookbook page image."
-    else:
-        user_prompt = (
-            f"Please extract the recipe from these {n} cookbook page images "
-            f"(pages 1–{n} in order). Combine all information into a single recipe."
-        )
+    # Downscale phone-camera JPEGs so multi-page uploads stay under body limits
+    # and vision OCR ignores less of the page due to token/image caps.
+    images = prepare_vision_images(data.images)
+    n = len(images)
+    if n == 0:
+        raise HTTPException(status_code=400, detail="At least one image is required")
 
     try:
-        # Image OCR extraction counts against free AI quota (one use for the batch)
+        # One free-tier AI use for the whole upload (all batches)
         await require_ai_quota(user)
         http_client = getattr(getattr(request, "app", None), "state", None)
         http_client = getattr(http_client, "http_client", None)
-        if http_client is None:
-            import httpx
-            async with httpx.AsyncClient() as client:
-                result = await call_llm_with_images(
-                    client, system_prompt, user_prompt, data.images, user["id"]
+
+        parsed_all: List[dict] = []
+        batch_size = max(1, min(PHOTO_EXTRACT_BATCH_SIZE, MAX_PHOTO_EXTRACT_IMAGES))
+
+        async def _vision(client, batch_images, batch_idx: int, batch_count: int):
+            if batch_count == 1 and len(batch_images) == 1:
+                user_prompt = (
+                    "Extract every distinct recipe from this cookbook page photo. "
+                    "Ignore reverse-side bleed-through, spiral binding, shadows, and "
+                    "background clutter. Prefer the dominant printed recipe."
                 )
-        else:
-            result = await call_llm_with_images(
-                http_client, system_prompt, user_prompt, data.images, user["id"]
+            elif batch_count == 1:
+                user_prompt = (
+                    f"These are {len(batch_images)} cookbook page photo(s) in order. "
+                    "Extract EVERY distinct recipe. Combine only when consecutive "
+                    "pages clearly continue the same recipe. Ignore bleed-through text."
+                )
+            else:
+                user_prompt = (
+                    f"Batch {batch_idx + 1} of {batch_count}: "
+                    f"{len(batch_images)} cookbook page photo(s). "
+                    "Extract EVERY distinct recipe in this batch only. "
+                    "Combine only when consecutive pages clearly continue the same recipe. "
+                    "Ignore reverse-side bleed-through."
+                )
+            return await call_llm_with_images(
+                client, MULTI_RECIPE_IMAGES_PROMPT, user_prompt, batch_images, user["id"]
             )
+
+        async def _run_batches(client):
+            nonlocal parsed_all
+            batches = [
+                images[i : i + batch_size]
+                for i in range(0, n, batch_size)
+            ]
+            for bi, batch in enumerate(batches):
+                result = await _vision(client, batch, bi, len(batches))
+                try:
+                    cleaned = clean_llm_json(result)
+                    batch_parsed = parse_llm_recipes_payload(json.loads(cleaned))
+                except (json.JSONDecodeError, TypeError, ValueError) as e:
+                    logger.error(f"Failed to parse photo batch {bi + 1} JSON: {e}")
+                    # Soft-fail one batch when uploading many pages; hard-fail if none parse
+                    continue
+                parsed_all.extend(batch_parsed)
+
+        if http_client is None:
+            async with httpx.AsyncClient() as client:
+                await _run_batches(client)
+        else:
+            await _run_batches(http_client)
+
         if not is_premium_user(user):
             await consume_ai_quota(user["id"])
 
-        # Clean and parse JSON response
-        cleaned = clean_llm_json(result)
-        recipe_data = json.loads(cleaned)
-
-        # Validate required fields
-        if not recipe_data.get("title"):
+        if not parsed_all:
             raise HTTPException(
                 status_code=422,
-                detail="Could not extract recipe title from image. Please try with a clearer image."
+                detail="Could not extract any recipes from these images. Please try clearer photos.",
             )
 
-        # Build recipe response
-        recipe_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        for r in parsed_all:
+            if cookbook:
+                r["cookbook_id"] = cookbook["id"]
+                r["source_type"] = "cookbook"
 
-        # Format ingredients
-        ingredients = []
-        for ing in recipe_data.get("ingredients", []):
-            if isinstance(ing, dict):
-                ingredients.append(Ingredient(
-                    name=ing.get("name", ""),
-                    amount=str(ing.get("amount", "")),
-                    unit=ing.get("unit", "")
-                ))
-            elif isinstance(ing, str):
-                ingredients.append(Ingredient(name=ing, amount="", unit=""))
-
-        tags = list(recipe_data.get("tags") or [])
-        for t in ("needs-review", "imported-photo"):
-            if t not in tags:
-                tags.append(t)
-
-        # Build full recipe document
-        recipe_doc = {
-            "id": recipe_id,
-            "title": recipe_data.get("title", "Untitled Recipe"),
-            "description": recipe_data.get("description", ""),
-            "ingredients": [i.model_dump() for i in ingredients],
-            "instructions": recipe_data.get("instructions", []),
-            "prep_time": recipe_data.get("prep_time", 0),
-            "cook_time": recipe_data.get("cook_time", 0),
-            "servings": recipe_data.get("servings", 4),
-            "category": recipe_data.get("category", "Other"),
-            "tags": tags,
-            "image_url": "",
-            "author_id": user["id"],
-            "household_id": user.get("household_id"),
-            "source_type": "cookbook" if cookbook else "photo",
-            "cookbook_id": data.cookbook_id,
-            "cookbook_page": data.cookbook_page,
-            "created_at": now,
-            "updated_at": now,
-            "needs_review": True,
-            "images_processed": n,
+        existing = await recipe_repository.find_by_household_or_author(
+            author_id=user["id"],
+            household_id=user.get("household_id"),
+            limit=500,
+        )
+        existing_titles = {
+            normalize_recipe_title(r.get("title") or "") for r in (existing or [])
         }
+        existing_titles.discard("")
+        recipes, skipped = dedupe_recipes(
+            parsed_all, existing_titles, import_tag=IMPORTED_PHOTO_TAG
+        )
 
-        # Return extracted data (not saved yet - client will confirm)
+        client_recipes = [
+            _photo_recipe_to_client(
+                r,
+                user=user,
+                cookbook=cookbook,
+                cookbook_id=data.cookbook_id,
+                cookbook_page=data.cookbook_page,
+            )
+            for r in recipes
+        ]
+
+        if not client_recipes:
+            return {
+                "status": "success",
+                "message": "All recipes from these photos already exist or were duplicates.",
+                "needs_review": True,
+                "images_processed": n,
+                "recipe_count": 0,
+                "recipes": [],
+                "recipe": None,
+                "skipped": skipped,
+                "cookbook": {
+                    "id": cookbook["id"],
+                    "title": cookbook["title"],
+                }
+                if cookbook
+                else None,
+                "page_number": data.cookbook_page,
+            }
+
+        msg = (
+            f"Extracted {len(client_recipes)} recipe(s) from {n} image(s)"
+            if len(client_recipes) != 1
+            else f"Recipe extracted from {n} image(s)"
+        )
         return {
             "status": "success",
-            "message": f"Recipe extracted from {n} image(s)",
+            "message": msg,
             "needs_review": True,
             "images_processed": n,
-            "recipe": {
-                **RecipeResponse(
-                    id=recipe_id,
-                    title=recipe_doc["title"],
-                    description=recipe_doc["description"],
-                    ingredients=ingredients,
-                    instructions=recipe_doc["instructions"],
-                    prep_time=recipe_doc["prep_time"],
-                    cook_time=recipe_doc["cook_time"],
-                    servings=recipe_doc["servings"],
-                    category=recipe_doc["category"],
-                    tags=recipe_doc["tags"],
-                    image_url=recipe_doc["image_url"],
-                    author_id=recipe_doc["author_id"],
-                    household_id=recipe_doc["household_id"],
-                    created_at=now,
-                    updated_at=now,
-                    is_favorite=False
-                ).model_dump(),
-                "cookbook_id": data.cookbook_id,
-                "cookbook_page": data.cookbook_page,
-                "source_type": recipe_doc["source_type"],
-                "needs_review": True,
-            },
+            "recipe_count": len(client_recipes),
+            "recipes": client_recipes,
+            # Always include first recipe for older clients that only read `.recipe`
+            "recipe": client_recipes[0],
+            "skipped": skipped,
             "cookbook": {
                 "id": cookbook["id"],
-                "title": cookbook["title"]
-            } if cookbook else None,
-            "page_number": data.cookbook_page
+                "title": cookbook["title"],
+            }
+            if cookbook
+            else None,
+            "page_number": data.cookbook_page,
         }
 
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse AI response as JSON: {e}")
-        raise HTTPException(
-            status_code=422,
-            detail="Could not extract recipe from image. The AI response was not valid. Please try with a clearer image."
-        )
     except HTTPException:
         raise
     except Exception as e:
@@ -4892,3 +5071,340 @@ Return ONLY the JSON object, no additional text or markdown."""
             status_code=500,
             detail=f"Failed to extract recipe from image: {sanitize_error_message(e)}"
         )
+
+
+STORE_MEAL_MODES = {
+    "recreate": (
+        "Recreate this store / ready meal at home as a practical home-cook recipe. "
+        "Match the flavour profile and style as closely as possible with supermarket ingredients."
+    ),
+    "healthier": (
+        "Recreate this meal but make it meaningfully healthier: more vegetables/fibre, "
+        "less ultra-processed ingredients, lower saturated fat/sugar/sodium where sensible, "
+        "while keeping it tasty and realistic for a home cook."
+    ),
+    "higher_protein": (
+        "Recreate this meal but increase protein substantially (lean meat, fish, eggs, dairy, "
+        "tofu, beans, Greek yoghurt, etc.) while keeping the dish recognisable and satisfying."
+    ),
+    "lower_calorie": (
+        "Recreate this meal with fewer calories per serving: lighter cooking methods, more volume "
+        "from veg, less oil/cream/sugar, while staying filling and delicious."
+    ),
+    "lower_carb": (
+        "Recreate this meal with fewer carbs: reduce pasta/rice/bread/potato/sugar where possible, "
+        "swap for veg or higher-protein alternatives, keep it satisfying."
+    ),
+    "custom": (
+        "Recreate this meal and apply the user's custom notes below carefully."
+    ),
+}
+
+
+@router.post("/recreate-store-meal")
+async def recreate_store_meal(
+    request: Request,
+    data: RecreateStoreMealRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Turn photo(s) of a ready/store meal (+ optional label text) into a home-cook recipe.
+
+    Modes: recreate | healthier | higher_protein | lower_calorie | lower_carb | custom
+    Returns an unsaved recipe preview for client review.
+    """
+    import uuid
+    from datetime import datetime, timezone
+    from models import NutritionInfo
+    from utils.preference_context import load_user_prefs_and_food_context
+
+    images = [img for img in (data.images or []) if isinstance(img, str) and img.strip()]
+    # Strip data-URL prefixes if present
+    cleaned_images = []
+    for img in images:
+        if "," in img and img.strip().lower().startswith("data:"):
+            cleaned_images.append(img.split(",", 1)[1])
+        else:
+            cleaned_images.append(img.strip())
+    images = cleaned_images
+
+    product_name = (data.product_name or "").strip()
+    description = (data.description or "").strip()
+    ingredients_text = (data.ingredients_text or "").strip()
+    nutrition_text = (data.nutrition_text or "").strip()
+    notes = (data.notes or "").strip()
+    mode = (data.mode or "recreate").strip().lower()
+    if mode not in STORE_MEAL_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail="mode must be one of: recreate, healthier, higher_protein, lower_calorie, lower_carb, custom",
+        )
+
+    if not images and not (product_name or ingredients_text or nutrition_text or description):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one photo of the meal/packaging, or paste product details.",
+        )
+    if len(images) > 6:
+        raise HTTPException(status_code=400, detail="Maximum 6 photos per request")
+
+    # Local/demo only: return a fixed recipe when STORE_MEAL_DEMO_MOCK=1 (no LLM call).
+    if os.getenv("STORE_MEAL_DEMO_MOCK", "").strip() == "1":
+        recipe_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        demo_title = {
+            "recreate": "Homemade Store Meal Recreation",
+            "healthier": "Healthier Home Version",
+            "higher_protein": "High-Protein Home Version",
+            "lower_calorie": "Lighter Home Version",
+            "lower_carb": "Lower-Carb Home Version",
+            "custom": "Custom Home Version",
+        }.get(mode, "Homemade Store Meal Recreation")
+        if product_name:
+            demo_title = f"{demo_title}: {product_name}"
+        demo_recipe = RecipeResponse(
+            id=recipe_id,
+            title=demo_title,
+            description=description or f"Demo recipe from store meal ({mode}).",
+            ingredients=[
+                Ingredient(name="lean protein", amount="300", unit="g"),
+                Ingredient(name="mixed vegetables", amount="400", unit="g"),
+                Ingredient(name="wholegrain base", amount="150", unit="g"),
+            ],
+            instructions=[
+                "Prep ingredients from the pack notes.",
+                "Cook with a lighter home-cook method for the selected goal.",
+                "Taste and adjust seasoning before serving.",
+            ],
+            prep_time=15,
+            cook_time=25,
+            servings=2,
+            category="Dinner",
+            tags=["needs-review", "store-meal", mode.replace("_", "-"), "demo-mock"],
+            image_url="",
+            author_id=user["id"],
+            household_id=user.get("household_id"),
+            created_at=now,
+            updated_at=now,
+            is_favorite=False,
+            nutrition=NutritionInfo(
+                calories=480, protein=42, carbs=40, fat=14, fiber=6, sugar=6, sodium=500
+            ),
+        ).model_dump()
+        demo_recipe.update({
+            "source_type": "store_meal",
+            "needs_review": True,
+            "transform_mode": mode,
+            "original_product": product_name or None,
+            "changes_made": [
+                f"Applied {mode.replace('_', ' ')} goal",
+                "Built from packaging details (demo mock)",
+            ],
+        })
+        return {
+            "status": "success",
+            "mode": mode,
+            "needs_review": True,
+            "images_processed": len(images),
+            "recipe": demo_recipe,
+        }
+
+    mode_instruction = STORE_MEAL_MODES[mode]
+    pref_ctx = ""
+    try:
+        pref_ctx = await load_user_prefs_and_food_context(
+            str(user.get("id") or ""),
+            query=f"store meal {mode} {product_name}".strip(),
+        ) or ""
+    except Exception as e:
+        logger.info("store meal prefs skipped: %s", e)
+
+    system_prompt = f"""You are a chef and nutrition-aware recipe designer.
+
+The user photographed a ready meal / supermarket meal (and maybe its nutrition label) and wants a home-cook recipe.
+
+Goal for this request:
+{mode_instruction}
+
+Return a JSON object with this EXACT structure:
+{{
+    "title": "Recipe Title",
+    "description": "Short description including how it relates to the original store meal",
+    "ingredients": [
+        {{"name": "ingredient name", "amount": "1", "unit": "cup"}}
+    ],
+    "instructions": [
+        "First step",
+        "Second step"
+    ],
+    "prep_time": 15,
+    "cook_time": 25,
+    "servings": 2,
+    "category": "Dinner",
+    "tags": ["tag1", "tag2"],
+    "nutrition": {{
+        "calories": 450,
+        "protein": 35,
+        "carbs": 40,
+        "fat": 12,
+        "fiber": 6,
+        "sugar": 8,
+        "sodium": 600
+    }},
+    "original_product": "Best-guess name of the store meal",
+    "changes_made": ["bullet of what you changed vs the original"]
+}}
+
+Guidelines:
+- Read packaging, ingredients list, nutrition panel, and plated food from the photos when present.
+- Prefer realistic supermarket ingredients and home methods.
+- Keep servings realistic for a ready meal (often 1–2) unless the user implies sharing.
+- Fill nutrition per serving as best estimates when the label is readable; otherwise estimate carefully.
+- Include tags for the mode (e.g. higher-protein, healthier) and store-meal / recreate.
+- If information is incomplete, make reasonable culinary assumptions and note them in description.
+- Return ONLY the JSON object, no markdown fences.
+
+User preference context (honour when transforming):
+{pref_ctx or "(none)"}
+"""
+
+    details_bits = []
+    if product_name:
+        details_bits.append(f"Product name: {product_name}")
+    if description:
+        details_bits.append(f"Item description: {description}")
+    if ingredients_text:
+        details_bits.append(f"Ingredients list from packaging:\n{ingredients_text}")
+    if nutrition_text:
+        details_bits.append(f"Nutrition information from packaging:\n{nutrition_text}")
+    if notes:
+        details_bits.append(f"User notes / custom goal:\n{notes}")
+    details_bits.append(f"Requested mode: {mode}")
+
+    if images:
+        user_prompt = (
+            f"Use these {len(images)} photo(s) of a ready/store meal (packaging and/or plated food).\n\n"
+            + "\n\n".join(details_bits)
+            + "\n\nProduce the home-cook recipe JSON now."
+        )
+    else:
+        user_prompt = (
+            "No photos were provided — rely on the product details below.\n\n"
+            + "\n\n".join(details_bits)
+            + "\n\nProduce the home-cook recipe JSON now."
+        )
+
+    try:
+        await require_ai_quota(user)
+        http_client = getattr(getattr(request, "app", None), "state", None)
+        http_client = getattr(http_client, "http_client", None)
+
+        if images:
+            if http_client is None:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    result = await call_llm_with_images(
+                        client, system_prompt, user_prompt, images, user["id"]
+                    )
+            else:
+                result = await call_llm_with_images(
+                    http_client, system_prompt, user_prompt, images, user["id"]
+                )
+        else:
+            if http_client is None:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    result = await call_llm(client, system_prompt, user_prompt, user["id"])
+            else:
+                result = await call_llm(http_client, system_prompt, user_prompt, user["id"])
+
+        if not is_premium_user(user):
+            await consume_ai_quota(user["id"])
+
+        cleaned = clean_llm_json(result)
+        recipe_data = json.loads(cleaned)
+        if not recipe_data.get("title"):
+            raise HTTPException(
+                status_code=422,
+                detail="Could not build a recipe from that meal. Try clearer photos or paste the ingredients/nutrition text.",
+            )
+
+        ingredients = []
+        for ing in recipe_data.get("ingredients", []):
+            if isinstance(ing, dict):
+                ingredients.append(Ingredient(
+                    name=ing.get("name", "") or "",
+                    amount=str(ing.get("amount", "") or ""),
+                    unit=ing.get("unit", "") or "",
+                ))
+            elif isinstance(ing, str):
+                ingredients.append(Ingredient(name=ing, amount="", unit=""))
+
+        tags = list(recipe_data.get("tags") or [])
+        for t in ("needs-review", "store-meal", mode.replace("_", "-")):
+            if t not in tags:
+                tags.append(t)
+
+        nutrition = None
+        raw_nut = recipe_data.get("nutrition")
+        if isinstance(raw_nut, dict):
+            try:
+                nutrition = NutritionInfo(**{
+                    k: raw_nut.get(k)
+                    for k in ("calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium")
+                })
+            except Exception:
+                nutrition = None
+
+        recipe_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        recipe_payload = RecipeResponse(
+            id=recipe_id,
+            title=recipe_data.get("title", "Untitled Recipe"),
+            description=recipe_data.get("description", "") or "",
+            ingredients=ingredients,
+            instructions=recipe_data.get("instructions", []) or [],
+            prep_time=recipe_data.get("prep_time", 0) or 0,
+            cook_time=recipe_data.get("cook_time", 0) or 0,
+            servings=recipe_data.get("servings", 2) or 2,
+            category=recipe_data.get("category", "Dinner") or "Dinner",
+            tags=tags,
+            image_url="",
+            author_id=user["id"],
+            household_id=user.get("household_id"),
+            created_at=now,
+            updated_at=now,
+            is_favorite=False,
+            nutrition=nutrition,
+        ).model_dump()
+        recipe_payload.update({
+            "source_type": "store_meal",
+            "needs_review": True,
+            "transform_mode": mode,
+            "original_product": recipe_data.get("original_product") or product_name or None,
+            "changes_made": recipe_data.get("changes_made") or [],
+        })
+
+        return {
+            "status": "success",
+            "mode": mode,
+            "needs_review": True,
+            "images_processed": len(images),
+            "recipe": recipe_payload,
+        }
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Store meal JSON parse failed: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail="Could not parse a recipe from that meal. Try again with a clearer label photo.",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Store meal recreate error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to recreate store meal: {sanitize_error_message(e)}",
+        )
+

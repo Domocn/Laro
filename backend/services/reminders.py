@@ -340,13 +340,32 @@ async def process_weekly_plan_reminders(now: Optional[datetime] = None) -> Dict[
     return stats
 
 
-async def run_all_reminder_sweeps(now: Optional[datetime] = None) -> Dict[str, Dict[str, int]]:
-    """Run all reminder processors once."""
+async def run_all_reminder_sweeps(now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Run all reminder processors once (plus owner usage digest)."""
     meal = await process_meal_reminders(now)
     shopping = await process_shopping_reminders(now)
     weekly = await process_weekly_plan_reminders(now)
-    logger.info("Reminder sweep: meal=%s shopping=%s weekly=%s", meal, shopping, weekly)
-    return {"meal": meal, "shopping": shopping, "weekly": weekly}
+    usage_digest: Dict[str, Any] = {}
+    try:
+        from services.usage_digest import process_usage_digest
+
+        usage_digest = await process_usage_digest(now)
+    except Exception:
+        logger.exception("Usage digest sweep failed")
+        usage_digest = {"errors": 1}
+    logger.info(
+        "Reminder sweep: meal=%s shopping=%s weekly=%s usage_digest=%s",
+        meal,
+        shopping,
+        weekly,
+        usage_digest,
+    )
+    return {
+        "meal": meal,
+        "shopping": shopping,
+        "weekly": weekly,
+        "usage_digest": usage_digest,
+    }
 
 
 async def reminder_scheduler_loop(interval_seconds: int = 60):

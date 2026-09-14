@@ -633,6 +633,28 @@ async def get_system_health(admin: dict = Depends(get_admin_user)):
         }
     }
 
+
+@router.get("/ai-usage")
+async def get_ai_usage_report(admin: dict = Depends(get_admin_user)):
+    """Ollama Cloud + Laro free-tier AI usage snapshot for owners."""
+    from services.usage_digest import build_usage_report
+
+    return await build_usage_report()
+
+
+@router.post("/ai-usage/send-digest")
+async def send_ai_usage_digest_now(admin: dict = Depends(get_admin_user)):
+    """Email the usage digest to LARO_OWNER_EMAILS immediately."""
+    from services.usage_digest import send_usage_digest_email
+
+    result = await send_usage_digest_email()
+    return {
+        "status": "ok" if result.get("sent", 0) > 0 else "skipped",
+        **{k: v for k, v in result.items() if k != "report"},
+        "report": result.get("report"),
+    }
+
+
 # =============================================================================
 # SUBSCRIPTION MANAGEMENT
 # =============================================================================

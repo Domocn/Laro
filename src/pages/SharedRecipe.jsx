@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChefHat,
@@ -16,12 +16,15 @@ import {
   Copy,
   Check,
   MessageCircle,
-  ExternalLink
+  ExternalLink,
+  BookmarkPlus,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import api from '../lib/api';
+import api, { sharingApi } from '../lib/api';
 import { toast } from 'sonner';
 import { IngredientSubstituteButton } from '../components/IngredientSubstituteButton';
+import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 
 // WhatsApp icon component
 const WhatsAppIcon = ({ className }) => (
@@ -32,11 +35,16 @@ const WhatsAppIcon = ({ className }) => (
 
 export const SharedRecipe = () => {
   const { shareCode } = useParams();
+  const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
   const [showFullRecipe, setShowFullRecipe] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedRecipeId, setSavedRecipeId] = useState(null);
 
   useEffect(() => {
     loadSharedRecipe();
@@ -135,6 +143,52 @@ ${allInstructions || 'No instructions listed'}`;
 
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
+  };
+
+  const handleSaveToAccount = async () => {
+    if (!isAuthenticated) {
+      const next = `/recipe/${shareCode}`;
+      try {
+        sessionStorage.setItem('laro_post_login_redirect', next);
+      } catch (_) {
+        /* ignore */
+      }
+      navigate(`/login?next=${encodeURIComponent(next)}`);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await sharingApi.saveSharedRecipe(shareCode);
+      const recipeId = res.data?.recipe_id;
+      setSavedRecipeId(recipeId);
+      if (res.data?.already_owned) {
+        toast.success(t('thisIsYourRecipe'));
+      } else if (res.data?.already_saved) {
+        toast.success(t('recipeAlreadySaved'));
+      } else {
+        toast.success(t('recipeSavedToAccount'));
+      }
+      if (recipeId) {
+        navigate(`/recipes/${recipeId}`);
+      }
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        const next = `/recipe/${shareCode}`;
+        try {
+          sessionStorage.setItem('laro_post_login_redirect', next);
+        } catch (_) {
+          /* ignore */
+        }
+        navigate(`/login?next=${encodeURIComponent(next)}`);
+      } else if (err.response?.status === 402) {
+        toast.error(typeof detail === 'string' ? detail : (t('recipeLimitReached') || 'Recipe limit reached. Upgrade to save more.'));
+      } else {
+        toast.error(typeof detail === 'string' ? detail : (t('failedToSaveRecipe') || 'Failed to save recipe. Please try again.'));
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -491,17 +545,50 @@ ${allInstructions || 'No instructions listed'}`;
         >
           <ChefHat className="w-10 h-10 mx-auto mb-3 opacity-90" />
           <h3 className="font-heading text-xl font-bold mb-2">
-            Love this recipe?
+            {t('loveThisRecipe')}
           </h3>
           <p className="text-white/80 text-sm mb-4">
-            Join Laro to save, organize, and share your favorite recipes. It's free!
+            {isAuthenticated
+              ? (t('saveSharedRecipeHint'))
+              : t('joinToSaveRecipeHint')}
           </p>
-          <Link to="/register">
-            <Button className="rounded-full bg-white text-laro hover:bg-cream font-semibold px-6">
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Join Laro for Free
+          {isAuthenticated ? (
+            <Button
+              onClick={handleSaveToAccount}
+              disabled={saving}
+              className="rounded-full bg-white text-laro hover:bg-cream font-semibold px-6"
+              data-testid="save-shared-recipe"
+            >
+              {saving ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <BookmarkPlus className="w-4 h-4 mr-2" />
+              )}
+              {savedRecipeId
+                ? (t('openSavedRecipe') || 'Open saved recipe')
+                : (t('saveToMyRecipes') || 'Save to My Recipes')}
             </Button>
-          </Link>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button
+                onClick={handleSaveToAccount}
+                className="rounded-full bg-white text-laro hover:bg-cream font-semibold px-6"
+                data-testid="save-shared-recipe-login"
+              >
+                <BookmarkPlus className="w-4 h-4 mr-2" />
+                {t('saveToMyRecipes') || 'Save to My Recipes'}
+              </Button>
+              <Link to={`/register?next=${encodeURIComponent(`/recipe/${shareCode}`)}`}>
+                <Button
+                  variant="outline"
+                  className="rounded-full border-white/40 bg-transparent text-white hover:bg-white/10 font-semibold px-6"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  {t('joinLaroFree') || 'Join Laro for Free'}
+                </Button>
+              </Link>
+            </div>
+          )}
         </motion.div>
 
         {/* Footer */}

@@ -89,6 +89,7 @@ export const RecipeDetail = () => {
   const { user } = useAuth();
   const { setRecipeContext, clearRecipeContext } = useChat();
   const liveRefresh = useLiveRefreshContext();
+  const [presenceViewers, setPresenceViewers] = useState([]);
   const [recipe, setRecipe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
@@ -350,6 +351,35 @@ export const RecipeDetail = () => {
     }
   };
 
+
+  useEffect(() => {
+    if (!id || !liveRefresh?.send) {
+      setPresenceViewers([]);
+      return undefined;
+    }
+    const payload = {
+      resource_type: 'recipe',
+      resource_id: id,
+      display_name: user?.name || user?.email || 'Someone',
+    };
+    liveRefresh.send({ type: 'presence:join', ...payload });
+    const beat = setInterval(() => liveRefresh.send({ type: 'presence:heartbeat', ...payload }), 20000);
+    return () => {
+      clearInterval(beat);
+      liveRefresh.send({ type: 'presence:leave', ...payload });
+      setPresenceViewers([]);
+    };
+  }, [id, liveRefresh, user?.name, user?.email]);
+
+  useLiveRefreshEvent(
+    EventType.PRESENCE_UPDATED,
+    (data) => {
+      if (!data || data.resource_type !== 'recipe' || data.resource_id !== id) return;
+      setPresenceViewers((data.viewers || []).filter((v) => v.user_id !== user?.id));
+    },
+    liveRefresh,
+  );
+
   useLiveRefreshEvent(
     EventType.RECIPE_DELETED,
     useCallback((data) => {
@@ -589,6 +619,13 @@ export const RecipeDetail = () => {
                 <h1 className="font-heading text-3xl font-bold text-foreground" data-testid="recipe-title">
                   {recipe.title}
                 </h1>
+            {presenceViewers.length > 0 && (
+              <p className="text-xs text-emerald-700 mt-1" data-testid="recipe-presence">
+                {presenceViewers.length === 1
+                  ? t('presenceOne', { name: presenceViewers[0].name })
+                  : t('presenceMany', { name: presenceViewers[0].name, count: presenceViewers.length - 1 })}
+              </p>
+            )}
                 {recipe.source_author && (
                   <a
                     href={

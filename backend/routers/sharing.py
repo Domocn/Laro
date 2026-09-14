@@ -352,6 +352,131 @@ async def get_shared_recipe(
     }
 
 
+@router.post("/recipe/{share_code}/save")
+async def save_shared_recipe(
+    share_code: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Copy a shared recipe into the current user's recipe library.
+    """
+    from utils.subscription import assert_can_create_recipes
+    from utils.recipe_fields import prepare_recipe_for_response, nutrition_to_columns
+
+    link = await recipe_share_repository.find_by_share_code(share_code)
+
+    if not link or not link.get("is_active", True):
+        raise HTTPException(status_code=404, detail="Share link not found or expired")
+
+    expires_at = parse_share_expiry(link.get("expires_at"))
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="This share link has expired")
+
+    source = await recipe_repository.find_by_id(link["recipe_id"])
+    if not source:
+        raise HTTPException(status_code=404, detail="Recipe no longer exists")
+
+    source_author_id = str(source.get("user_id") or source.get("author_id") or "")
+    if source_author_id and source_author_id == str(user.get("id")):
+        shaped = prepare_recipe_for_response(source)
+        return {
+            "already_owned": True,
+            "already_saved": False,
+            "recipe_id": source["id"],
+            "recipe": shaped,
+            "message": "This is your recipe",
+        }
+
+    share_source_url = public_share_path(share_code)
+    existing = await recipe_repository.find_one(
+        {"author_id": user["id"], "source_url": share_source_url}
+    )
+    if existing:
+        shaped = prepare_recipe_for_response(existing)
+        return {
+            "already_owned": False,
+            "already_saved": True,
+            "recipe_id": existing["id"],
+            "recipe": shaped,
+            "message": "Recipe already saved to your account",
+        }
+
+    await assert_can_create_recipes(user, recipe_repository, 1)
+
+    source_author_name = None
+    if source_author_id:
+        author = await user_repository.find_by_id(source_author_id)
+        if author:
+            source_author_name = (author.get("name") or "").strip() or None
+
+    nutrition = None
+    if isinstance(source.get("nutrition"), dict):
+        nutrition = source.get("nutrition")
+    else:
+        nutrition = {
+            "calories": source.get("nutrition_calories"),
+            "protein": source.get("nutrition_protein"),
+            "carbs": source.get("nutrition_carbs"),
+            "fat": source.get("nutrition_fat"),
+            "fiber": source.get("nutrition_fiber"),
+            "sugar": source.get("nutrition_sugar"),
+            "sodium": source.get("nutrition_sodium"),
+        }
+        if all(v is None for v in nutrition.values()):
+            nutrition = None
+
+    recipe_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    recipe_doc = {
+        "id": recipe_id,
+        "title": source.get("title") or "Untitled recipe",
+        "description": source.get("description") or "",
+        "ingredients": source.get("ingredients") or [],
+        "instructions": source.get("instructions") or [],
+        "prep_time": source.get("prep_time") or 0,
+        "cook_time": source.get("cook_time") or 0,
+        "servings": source.get("servings") or 4,
+        "category": source.get("category") or "Other",
+        "tags": source.get("tags") or [],
+        "image_url": source.get("image_url") or "",
+        "author_id": user["id"],
+        "household_id": user.get("household_id"),
+        "created_at": now,
+        "updated_at": now,
+        "dietary_tags": source.get("dietary_tags") or [],
+        "difficulty": source.get("difficulty"),
+        "source_type": "shared",
+        "source_url": share_source_url,
+        **nutrition_to_columns(nutrition),
+    }
+    if source_author_name:
+        recipe_doc["source_author"] = source_author_name
+
+    await recipe_repository.create(recipe_doc)
+    response_doc = prepare_recipe_for_response(recipe_doc)
+
+    await log_action(
+        user, "shared_recipe_saved", request,
+        target_type="recipe",
+        target_id=recipe_id,
+        details={
+            "share_code": share_code,
+            "source_recipe_id": source.get("id"),
+            "title": recipe_doc["title"],
+        },
+    )
+
+    return {
+        "already_owned": False,
+        "already_saved": False,
+        "recipe_id": recipe_id,
+        "recipe": response_doc,
+        "message": "Recipe saved to your account",
+    }
+
+
+
 @router.delete("/{link_id}")
 async def revoke_share_link(
     link_id: str,

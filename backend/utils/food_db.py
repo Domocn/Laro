@@ -617,8 +617,12 @@ def resolve_nutrition_goals(
     }
 
 
-def find_food(name: str) -> Optional[Tuple[str, FoodEntry]]:
-    """Find best matching food entry. Returns (canonical_name, entry) or None."""
+def find_food(name: str, *, remote: bool = False) -> Optional[Tuple[str, FoodEntry]]:
+    """Find best matching food entry. Returns (canonical_name, entry) or None.
+
+    When remote=True and the curated DB misses, try Open Food Facts / USDA FDC
+    (no AI) so nutrition calculations cover branded & uncommon ingredients.
+    """
     cleaned = _normalize_name(name)
     if not cleaned:
         return None
@@ -634,7 +638,34 @@ def find_food(name: str) -> Optional[Tuple[str, FoodEntry]]:
             if len(db_name) > best_len:
                 best = (db_name, entry)
                 best_len = len(db_name)
-    return best
+    if best:
+        return best
+
+    if not remote:
+        return None
+    try:
+        from services.nutrition_lookup import lookup_remote_nutrition
+
+        remote_entry = lookup_remote_nutrition(cleaned)
+        if remote_entry:
+            label = _normalize_name(str(remote_entry.get("label") or cleaned)) or cleaned
+            entry: FoodEntry = {
+                "calories": remote_entry.get("calories", 0),
+                "protein": remote_entry.get("protein", 0),
+                "carbs": remote_entry.get("carbs", 0),
+                "fat": remote_entry.get("fat", 0),
+                "fiber": remote_entry.get("fiber", 0),
+                "salt": remote_entry.get("salt", 0),
+                "sugars": remote_entry.get("sugars", 0),
+                "saturates": remote_entry.get("saturates", 0),
+                "tags": list(remote_entry.get("tags") or ["remote"]),
+                "category": remote_entry.get("category") or "remote",
+                "source": remote_entry.get("source"),
+            }
+            return label, entry
+    except Exception:
+        return None
+    return None
 
 
 def macros_only(entry: FoodEntry) -> Dict[str, float]:
@@ -988,7 +1019,7 @@ def estimate_nutrition_from_foods(
             ingredient_str = str(ingredient)
 
         parsed = parse_ingredient_amount(ingredient_str)
-        match = find_food(parsed["name"])
+        match = find_food(parsed["name"], remote=True)
         if not match:
             unknown.append(ingredient_str)
             continue

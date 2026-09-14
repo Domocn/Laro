@@ -47,7 +47,19 @@ class CustomIngredient(BaseModel):
 # =============================================================================
 
 def parse_ingredient(ingredient_str: str) -> Dict:
-    """Parse an ingredient string into quantity, unit, and name"""
+    """Parse an ingredient string into quantity, unit, and name (OSS parser first)."""
+    try:
+        from utils.ingredient_parse import parse_ingredient_line
+
+        parsed = parse_ingredient_line(ingredient_str)
+        return {
+            "quantity": parsed.get("quantity"),
+            "unit": parsed.get("unit") or None,
+            "name": (parsed.get("name") or ingredient_str).lower().strip(),
+        }
+    except Exception:
+        pass
+
     ingredient_str = ingredient_str.lower().strip()
 
     quantity = None
@@ -89,8 +101,8 @@ def parse_ingredient(ingredient_str: str) -> Dict:
     }
 
 def find_matching_ingredient(name: str) -> Optional[Dict]:
-    """Find the best matching ingredient in the food database"""
-    match = find_food(name)
+    """Find the best matching ingredient in the food database (remote OFF/USDA fallback)."""
+    match = find_food(name, remote=True)
     if not match:
         return None
     _canonical, entry = match
@@ -162,13 +174,16 @@ async def calculate_recipe_nutrition(
         totals[key] = round(totals[key], 1)
 
     per_serving = {k: round(v / data.servings, 1) for k, v in totals.items()}
+    from services.nutrition_lookup import UK_REFERENCE_INTAKES, uk_percent_ri
 
     return {
         "ingredients": results,
         "unknown_ingredients": unknown_ingredients,
         "totals": totals,
         "per_serving": per_serving,
-        "servings": data.servings
+        "servings": data.servings,
+        "uk_percent_ri_per_serving": uk_percent_ri(per_serving),
+        "uk_reference_intakes": UK_REFERENCE_INTAKES,
     }
 
 @router.get("/recipe/{recipe_id}")
@@ -202,6 +217,8 @@ async def get_recipe_nutrition(
                 "fiber": float(saved.get("fiber") or 0),
             }
             totals = {k: round(v * servings, 1) for k, v in per_serving.items()}
+            from services.nutrition_lookup import UK_REFERENCE_INTAKES, uk_percent_ri
+
             return {
                 "recipe_id": recipe_id,
                 "recipe_title": recipe.get("title"),
@@ -211,6 +228,8 @@ async def get_recipe_nutrition(
                 "per_serving": per_serving,
                 "servings": servings,
                 "source": "saved",
+                "uk_percent_ri_per_serving": uk_percent_ri(per_serving),
+                "uk_reference_intakes": UK_REFERENCE_INTAKES,
             }
 
     ingredients = recipe.get("ingredients", [])
@@ -243,6 +262,7 @@ async def get_recipe_nutrition(
         totals[key] = round(totals[key], 1)
 
     per_serving = {k: round(v / servings, 1) for k, v in totals.items()}
+    from services.nutrition_lookup import UK_REFERENCE_INTAKES, uk_percent_ri
 
     return {
         "recipe_id": recipe_id,
@@ -253,6 +273,8 @@ async def get_recipe_nutrition(
         "per_serving": per_serving,
         "servings": servings,
         "source": "estimated",
+        "uk_percent_ri_per_serving": uk_percent_ri(per_serving),
+        "uk_reference_intakes": UK_REFERENCE_INTAKES,
     }
 
 @router.post("/recipe/{recipe_id}/save")
@@ -341,24 +363,100 @@ async def get_ingredient_nutrition(
     name: str,
     user: dict = Depends(get_current_user)
 ):
-    """Get nutrition info for a specific ingredient"""
-    match = find_food(name)
+    """Get nutrition info for a specific ingredient (curated DB, then free OFF/USDA)."""
+    match = find_food(name, remote=True)
     if match:
         db_name, entry = match
+        per_100g = {
+            "calories": entry["calories"],
+            "energy_kcal": entry["calories"],
+            "energy_kj": round(float(entry["calories"]) * 4.184, 1),
+            "protein": entry["protein"],
+            "carbs": entry["carbs"],
+            "fat": entry["fat"],
+            "fiber": entry.get("fiber", 0) or 0,
+            "fibre": entry.get("fiber", 0) or 0,
+            "salt": entry.get("salt", 0) or 0,
+            "sugars": entry.get("sugars", 0) or 0,
+            "saturates": entry.get("saturates", 0) or 0,
+        }
+        from services.nutrition_lookup import (
+            UK_REFERENCE_INTAKES,
+            uk_percent_ri,
+            uk_traffic_lights_per_100g,
+        )
+
         return {
             "name": db_name,
             "matched_from": name.lower().strip() if db_name != name.lower().strip() else None,
-            "per_100g": {
-                "calories": entry["calories"],
-                "protein": entry["protein"],
-                "carbs": entry["carbs"],
-                "fat": entry["fat"],
-                "fiber": entry.get("fiber", 0) or 0,
-            },
+            "per_100g": per_100g,
+            "uk_percent_ri_per_100g": uk_percent_ri(per_100g),
+            "uk_traffic_lights_per_100g": uk_traffic_lights_per_100g(per_100g),
+            "uk_reference_intakes": UK_REFERENCE_INTAKES,
+            "allergens": list(entry.get("allergens") or []),
+            "traces": list(entry.get("traces") or []),
+            "categories": list(entry.get("categories") or []),
+            "suggested_aisle": entry.get("suggested_aisle"),
             "tags": list(entry.get("tags") or []),
+            "source": entry.get("source") or "food_db",
+            "disclaimer": (
+                "Approximate open-data / curated values for meal planning. "
+                "%RI and traffic lights use UK FSA guidance — not personalised medical advice."
+            ),
         }
 
     raise HTTPException(status_code=404, detail="Ingredient not found")
+
+
+@router.get("/barcode/{code}")
+async def get_barcode_nutrition(
+    code: str,
+    user: dict = Depends(get_current_user),
+):
+    """Lookup product nutrition by barcode via free Open Food Facts (UK first)."""
+    from services.nutrition_lookup import (
+        UK_REFERENCE_INTAKES,
+        lookup_barcode_nutrition,
+        uk_percent_ri,
+        uk_traffic_lights_per_100g,
+    )
+
+    entry = lookup_barcode_nutrition(code, prefer_uk=True)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Product not found in Open Food Facts")
+    per_100g = {
+        "calories": entry["calories"],
+        "energy_kcal": entry.get("energy_kcal", entry["calories"]),
+        "energy_kj": entry.get("energy_kj", round(float(entry["calories"]) * 4.184, 1)),
+        "protein": entry["protein"],
+        "carbs": entry["carbs"],
+        "fat": entry["fat"],
+        "fiber": entry.get("fiber", 0) or 0,
+        "fibre": entry.get("fibre") or entry.get("fiber", 0) or 0,
+        "salt": entry.get("salt", 0) or 0,
+        "sugars": entry.get("sugars", 0) or 0,
+        "saturates": entry.get("saturates", 0) or 0,
+    }
+    return {
+        "barcode": re.sub(r"\D", "", code),
+        "name": entry.get("label") or code,
+        "brands": entry.get("brands"),
+        "per_100g": per_100g,
+        "uk_percent_ri_per_100g": entry.get("uk_percent_ri_per_100g") or uk_percent_ri(per_100g),
+        "uk_traffic_lights_per_100g": entry.get("uk_traffic_lights_per_100g")
+        or uk_traffic_lights_per_100g(per_100g),
+        "uk_reference_intakes": UK_REFERENCE_INTAKES,
+        "allergens": list(entry.get("allergens") or []),
+        "traces": list(entry.get("traces") or []),
+        "categories": list(entry.get("categories") or []),
+        "suggested_aisle": entry.get("suggested_aisle"),
+        "source": entry.get("source") or "openfoodfacts",
+        "disclaimer": (
+            "Open Food Facts open data. %RI and traffic lights use UK FSA guidance — "
+            "not personalised medical advice."
+        ),
+    }
+
 
 @router.post("/custom-ingredient")
 async def add_custom_ingredient(

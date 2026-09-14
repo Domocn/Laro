@@ -33,6 +33,9 @@ export const EventType = {
   COOK_SESSION_STARTED: 'cook_session:started',
   COOK_SESSION_COMPLETED: 'cook_session:completed',
 
+  // Presence
+  PRESENCE_UPDATED: 'presence:updated',
+
   // General events
   DATA_SYNC: 'data:sync',
   PING: 'ping',

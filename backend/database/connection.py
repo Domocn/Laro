@@ -201,6 +201,23 @@ CREATE TABLE IF NOT EXISTS aisle_overrides (
     UNIQUE(household_id, ingredient_key)
 );
 
+-- Tandoor-style ingredient rename / merge aliases (household or solo user)
+CREATE TABLE IF NOT EXISTS ingredient_aliases (
+    id VARCHAR(255) PRIMARY KEY,
+    household_id VARCHAR(255),
+    user_id VARCHAR(255) NOT NULL,
+    from_key VARCHAR(255) NOT NULL,
+    to_key VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ingredient_aliases_hh_from
+    ON ingredient_aliases (household_id, from_key)
+    WHERE household_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ingredient_aliases_user_from
+    ON ingredient_aliases (user_id, from_key)
+    WHERE household_id IS NULL;
+
 CREATE TABLE IF NOT EXISTS sessions (
     id VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
@@ -350,6 +367,20 @@ CREATE TABLE IF NOT EXISTS import_feedback (
     corrected_recipe JSONB,
     platform VARCHAR(40),
     created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS import_attempts (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    kind VARCHAR(40) NOT NULL DEFAULT 'import-url',
+    source_url TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'importing',
+    title TEXT,
+    error TEXT,
+    recipe_id VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -858,6 +889,8 @@ CREATE INDEX IF NOT EXISTS idx_recipe_feedback_recipe ON recipe_feedback(recipe_
 CREATE INDEX IF NOT EXISTS idx_import_feedback_user ON import_feedback(user_id);
 CREATE INDEX IF NOT EXISTS idx_import_feedback_import ON import_feedback(import_id);
 CREATE INDEX IF NOT EXISTS idx_import_feedback_created ON import_feedback(created_at);
+CREATE INDEX IF NOT EXISTS idx_import_attempts_user_created ON import_attempts(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_attempts_user_status ON import_attempts(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_cook_sessions_user ON cook_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets(user_id);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
@@ -1509,6 +1542,33 @@ BEGIN
         SELECT 1 FROM pg_indexes WHERE indexname='idx_import_feedback_created'
     ) THEN
         CREATE INDEX idx_import_feedback_created ON import_feedback(created_at);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables WHERE table_name='import_attempts'
+    ) THEN
+        CREATE TABLE import_attempts (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL,
+            kind VARCHAR(40) NOT NULL DEFAULT 'import-url',
+            source_url TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'importing',
+            title TEXT,
+            error TEXT,
+            recipe_id VARCHAR(255),
+            created_at TIMESTAMP NOT NULL,
+            updated_at TIMESTAMP NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE indexname='idx_import_attempts_user_created'
+    ) THEN
+        CREATE INDEX idx_import_attempts_user_created ON import_attempts(user_id, created_at DESC);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_indexes WHERE indexname='idx_import_attempts_user_status'
+    ) THEN
+        CREATE INDEX idx_import_attempts_user_status ON import_attempts(user_id, status);
     END IF;
 END $$;
 """

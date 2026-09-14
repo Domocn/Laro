@@ -1,7 +1,7 @@
 // Bump CACHE_NAME whenever the app shell changes so clients drop stale HTML/JS.
-const CACHE_NAME = 'laro-v8';
+const CACHE_NAME = 'laro-v9';
 // Bump API_CACHE_NAME when API caching strategy changes (forces clients to drop stale lists).
-const API_CACHE_NAME = 'laro-api-v5';
+const API_CACHE_NAME = 'laro-api-v6';
 const STATIC_ASSETS = [
   '/manifest.json',
 ];
@@ -55,7 +55,7 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'CLEAR_API_CACHE') {
     event.waitUntil(
       caches.delete(API_CACHE_NAME).then(() => {
-        console.log('Mise SW: API cache cleared');
+        console.log('Laro SW: API cache cleared');
         event.ports[0]?.postMessage({ success: true });
       })
     );
@@ -68,7 +68,7 @@ self.addEventListener('message', (event) => {
         const keys = await cache.keys();
         const toDelete = keys.filter(req => req.url.includes(pattern));
         await Promise.all(toDelete.map(req => cache.delete(req)));
-        console.log('Mise SW: Invalidated', toDelete.length, 'cached entries for', pattern);
+        console.log('Laro SW: Invalidated', toDelete.length, 'cached entries for', pattern);
         event.ports[0]?.postMessage({ success: true, count: toDelete.length });
       })
     );

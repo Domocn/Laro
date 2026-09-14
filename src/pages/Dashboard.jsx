@@ -6,7 +6,7 @@ import { RecipeCard } from '../components/RecipeCard';
 import { TonightSuggestions } from '../components/TonightSuggestions';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { recipeApi, mealPlanApi } from '../lib/api';
+import { recipeApi, mealPlanApi, aiApi } from '../lib/api';
 import {
   useLiveRefreshContext,
   useLiveRefreshEvent,
@@ -21,7 +21,8 @@ import {
   Refrigerator,
   ArrowRight,
   ChefHat,
-  Download
+  Download,
+  Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format, endOfWeek } from 'date-fns';
@@ -33,6 +34,7 @@ export const Dashboard = () => {
   const [recipes, setRecipes] = useState([]);
   const [mealPlans, setMealPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [liveImports, setLiveImports] = useState([]);
 
   const loadData = useCallback(async () => {
     try {
@@ -58,6 +60,21 @@ export const Dashboard = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const loadLiveImports = useCallback(async () => {
+    try {
+      const res = await aiApi.listImports({ limit: 10, status: 'importing' });
+      setLiveImports(res.data?.imports || []);
+    } catch (_) {
+      // non-blocking home pill
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLiveImports();
+    const id = setInterval(loadLiveImports, 4000);
+    return () => clearInterval(id);
+  }, [loadLiveImports]);
 
   useLiveRefreshEvent(
     EventType.RECIPE_DELETED,
@@ -112,6 +129,28 @@ export const Dashboard = () => {
             </Link>
           </div>
         </motion.div>
+
+        {liveImports.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            data-testid="importing-pill"
+          >
+            <Link
+              to="/settings/imports"
+              className="inline-flex items-center gap-2 rounded-full bg-white border border-border/60 shadow-card px-4 py-2 text-sm font-medium text-laro-brand hover:shadow-hover transition-all"
+            >
+              <Loader2 className="w-4 h-4 animate-spin text-laro" />
+              <span>
+                {t('importing')}
+                {liveImports[0]?.title || liveImports[0]?.url
+                  ? ` · ${liveImports[0].title || liveImports[0].url}`
+                  : ''}
+                {liveImports.length > 1 ? ` · +${liveImports.length - 1}` : ''}
+              </span>
+            </Link>
+          </motion.div>
+        )}
 
         {/* Quick Actions */}
         <motion.div

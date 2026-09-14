@@ -262,6 +262,19 @@ async def fetch_recipe_from_url(url: str, http_client) -> dict:
                 recipe_data["category"] = "Other"
             return recipe_data
 
+        # Open-source scrapers before giving up (no AI on this path)
+        try:
+            from services.oss_recipe_scrape import scrape_recipe_oss
+
+            oss = scrape_recipe_oss(url, html)
+            if oss and (oss.get("ingredients") or oss.get("instructions")):
+                oss["source_url"] = url
+                if not oss.get("category"):
+                    oss["category"] = "Other"
+                return oss
+        except Exception as e:
+            logger.info("OSS scrape in recipe_import failed for %s: %s", url, e)
+
         return None
     except Exception as e:
         logger.error(f"Error fetching recipe from {url}: {e}", exc_info=True)

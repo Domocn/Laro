@@ -44,7 +44,7 @@ from routers import (
     auth, households, recipes, ai, meal_plans, shopping_lists,
     homeassistant, notifications, calendar, import_data, llm_settings,
     favorites, prompts, cooking, admin, security, oauth, preferences,
-    roles, trusted_devices, recipe_versions, nutrition, seed,
+    roles, trusted_devices, recipe_versions, nutrition, ingredients, seed,
     recipe_import, voice_cooking, cost_tracking, reviews, sharing, jobs, debug,
     api_tokens, cookbooks, pantry, export, remote_access, mobile, friends,
     subscriptions, support, rewards, google_health
@@ -306,6 +306,7 @@ api_v1_router.include_router(roles.router)
 api_v1_router.include_router(trusted_devices.router)
 api_v1_router.include_router(recipe_versions.router)
 api_v1_router.include_router(nutrition.router)
+api_v1_router.include_router(ingredients.router)
 api_v1_router.include_router(seed.router)
 api_v1_router.include_router(recipe_import.router)
 api_v1_router.include_router(voice_cooking.router)
@@ -352,6 +353,7 @@ api_router.include_router(roles.router)
 api_router.include_router(trusted_devices.router)
 api_router.include_router(recipe_versions.router)
 api_router.include_router(nutrition.router)
+api_router.include_router(ingredients.router)
 api_router.include_router(seed.router)
 api_router.include_router(recipe_import.router)
 api_router.include_router(voice_cooking.router)

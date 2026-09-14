@@ -114,6 +114,8 @@ export const AdminDashboard = () => {
   
   // System health state
   const [systemHealth, setSystemHealth] = useState(null);
+  const [aiUsage, setAiUsage] = useState(null);
+  const [sendingAiDigest, setSendingAiDigest] = useState(false);
   const [backups, setBackups] = useState([]);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [backupSettings, setBackupSettings] = useState({
@@ -156,7 +158,7 @@ export const AdminDashboard = () => {
 
   useEffect(() => {
     // Check admin access
-    if (user && !['admin', 'super_admin'].includes(user.role)) {
+    if (user && !['admin', 'super_admin'].includes(String(user.role || '').toLowerCase())) {
       toast.error('Admin access required');
       navigate('/dashboard');
       return;
@@ -442,12 +444,14 @@ export const AdminDashboard = () => {
 
   const loadSystemHealth = async () => {
     try {
-      const [healthRes, backupsRes, backupSettingsRes] = await Promise.all([
+      const [healthRes, backupsRes, backupSettingsRes, aiRes] = await Promise.all([
         adminApi.getSystemHealth(),
         adminApi.listBackups(),
-        adminApi.getBackupSettings().catch(() => ({ data: {} }))
+        adminApi.getBackupSettings().catch(() => ({ data: {} })),
+        adminApi.getAiUsage().catch(() => ({ data: null })),
       ]);
       setSystemHealth(healthRes.data);
+      setAiUsage(aiRes.data || null);
       setBackups(backupsRes.data.backups || []);
       if (backupSettingsRes.data) {
         setBackupSettings({
@@ -458,6 +462,20 @@ export const AdminDashboard = () => {
       }
     } catch (error) {
       console.error('Failed to load system health:', error);
+    }
+  };
+
+  const handleSendAiDigest = async () => {
+    setSendingAiDigest(true);
+    try {
+      const res = await adminApi.sendAiUsageDigest();
+      const sent = res.data?.sent || 0;
+      toast.success(sent > 0 ? `Usage digest emailed (${sent})` : (res.data?.reason || 'Digest skipped'));
+      if (res.data?.report) setAiUsage(res.data.report);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to send usage digest');
+    } finally {
+      setSendingAiDigest(false);
     }
   };
 
@@ -2080,6 +2098,56 @@ export const AdminDashboard = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* AI / Ollama usage */}
+                  {aiUsage && (
+                    <div className="bg-white dark:bg-card rounded-xl border border-border/60 p-4" data-testid="admin-ai-usage">
+                      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                        <div>
+                          <h3 className="font-heading font-semibold">AI usage</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Ollama Cloud + free-tier AI counters. Daily email to owners at 08:00 UTC.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={handleSendAiDigest}
+                          disabled={sendingAiDigest}
+                          variant="outline"
+                          className="rounded-full"
+                          data-testid="admin-send-ai-digest"
+                        >
+                          {sendingAiDigest ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                          Email digest now
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                        <div className="rounded-lg bg-cream-subtle p-3">
+                          <p className="text-muted-foreground">Ollama plan</p>
+                          <p className="font-semibold">{aiUsage.ollama?.plan || '—'}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Cost (period): {aiUsage.ollama?.activity_cost ?? '0'}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-cream-subtle p-3">
+                          <p className="text-muted-foreground">App AI uses</p>
+                          <p className="font-semibold">{aiUsage.laro?.total_ai_uses ?? 0}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {aiUsage.laro?.users_with_ai ?? 0} users · free limit {aiUsage.laro?.free_ai_limit}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-cream-subtle p-3">
+                          <p className="text-muted-foreground">Users</p>
+                          <p className="font-semibold">{aiUsage.laro?.user_count ?? 0}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Premium-ish: {aiUsage.laro?.premiumish_users ?? 0} · at free limit: {aiUsage.laro?.free_at_limit ?? 0}
+                          </p>
+                        </div>
+                      </div>
+                      {aiUsage.ollama?.error ? (
+                        <p className="text-xs text-amber-700 mt-3">{aiUsage.ollama.error}</p>
+                      ) : null}
+                    </div>
+                  )}
 
                   {/* Backups */}
                   <div className="bg-white dark:bg-card rounded-xl border border-border/60 p-4">

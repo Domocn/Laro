@@ -16,6 +16,21 @@ import {
 } from '../lib/locales';
 import { useLanguage } from '../context/LanguageContext';
 import { markOnboardingPending } from '../lib/onboarding';
+
+function resolvePostAuthRedirect(fallback = '/dashboard') {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get('next') || sessionStorage.getItem('laro_post_login_redirect');
+    if (next && next.startsWith('/') && !next.startsWith('//')) {
+      sessionStorage.removeItem('laro_post_login_redirect');
+      return next;
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return fallback;
+}
+
 import {
   Select,
   SelectContent,
@@ -238,7 +253,7 @@ export const Login = () => {
       }
 
       toast.success(t('toastWelcomeBack'));
-      navigate('/dashboard');
+      navigate(resolvePostAuthRedirect('/dashboard'));
     } catch (error) {
       toast.error(error.response?.data?.detail || `${t('toastLoginFailed')} (E-AU001)`);
     } finally {
@@ -502,7 +517,7 @@ export const Register = () => {
       } else {
         toast.success(t('toastAccountCreated'));
       }
-      navigate('/dashboard');
+      navigate(resolvePostAuthRedirect('/dashboard'));
     } catch (error) {
       toast.error(error.response?.data?.detail || `${t('toastRegisterFailed')} (E-AU003)`);
     } finally {

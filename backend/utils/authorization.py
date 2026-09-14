@@ -43,9 +43,20 @@ def require_recipe_view(user: dict, recipe: dict) -> None:
 
 
 def require_recipe_edit(user: dict, recipe: dict) -> None:
-    """Only author (or admin) may mutate a recipe."""
+    """
+    Author, app admin, or household collaborator may mutate a recipe.
+
+    Household members can edit recipes stamped with their household_id
+    (RecipeSage / Mealie-style shared kitchen collaboration). Solo recipes
+    without a household remain author-only.
+    """
     role = (user.get("role") or "").lower()
     if role in ("admin", "super_admin"):
         return
-    if recipe.get("author_id") != user.get("id"):
-        raise HTTPException(status_code=403, detail="Not authorized")
+    if recipe.get("author_id") == user.get("id"):
+        return
+    recipe_hh = recipe.get("household_id")
+    user_hh = user.get("household_id")
+    if recipe_hh and user_hh and str(recipe_hh) == str(user_hh):
+        return
+    raise HTTPException(status_code=403, detail="Not authorized")

@@ -305,12 +305,22 @@ export const aiApi = {
   importUrl: (url) => api.post('/ai/import-url', { url }, { timeout: 120000 }),
   importText: (text) => api.post('/ai/import-text', { text }, { timeout: 120000 }),
   importFeedback: (payload) => api.post('/ai/import-feedback', payload, { timeout: 30000 }),
+  listImports: ({ limit = 50, offset = 0, status } = {}) =>
+    api.get('/ai/imports', {
+      params: {
+        limit,
+        offset,
+        ...(status ? { status } : {}),
+      },
+    }),
   /** Caption + optional mp4/mov when social URLs are login-walled. */
   importVideo: (formData) =>
     api.post('/ai/import-video', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 240000,
     }),
+  recreateStoreMeal: (payload) =>
+    api.post('/ai/recreate-store-meal', payload, { timeout: 180000 }),
   extractFromImages: (images, cookbookId = null, cookbookPage = null) =>
     api.post(
       '/ai/extract-from-images',
@@ -407,6 +417,10 @@ export const shoppingListApi = {
   generate: (data) => api.post('/shopping-lists/generate', data),
   getAisles: () => api.get('/shopping-lists/aisles'),
   getAisleOverrides: () => api.get('/shopping-lists/aisle-overrides'),
+  setAisleOverride: (ingredientName, aisle) =>
+    api.put('/shopping-lists/aisle-overrides', { aisle }, { params: { ingredient_name: ingredientName } }),
+  deleteAisleOverride: (ingredientName) =>
+    api.delete('/shopping-lists/aisle-overrides', { params: { ingredient_name: ingredientName } }),
   // Check item endpoint for real-time sync
   checkItem: (listId, itemIndex, checked) =>
     api.patch(`/shopping-lists/${listId}/items/${itemIndex}/check`, null, {
@@ -545,6 +559,8 @@ export const adminApi = {
   
   // System Health
   getSystemHealth: () => api.get('/admin/system/health'),
+  getAiUsage: () => api.get('/admin/ai-usage'),
+  sendAiUsageDigest: () => api.post('/admin/ai-usage/send-digest'),
   
   // Backups
   createBackup: () => api.post('/admin/backup'),
@@ -655,9 +671,18 @@ export const nutritionApi = {
     api.get(`/nutrition/recipe/${recipeId}`, { params }),
   saveRecipeNutrition: (recipeId) => api.post(`/nutrition/recipe/${recipeId}/save`),
   listIngredients: () => api.get('/nutrition/ingredients'),
-  getIngredient: (name) => api.get(`/nutrition/ingredient/${name}`),
+  getIngredient: (name) => api.get(`/nutrition/ingredient/${encodeURIComponent(name)}`),
+  getBarcode: (code) => api.get(`/nutrition/barcode/${encodeURIComponent(code)}`),
   listFoodDb: (params) => api.get('/nutrition/food-db', { params }),
   addCustomIngredient: (data) => api.post('/nutrition/custom-ingredient', data),
+};
+
+// Ingredient aliases (Tandoor-style rename/merge)
+export const ingredientsApi = {
+  listAliases: () => api.get('/ingredients/aliases'),
+  upsertAlias: (data) => api.put('/ingredients/aliases', data),
+  deleteAlias: (fromKey) => api.delete(`/ingredients/aliases/${encodeURIComponent(fromKey)}`),
+  rename: (data) => api.post('/ingredients/rename', data),
 };
 
 // Recipe Import APIs
@@ -712,6 +737,7 @@ export const sharingApi = {
   create: (data) => api.post('/share/create', data),
   getMyLinks: () => api.get('/share/my-links'),
   getSharedRecipe: (shareCode) => api.get(`/share/recipe/${shareCode}`),
+  saveSharedRecipe: (shareCode) => api.post(`/share/recipe/${shareCode}/save`),
   revoke: (linkId) => api.delete(`/share/${linkId}`),
   getStats: (linkId) => api.get(`/share/stats/${linkId}`),
   getSettings: () => api.get('/share/settings'),

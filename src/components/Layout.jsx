@@ -23,6 +23,7 @@ import {
   Refrigerator,
   LogOut,
   Plus,
+  Camera,
   Link as LinkIcon,
   Settings,
   Sparkles,
@@ -151,6 +152,10 @@ export const Layout = ({ children, wide = false, reading = false }) => {
                   <DropdownMenuItem onClick={() => navigate('/recipes/import')} data-testid="add-recipe-import">
                     <LinkIcon className="w-4 h-4 mr-2" />
                     {t('importFromUrl')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/recipes/store-meal')} data-testid="add-recipe-store-meal">
+                    <Camera className="w-4 h-4 mr-2" />
+                    {t('storeMealTitle')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

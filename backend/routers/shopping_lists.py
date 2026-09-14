@@ -159,6 +159,18 @@ async def set_aisle_override(
     return row
 
 
+@router.delete("/aisle-overrides")
+async def delete_aisle_override(
+    ingredient_name: str = Query(...),
+    user: dict = Depends(get_current_user),
+):
+    """Forget a taught aisle placement (Mealie-style aisle manage)."""
+    household_id = user.get("household_id") or user["id"]
+    key = normalize_ingredient(ingredient_name)
+    deleted = await aisle_override_repository.delete_override(household_id, key)
+    return {"deleted": deleted, "ingredient_key": key}
+
+
 @router.get("/{list_id}", response_model=ShoppingListResponse)
 async def get_shopping_list(list_id: str, user: dict = Depends(get_current_user)):
     shopping_list = await shopping_list_repository.find_by_id(list_id)
@@ -1119,6 +1131,21 @@ async def generate_grocery_list(
 
     recipe_titles = {r["id"]: r.get("title") or "Recipe" for r in recipes}
 
+    # Apply Tandoor-style ingredient aliases so renamed foods merge on the list
+    from services.ingredient_aliases import (
+        ingredient_alias_repository,
+        normalize_ingredient_key,
+    )
+
+    alias_map = await ingredient_alias_repository.get_map(
+        household_id=user.get("household_id"),
+        user_id=user["id"],
+    )
+
+    def _apply_alias_name(name: str) -> str:
+        key = normalize_ingredient_key(name)
+        return alias_map.get(key) or name
+
     all_items = []
     for recipe in recipes:
         for ing in recipe.get("ingredients", []):
@@ -1127,7 +1154,7 @@ async def generate_grocery_list(
                 if not name:
                     continue
                 all_items.append({
-                    "name": name,
+                    "name": _apply_alias_name(name),
                     "amount": ing.get("amount", "1") or "1",
                     "unit": ing.get("unit", "") or "",
                     "recipe_id": recipe["id"],
@@ -1135,7 +1162,7 @@ async def generate_grocery_list(
                 })
             elif isinstance(ing, str) and ing.strip():
                 all_items.append({
-                    "name": ing.strip(),
+                    "name": _apply_alias_name(ing.strip()),
                     "amount": "1",
                     "unit": "",
                     "recipe_id": recipe["id"],

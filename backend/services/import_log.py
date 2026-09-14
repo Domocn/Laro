@@ -9,6 +9,7 @@ Search:  grep import_id=imp_xxx  or  jq on the jsonl file.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -71,6 +72,7 @@ class ImportTrace:
                 **(extra or {}),
             }
         )
+        _schedule_persist_start(self)
 
     def _start(self, payload: dict) -> None:
         self.step("start", **payload)
@@ -106,11 +108,70 @@ class ImportTrace:
             step_count=len(self.steps),
             **data,
         )
+        _schedule_persist_finish(self, status, data)
         return {
             "import_id": self.import_id,
             "status": status,
             "elapsed_ms": elapsed_ms,
         }
+
+
+def _schedule(coro) -> None:
+    """Best-effort schedule for FastAPI request handlers (running event loop)."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    try:
+        loop.create_task(coro)
+    except Exception:
+        logger.debug("import attempt persist schedule failed", exc_info=True)
+
+
+def _schedule_persist_start(trace: "ImportTrace") -> None:
+    async def _run():
+        try:
+            from database.repositories.import_attempt_repository import import_attempt_repository
+
+            await import_attempt_repository.start_attempt(
+                import_id=trace.import_id,
+                user_id=trace.user_id,
+                kind=trace.kind,
+                source_url=trace.url,
+            )
+        except Exception:
+            logger.debug("import attempt start persist failed", exc_info=True)
+
+    _schedule(_run())
+
+
+def _schedule_persist_finish(trace: "ImportTrace", status: str, data: dict) -> None:
+    title = data.get("title") or data.get("recipe_title")
+    if not title and isinstance(data.get("recipe"), dict):
+        title = data["recipe"].get("title")
+    error = data.get("error") or data.get("detail") or data.get("reason")
+    if error is not None:
+        error = str(error)[:2000]
+    recipe_id = data.get("recipe_id")
+
+    async def _run():
+        try:
+            from database.repositories.import_attempt_repository import import_attempt_repository
+
+            await import_attempt_repository.finish_attempt(
+                import_id=trace.import_id,
+                status=status,
+                title=str(title)[:300] if title else None,
+                error=error,
+                recipe_id=str(recipe_id) if recipe_id else None,
+                source_url=trace.url,
+                user_id=trace.user_id,
+                kind=trace.kind,
+            )
+        except Exception:
+            logger.debug("import attempt finish persist failed", exc_info=True)
+
+    _schedule(_run())
 
 
 def _compact(data: dict, limit: int = 240) -> str:

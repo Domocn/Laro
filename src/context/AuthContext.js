@@ -220,7 +220,9 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   }, [user]);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = ['admin', 'super_admin'].includes(
+    String(user?.role || '').toLowerCase()
+  );
 
   return (
     <AuthContext.Provider value={{

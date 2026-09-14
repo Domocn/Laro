@@ -31,10 +31,13 @@ const Support = lazy(() => import('./pages/Support').then(m => ({ default: m.Sup
 const ServerConfig = lazy(() => import('./pages/ServerConfig').then(m => ({ default: m.ServerConfig })));
 const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
 const QuickAddRecipe = lazy(() => import('./pages/QuickAddRecipe').then(m => ({ default: m.QuickAddRecipe })));
+const RecreateStoreMeal = lazy(() => import('./pages/RecreateStoreMeal').then(m => ({ default: m.RecreateStoreMeal })));
 const SharedRecipe = lazy(() => import('./pages/SharedRecipe').then(m => ({ default: m.SharedRecipe })));
 const ImportFromPlatform = lazy(() => import('./pages/ImportFromPlatform').then(m => ({ default: m.ImportFromPlatform })));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const SecuritySettings = lazy(() => import('./pages/SecuritySettings').then(m => ({ default: m.SecuritySettings })));
+const ImportsSettings = lazy(() => import('./pages/ImportsSettings').then(m => ({ default: m.ImportsSettings })));
+const KitchenSettings = lazy(() => import('./pages/KitchenSettings').then(m => ({ default: m.KitchenSettings })));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ForgotPassword })));
 const ResetPassword = lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ResetPassword })));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail').then(m => ({ default: m.VerifyEmail })));
@@ -146,6 +149,7 @@ function AppRoutes() {
         <Route path="/recipes" element={<ProtectedRoute><Recipes /></ProtectedRoute>} />
         <Route path="/recipes/new" element={<ProtectedRoute><RecipeForm /></ProtectedRoute>} />
         <Route path="/recipes/quick-add" element={<ProtectedRoute><QuickAddRecipe /></ProtectedRoute>} />
+        <Route path="/recipes/store-meal" element={<ProtectedRoute><RecreateStoreMeal /></ProtectedRoute>} />
         <Route path="/recipes/import" element={<ProtectedRoute><ImportRecipe /></ProtectedRoute>} />
         <Route path="/recipes/import-batch" element={<ProtectedRoute><ImportFromPlatform /></ProtectedRoute>} />
         <Route path="/recipes/:id" element={<ProtectedRoute><RecipeDetail /></ProtectedRoute>} />
@@ -161,6 +165,8 @@ function AppRoutes() {
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/settings/security" element={<ProtectedRoute><SecuritySettings /></ProtectedRoute>} />
         <Route path="/settings/preferences" element={<ProtectedRoute><UserPreferences /></ProtectedRoute>} />
+        <Route path="/settings/imports" element={<ProtectedRoute><ImportsSettings /></ProtectedRoute>} />
+        <Route path="/settings/kitchen" element={<ProtectedRoute><KitchenSettings /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
         <Route path="/setup" element={<ProtectedRoute><SetupWizard /></ProtectedRoute>} />
 

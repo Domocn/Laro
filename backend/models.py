@@ -432,8 +432,19 @@ class CookbookCreate(BaseModel):
     isbn: Optional[str] = None
     publisher: Optional[str] = None
     year: Optional[int] = None
+    # Android historically sent published_year / description
+    published_year: Optional[int] = None
     cover_image_url: Optional[str] = None
     notes: Optional[str] = None
+    description: Optional[str] = None
+
+    def resolved_year(self) -> Optional[int]:
+        return self.year if self.year is not None else self.published_year
+
+    def resolved_notes(self) -> Optional[str]:
+        if self.notes is not None and str(self.notes).strip() != "":
+            return self.notes
+        return self.description
 
 
 class CookbookUpdate(BaseModel):
@@ -442,8 +453,20 @@ class CookbookUpdate(BaseModel):
     isbn: Optional[str] = None
     publisher: Optional[str] = None
     year: Optional[int] = None
+    published_year: Optional[int] = None
     cover_image_url: Optional[str] = None
     notes: Optional[str] = None
+    description: Optional[str] = None
+
+    def resolved_year(self) -> Optional[int]:
+        if self.year is not None:
+            return self.year
+        return self.published_year
+
+    def resolved_notes(self) -> Optional[str]:
+        if self.notes is not None:
+            return self.notes
+        return self.description
 
 
 class CookbookResponse(BaseModel):
@@ -633,6 +656,17 @@ class ImageExtractionRequest(BaseModel):
     images: List[str]  # List of base64-encoded images
     cookbook_id: Optional[str] = None
     cookbook_page: Optional[int] = None
+
+
+class RecreateStoreMealRequest(BaseModel):
+    """Photo(s) of a ready/store meal → home-cook recipe with optional transform."""
+    images: List[str] = []  # base64 images (packaging, nutrition label, plated meal)
+    mode: str = "recreate"  # recreate | healthier | higher_protein | lower_calorie | lower_carb | custom
+    notes: Optional[str] = ""
+    product_name: Optional[str] = ""
+    description: Optional[str] = ""
+    ingredients_text: Optional[str] = ""
+    nutrition_text: Optional[str] = ""
 
 
 # Enhanced Grocery List Models

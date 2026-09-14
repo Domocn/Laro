@@ -1,9 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
-import { shoppingListApi, pantryApi } from '../lib/api';
+import { shoppingListApi, pantryApi, nutritionApi } from '../lib/api';
+import {
+  enqueueShoppingCheck,
+  enqueueShoppingOp,
+  flushShoppingOpsQueue,
+} from '../lib/shoppingOfflineQueue';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 import { useUserPreferences } from '../hooks/useUserPreferences';
 import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 import {
@@ -45,6 +51,8 @@ import {
   Wifi,
   WifiOff,
   Filter,
+  Barcode,
+  Camera,
 } from 'lucide-react';
 import { Label } from '../components/ui/label';
 import { ReceiptScanner } from '../components/ReceiptScanner';
@@ -87,6 +95,7 @@ export const ShoppingLists = () => {
   const { preferences } = useUserPreferences();
   const autoSort = preferences.shoppingListAutoSort !== false;
   const liveRefresh = useLiveRefreshContext();
+  const { user } = useAuth();
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedList, setSelectedList] = useState(null);
@@ -101,6 +110,21 @@ export const ShoppingLists = () => {
   const [pantryDialog, setPantryDialog] = useState(null); // { index, name, amount, unit }
   const [pantryExpiry, setPantryExpiry] = useState('');
   const [pantrySaving, setPantrySaving] = useState(false);
+  const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [barcodeLookup, setBarcodeLookup] = useState(null);
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [presenceViewers, setPresenceViewers] = useState([]);
+  const [cameraError, setCameraError] = useState(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const videoRef = useRef(null);
+  const cameraStreamRef = useRef(null);
+  const cameraTimerRef = useRef(null);
+
+  const isOfflineError = (error) =>
+    !navigator.onLine ||
+    error?.code === 'ERR_NETWORK' ||
+    error?.message === 'Network Error';
 
   useEffect(() => {
     loadLists();
@@ -108,6 +132,87 @@ export const ShoppingLists = () => {
       .then((res) => setAisles(res.data.aisles || []))
       .catch(() => {});
   }, []);
+
+    // KitchenOwl-style: flush offline shopping ops when connectivity returns
+  useEffect(() => {
+    const flush = async () => {
+      if (!navigator.onLine) return;
+      try {
+        const result = await flushShoppingOpsQueue({
+          checkItem: (listId, itemIndex, checked) =>
+            shoppingListApi.checkItem(listId, itemIndex, checked),
+          addItem: async (listId, item) => {
+            const listRes = await shoppingListApi.getOne(listId);
+            const list = listRes.data;
+            await shoppingListApi.update(listId, {
+              name: list.name,
+              items: [...(list.items || []), item],
+            });
+          },
+          removeItem: async (listId, itemIndex) => {
+            const listRes = await shoppingListApi.getOne(listId);
+            const list = listRes.data;
+            const items = (list.items || []).filter((_, idx) => idx !== itemIndex);
+            await shoppingListApi.update(listId, { name: list.name, items });
+          },
+          setItemAisle: (listId, itemIndex, aisle, remember) =>
+            shoppingListApi.setItemAisle(listId, itemIndex, aisle, remember),
+          createList: async (entry) => {
+            await shoppingListApi.create({ name: entry.name, items: entry.items || [] });
+          },
+          deleteList: async (listId) => {
+            // Ignore temp offline ids that never reached the server
+            if (String(listId).startsWith('tmp-')) return;
+            await shoppingListApi.delete(listId);
+          },
+        });
+        if (result.flushed > 0) {
+          toast.success(t('offlineFlushed'));
+          loadLists();
+        }
+      } catch (e) {
+        console.warn('offline shopping flush failed', e);
+      }
+    };
+    flush();
+    window.addEventListener('online', flush);
+    return () => window.removeEventListener('online', flush);
+  }, [t]);
+
+
+
+  // Live presence: announce viewing this shopping list
+  useEffect(() => {
+    if (!selectedList?.id || !liveRefresh?.send) {
+      setPresenceViewers([]);
+      return undefined;
+    }
+    const payload = {
+      resource_type: 'shopping_list',
+      resource_id: selectedList.id,
+      display_name: user?.name || user?.email || 'Someone',
+    };
+    liveRefresh.send({ type: 'presence:join', ...payload });
+    const beat = setInterval(() => {
+      liveRefresh.send({ type: 'presence:heartbeat', ...payload });
+    }, 20000);
+    return () => {
+      clearInterval(beat);
+      liveRefresh.send({ type: 'presence:leave', ...payload });
+      setPresenceViewers([]);
+    };
+  }, [selectedList?.id, liveRefresh, user?.name, user?.email]);
+
+  useLiveRefreshEvent(
+    EventType.PRESENCE_UPDATED,
+    (data) => {
+      if (!data || data.resource_type !== 'shopping_list') return;
+      if (!selectedList?.id || data.resource_id !== selectedList.id) return;
+      const others = (data.viewers || []).filter((v) => v.user_id !== user?.id);
+      setPresenceViewers(others);
+    },
+    liveRefresh,
+  );
 
   const aisleGroups = useMemo(
     () => groupItemsByAisle(selectedList?.items, autoSort),
@@ -231,6 +336,17 @@ export const ShoppingLists = () => {
       setNewListName('');
       toast.success(t('toastListCreated'));
     } catch (error) {
+      if (isOfflineError(error)) {
+        const tempId = `tmp-${Date.now()}`;
+        const tempList = { id: tempId, name: newListName.trim(), items: [] };
+        enqueueShoppingOp({ type: 'create_list', listId: tempId, name: newListName.trim(), items: [] });
+        setLists([tempList, ...lists]);
+        setSelectedList(tempList);
+        setShowCreateDialog(false);
+        setNewListName('');
+        toast.message(t('offlineQueued'));
+        return;
+      }
       toast.error(error.response?.data?.detail || `${t('toastCreateListFailed')} (E-SL002)`);
     } finally {
       setCreating(false);
@@ -249,7 +365,74 @@ export const ShoppingLists = () => {
       }
       toast.success(t('toastListDeleted'));
     } catch (error) {
+      if (isOfflineError(error)) {
+        enqueueShoppingOp({ type: 'delete_list', listId });
+        const newLists = lists.filter((l) => l.id !== listId);
+        setLists(newLists);
+        if (selectedList?.id === listId) setSelectedList(newLists[0] || null);
+        toast.message(t('offlineQueued'));
+        return;
+      }
       toast.error(error.response?.data?.detail || `${t('toastDeleteListFailed')} (E-SL003)`);
+    }
+  };
+
+
+  const handleBarcodeLookup = async () => {
+    const code = barcodeInput.trim();
+    if (!code) return;
+    setBarcodeLoading(true);
+    setBarcodeLookup(null);
+    try {
+      const res = await nutritionApi.getBarcode(code);
+      setBarcodeLookup(res.data);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || t('barcodeNotFound'));
+    } finally {
+      setBarcodeLoading(false);
+    }
+  };
+
+  const handleAddBarcodeProduct = async () => {
+    if (!selectedList || !barcodeLookup) return;
+    const name = barcodeLookup.name || barcodeInput.trim();
+    const aisle = barcodeLookup.suggested_aisle || null;
+    const newItem = {
+      name,
+      amount: '1',
+      unit: '',
+      checked: false,
+      category: aisle || undefined,
+    };
+    try {
+      const res = await shoppingListApi.update(selectedList.id, {
+        name: selectedList.name,
+        items: [...selectedList.items, newItem],
+      });
+      setSelectedList(res.data);
+      setLists(lists.map((l) => (l.id === res.data.id ? res.data : l)));
+      if (aisle) {
+        try {
+          await shoppingListApi.setAisleOverride(name, aisle);
+        } catch {
+          /* non-fatal */
+        }
+      }
+      toast.success(t('barcodeAdded', { name }));
+      setShowBarcodeDialog(false);
+      setBarcodeInput('');
+      setBarcodeLookup(null);
+    } catch (error) {
+      if (isOfflineError(error)) {
+        enqueueShoppingOp({ type: 'add', listId: selectedList.id, item: newItem });
+        setSelectedList({ ...selectedList, items: [...selectedList.items, newItem] });
+        toast.message(t('offlineQueued'));
+        setShowBarcodeDialog(false);
+        setBarcodeInput('');
+        setBarcodeLookup(null);
+        return;
+      }
+      toast.error(error.response?.data?.detail || t('toastAddItemFailed'));
     }
   };
 
@@ -272,6 +455,15 @@ export const ShoppingLists = () => {
     try {
       await shoppingListApi.checkItem(selectedList.id, itemIndex, nextChecked);
     } catch (error) {
+      if (isOfflineError(error)) {
+        enqueueShoppingCheck({
+          listId: selectedList.id,
+          itemIndex,
+          checked: nextChecked,
+        });
+        toast.message(t('offlineQueued'));
+        return;
+      }
       // Revert
       setSelectedList(selectedList);
       setLists(lists.map((l) => (l.id === selectedList.id ? selectedList : l)));
@@ -319,7 +511,7 @@ export const ShoppingLists = () => {
     }
   };
 
-  const handleAddItem = async () => {
+    const handleAddItem = async () => {
     if (!newItemName.trim() || !selectedList) return;
 
     const newItem = {
@@ -339,14 +531,24 @@ export const ShoppingLists = () => {
       setNewItemName('');
       setNewItemAmount('');
     } catch (error) {
+      if (isOfflineError(error)) {
+        enqueueShoppingOp({ type: 'add', listId: selectedList.id, item: newItem });
+        setSelectedList({ ...selectedList, items: [...selectedList.items, newItem] });
+        setLists(lists.map((l) => (l.id === selectedList.id ? { ...selectedList, items: [...selectedList.items, newItem] } : l)));
+        setNewItemName('');
+        setNewItemAmount('');
+        toast.message(t('offlineQueued'));
+        return;
+      }
       toast.error(error.response?.data?.detail || `${t('toastAddItemFailed')} (E-SL005)`);
     }
   };
 
-  const handleRemoveItem = async (itemIndex) => {
+    const handleRemoveItem = async (itemIndex) => {
     if (!selectedList) return;
 
     const updatedItems = selectedList.items.filter((_, idx) => idx !== itemIndex);
+    const removed = selectedList.items[itemIndex];
 
     try {
       const res = await shoppingListApi.update(selectedList.id, {
@@ -356,17 +558,45 @@ export const ShoppingLists = () => {
       setSelectedList(res.data);
       setLists(lists.map(l => l.id === res.data.id ? res.data : l));
     } catch (error) {
+      if (isOfflineError(error)) {
+        enqueueShoppingOp({
+          type: 'remove',
+          listId: selectedList.id,
+          itemIndex,
+          itemName: removed?.name,
+        });
+        setSelectedList({ ...selectedList, items: updatedItems });
+        setLists(lists.map((l) => (l.id === selectedList.id ? { ...selectedList, items: updatedItems } : l)));
+        toast.message(t('offlineQueued'));
+        return;
+      }
       toast.error(error.response?.data?.detail || `${t('toastRemoveItemFailed')} (E-SL006)`);
     }
   };
 
-  const handleSetAisle = async (itemIndex, aisle) => {
+    const handleSetAisle = async (itemIndex, aisle) => {
     if (!selectedList) return;
     try {
       const res = await shoppingListApi.setItemAisle(selectedList.id, itemIndex, aisle, true);
       applyListUpdate(res.data);
       toast.success(t('toastMovedToAisle', { aisle }));
     } catch (error) {
+      if (isOfflineError(error)) {
+        enqueueShoppingOp({
+          type: 'aisle',
+          listId: selectedList.id,
+          itemIndex,
+          aisle,
+          remember: true,
+        });
+        const items = selectedList.items.map((it, i) =>
+          i === itemIndex ? { ...it, category: aisle } : it
+        );
+        setSelectedList({ ...selectedList, items });
+        setLists(lists.map((l) => (l.id === selectedList.id ? { ...selectedList, items } : l)));
+        toast.message(t('offlineQueued'));
+        return;
+      }
       toast.error(error.response?.data?.detail || `${t('moveAisle')} — ${t('error')}. (E-SL008)`);
     }
   };
@@ -412,6 +642,71 @@ export const ShoppingLists = () => {
   const totalCount = selectedList?.items.length || 0;
   const isLive = !!liveRefresh?.isConnected;
 
+  const stopBarcodeCamera = useCallback(() => {
+    if (cameraTimerRef.current) {
+      clearInterval(cameraTimerRef.current);
+      cameraTimerRef.current = null;
+    }
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((tr) => tr.stop());
+      cameraStreamRef.current = null;
+    }
+    setCameraActive(false);
+  }, []);
+
+  const startBarcodeCamera = useCallback(async () => {
+    setCameraError(null);
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(t('barcodeCameraUnsupported'));
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraActive(true);
+      // attach after paint
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 50);
+      const detector = new window.BarcodeDetector({
+        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'],
+      });
+      cameraTimerRef.current = setInterval(async () => {
+        try {
+          if (!videoRef.current || videoRef.current.readyState < 2) return;
+          const codes = await detector.detect(videoRef.current);
+          if (codes?.length) {
+            const raw = codes[0].rawValue;
+            if (raw) {
+              setBarcodeInput(raw);
+              stopBarcodeCamera();
+              // trigger lookup
+              setTimeout(() => {
+                const btn = document.querySelector('[data-testid="barcode-lookup-submit"]');
+                if (btn) btn.click();
+              }, 100);
+            }
+          }
+        } catch {
+          /* keep scanning */
+        }
+      }, 700);
+    } catch (err) {
+      setCameraError(t('barcodeCameraDenied'));
+      stopBarcodeCamera();
+    }
+  }, [stopBarcodeCamera, t]);
+
+  useEffect(() => () => stopBarcodeCamera(), [stopBarcodeCamera]);
+
+  const isLive = !!liveRefresh?.isConnected;
+
   return (
     <Layout>
       <div className="space-y-6 min-w-0 max-w-full overflow-x-hidden" data-testid="shopping-lists">
@@ -439,6 +734,16 @@ export const ShoppingLists = () => {
             <p className="text-muted-foreground mt-1">
               {livePing || t('manageGroceryShopping')}
             </p>
+            {presenceViewers.length > 0 && (
+              <p className="text-xs text-emerald-700 mt-1" data-testid="shopping-presence">
+                {presenceViewers.length === 1
+                  ? t('presenceOne', { name: presenceViewers[0].name })
+                  : t('presenceMany', {
+                      name: presenceViewers[0].name,
+                      count: presenceViewers.length - 1,
+                    })}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-2 w-full sm:w-auto">
@@ -622,6 +927,16 @@ export const ShoppingLists = () => {
                       className="w-full sm:w-20 rounded-xl"
                       onKeyPress={(e) => e.key === 'Enter' && handleAddItem()}
                     />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowBarcodeDialog(true)}
+                      className="rounded-xl shrink-0"
+                      data-testid="barcode-lookup-btn"
+                      title={t('scanBarcode')}
+                    >
+                      <Barcode className="w-4 h-4" />
+                    </Button>
                     <Button
                       onClick={handleAddItem}
                       className="rounded-xl bg-laro hover:bg-laro-dark shrink-0"
@@ -807,6 +1122,90 @@ export const ShoppingLists = () => {
           </DialogContent>
         </Dialog>
       </div>
+    
+      <Dialog open={showBarcodeDialog} onOpenChange={(open) => {
+        setShowBarcodeDialog(open);
+        if (!open) {
+          setBarcodeInput('');
+          setBarcodeLookup(null);
+          stopBarcodeCamera();
+          setCameraError(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md" data-testid="barcode-lookup-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('scanBarcode')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">{t('barcodeLookupHint')}</p>
+            <div className="flex gap-2">
+              <Input
+                value={barcodeInput}
+                onChange={(e) => setBarcodeInput(e.target.value)}
+                placeholder={t('barcodePlaceholder')}
+                className="rounded-xl"
+                data-testid="barcode-input"
+                onKeyDown={(e) => e.key === 'Enter' && handleBarcodeLookup()}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl shrink-0"
+                onClick={() => (cameraActive ? stopBarcodeCamera() : startBarcodeCamera())}
+                data-testid="barcode-camera-toggle"
+                title={t('barcodeScanCamera')}
+              >
+                <Camera className="w-4 h-4" />
+              </Button>
+              <Button
+                onClick={handleBarcodeLookup}
+                disabled={barcodeLoading || !barcodeInput.trim()}
+                className="rounded-xl bg-laro hover:bg-laro-dark shrink-0"
+                data-testid="barcode-lookup-submit"
+              >
+                {barcodeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : t('lookup')}
+              </Button>
+            </div>
+            {cameraError && (
+              <p className="text-xs text-destructive">{cameraError}</p>
+            )}
+            {cameraActive && (
+              <video
+                ref={videoRef}
+                className="w-full rounded-xl bg-black aspect-video"
+                muted
+                playsInline
+                data-testid="barcode-camera-video"
+              />
+            )}
+            {barcodeLookup && (
+              <div className="rounded-xl border border-border/60 p-3 space-y-2" data-testid="barcode-lookup-result">
+                <p className="font-medium">{barcodeLookup.name}</p>
+                {barcodeLookup.brands && (
+                  <p className="text-sm text-muted-foreground">{barcodeLookup.brands}</p>
+                )}
+                {barcodeLookup.suggested_aisle && (
+                  <p className="text-sm">{t('suggestedAisle')}: {barcodeLookup.suggested_aisle}</p>
+                )}
+                {!!barcodeLookup.allergens?.length && (
+                  <p className="text-sm text-destructive">{t('allergens')}: {barcodeLookup.allergens.join(', ')}</p>
+                )}
+                {barcodeLookup.uk_percent_ri_per_100g && (
+                  <p className="text-xs text-muted-foreground">{t('ukPercentRi')} (per 100g)</p>
+                )}
+                <Button
+                  onClick={handleAddBarcodeProduct}
+                  className="w-full rounded-xl bg-laro hover:bg-laro-dark"
+                  data-testid="barcode-add-btn"
+                >
+                  {t('barcodeAdd')}
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </Layout>
   );
 };

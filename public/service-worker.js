@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mise-v2';
+const CACHE_NAME = 'laro-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -76,7 +76,7 @@ self.addEventListener('push', (event) => {
   console.log('Laro: Push notification received');
   
   let data = {
-    title: 'Mise',
+    title: 'Laro',
     body: 'You have a new notification',
     icon: '/icons/icon-192x192.svg',
     badge: '/icons/icon-72x72.svg',
@@ -95,7 +95,7 @@ self.addEventListener('push', (event) => {
       },
     };
     event.waitUntil(
-      self.registration.showNotification(data.title || 'Mise', options)
+      self.registration.showNotification(data.title || 'Laro', options)
     );
   }
 
@@ -104,7 +104,7 @@ self.addEventListener('push', (event) => {
     icon: data.icon || '/icons/icon-192x192.svg',
     badge: data.badge || '/icons/icon-72x72.svg',
     vibrate: [100, 50, 100],
-    tag: data.tag || 'mise-notification',
+    tag: data.tag || 'laro-notification',
     renotify: true,
     requireInteraction: data.requireInteraction || false,
     data: {
