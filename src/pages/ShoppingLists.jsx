@@ -640,7 +640,6 @@ export const ShoppingLists = () => {
 
   const checkedCount = selectedList?.items.filter(i => i.checked).length || 0;
   const totalCount = selectedList?.items.length || 0;
-  const isLive = !!liveRefresh?.isConnected;
 
   const stopBarcodeCamera = useCallback(() => {
     if (cameraTimerRef.current) {
