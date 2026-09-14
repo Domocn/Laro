@@ -15,6 +15,7 @@ from dependencies import get_current_user, cookbook_repository, recipe_repositor
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
 from utils.security import sanitize_error_message
+import asyncio
 import logging
 import os
 import re
@@ -400,24 +401,29 @@ async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
         follow_redirects=True,
         headers={"User-Agent": "LaroCookbookLookup/1.0 (https://laro.food)"},
     ) as client:
-        # 1) Open Library search.json (most reliable from our hosts)
-        ol = await _isbn_from_open_library_search(client, clean_isbn)
-        if ol:
-            return ol
+        # Race catalogs — Open Library /api/books and /search.json flip between
+        # reachable/unreachable from our VPS; Google is often daily-quota limited.
+        results = await asyncio.gather(
+            _isbn_from_open_library_search(client, clean_isbn),
+            _isbn_from_open_library_books_api(client, clean_isbn),
+            _isbn_from_google_books_safe(client, clean_isbn),
+            return_exceptions=True,
+        )
+        hits: List[ISBNLookupResponse] = []
+        for r in results:
+            if isinstance(r, ISBNLookupResponse):
+                hits.append(r)
+            elif isinstance(r, httpx.RequestError):
+                catalogs_unreachable = True
+                logger.warning("ISBN catalog request error: %s", r)
+            elif isinstance(r, Exception):
+                logger.warning("ISBN catalog unexpected error: %s", r)
 
-        # 2) Open Library legacy books API (best-effort)
-        ol = await _isbn_from_open_library_books_api(client, clean_isbn)
-        if ol:
-            return ol
+        if hits:
+            # Prefer a result that has a real title (all should)
+            return hits[0]
 
-        # 3) Google Books (may be quota-limited)
-        try:
-            google = await _isbn_from_google_books(client, clean_isbn)
-            if google:
-                return google
-        except httpx.RequestError:
-            catalogs_unreachable = True
-
+    # Fix unbound hits reference in unreachable branch
     if catalogs_unreachable:
         raise HTTPException(
             status_code=503,
@@ -431,6 +437,16 @@ async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
         status_code=404,
         detail="Book not found in catalogs. Enter the title and author manually.",
     )
+
+
+async def _isbn_from_google_books_safe(
+    client: httpx.AsyncClient, clean_isbn: str
+) -> Optional[ISBNLookupResponse]:
+    try:
+        return await _isbn_from_google_books(client, clean_isbn)
+    except httpx.RequestError as e:
+        logger.warning("Google Books ISBN request failed for %s: %s", clean_isbn, e)
+        return None
 
 
 async def _isbn_from_open_library_search(
