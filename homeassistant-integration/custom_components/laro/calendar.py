@@ -170,5 +170,5 @@ class LaroMealPlanCalendar(CoordinatorEntity[LaroDataUpdateCoordinator], Calenda
 
 
 # Backwards-compatible alias
-MiseMealPlanCalendar = LaroMealPlanCalendar
-MiseDataUpdateCoordinator = LaroDataUpdateCoordinator
+LaroMealPlanCalendar = LaroMealPlanCalendar
+LaroDataUpdateCoordinator = LaroDataUpdateCoordinator

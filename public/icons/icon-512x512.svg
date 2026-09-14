@@ -36,7 +36,7 @@
   <circle cx="295" cy="300" r="14" fill="#A78BFA"/>
 
   <!-- Name -->
-  <text x="256" y="420" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="white" text-anchor="middle">Mise</text>
+  <text x="256" y="420" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="white" text-anchor="middle">Laro</text>
 
   <!-- Tagline -->
   <text x="256" y="465" font-family="system-ui, -apple-system, sans-serif" font-size="26" fill="white" fill-opacity="0.85" text-anchor="middle">Your Kitchen Sidekick</text>

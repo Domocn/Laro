@@ -351,5 +351,5 @@ async def async_setup_services(hass: HomeAssistant, client: LaroApiClient) -> No
 
 
 # Backwards-compatible aliases for platform imports
-MiseApiClient = LaroApiClient
-MiseDataUpdateCoordinator = LaroDataUpdateCoordinator
+LaroApiClient = LaroApiClient
+LaroDataUpdateCoordinator = LaroDataUpdateCoordinator
