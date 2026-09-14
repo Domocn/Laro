@@ -8,30 +8,29 @@ Provides sensors, a meal-plan calendar, and services for recipes, meals, and sho
 
 - **Cloud or self-host**: use `https://laro.food` or your own server URL
 - **Auto-discovery**: local Laro instances via Zeroconf/mDNS (self-host)
-- **Sensors**:
-  - Recipe count
-  - Today's meals
-  - Tonight's cooking suggestion
-  - Shopping list items (unchecked)
-  - Favorite recipes count
-  - Meals planned this week
-  - AI quota remaining (free-tier uses left, or `unlimited` for Premium)
+- **Sensors**: recipe count, today's meals, tonight's suggestion, shopping items, favorites, weekly plans, AI quota
 - **Calendar**: meal plans as a Home Assistant calendar
-- **Services**:
-  - Add items to shopping list
-  - Create meal plan entries
-  - Import recipes from URLs
+- **Services**: add to shopping list, create meal plan, import recipe from URL
 
 ## Installation
 
-### HACS (Recommended)
+### HACS (recommended)
 
-1. Add this repository (or the `homeassistant-integration` folder) to HACS as a custom repository
-2. Search for "Laro" in HACS
-3. Install the integration
-4. Restart Home Assistant
+The public HACS repository is:
 
-### Manual Installation
+`https://github.com/Domocn/Laro-home-assistant-addon`
+
+(Same GitHub repo as the Supervisor add-on store — HACS installs only the **integration** under `custom_components/laro`.)
+
+1. In Home Assistant open **HACS → Integrations**
+2. ⋮ menu → **Custom repositories**
+3. Repository: `https://github.com/Domocn/Laro-home-assistant-addon`
+4. Category: **Integration** (not Theme / Plugin)
+5. Add → search **Laro** → **Download**
+6. Restart Home Assistant
+7. **Settings → Devices & Services → Add Integration → Laro**
+
+### Manual installation
 
 1. Copy `custom_components/laro` into your Home Assistant `config/custom_components/` directory
 2. Restart Home Assistant
@@ -41,7 +40,7 @@ Provides sensors, a meal-plan calendar, and services for recipes, meals, and sho
 ### Cloud (laro.food)
 
 1. Sign in at [laro.food](https://laro.food)
-2. Go to **Settings → API Tokens** (Integrations)
+2. Go to **Settings → API Tokens**
 3. Create a token named e.g. `Home Assistant`
 4. In Home Assistant: **Settings → Devices & Services → Add Integration → Laro**
 5. Server URL: `https://laro.food`
@@ -54,7 +53,7 @@ Provides sensors, a meal-plan calendar, and services for recipes, meals, and sho
 3. Add the Laro integration in Home Assistant
 4. Server URL examples:
    - LAN: `http://192.168.1.100:8001`
-   - Local add-on: `http://localhost:8001` (or the add-on's published port)
+   - Local add-on: use the add-on's published port / ingress backend URL
    - Public HTTPS: `https://laro.yourdomain.com`
 
 ### Auto-discovery
@@ -64,7 +63,7 @@ If Zeroconf is enabled on a self-hosted Laro (default), Home Assistant may disco
 ## Getting an API Token
 
 1. Log into Laro (cloud or self-host)
-2. Go to **Settings → API Tokens** / **Integrations**
+2. Go to **Settings → API Tokens**
 3. Click **Create New Token**
 4. Copy the token (shown once)
 
@@ -118,77 +117,23 @@ data:
 ```yaml
 service: laro.import_recipe
 data:
-  url: "https://www.allrecipes.com/recipe/12345"
+  url: "https://example.com/recipe"
 ```
 
-## Example Automations
+## Supervisor add-on vs integration
 
-### Notify about today's dinner
+| | Custom integration (this) | Supervisor add-on |
+|--|---------------------------|-------------------|
+| Purpose | Sensors / calendar / services against an existing Laro API | Runs a full Laro stack inside HA OS |
+| Cloud (`laro.food`) | Yes | No — skip the add-on |
+| Install via | **HACS → Integration** | **Add-on Store → Repositories** |
+| Repo URL | `https://github.com/Domocn/Laro-home-assistant-addon` | same URL |
 
-```yaml
-automation:
-  - alias: "Dinner reminder"
-    trigger:
-      - platform: time
-        at: "16:00:00"
-    action:
-      - service: notify.mobile_app_phone
-        data:
-          title: "Tonight's Dinner"
-          message: "{{ states('sensor.laro_today_meals') }}"
-```
+## Support
 
-### Shopping list alert
-
-```yaml
-automation:
-  - alias: "Shopping reminder"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.laro_shopping_items_unchecked
-        above: 10
-    action:
-      - service: notify.mobile_app_phone
-        data:
-          title: "Shopping List"
-          message: "You have {{ states('sensor.laro_shopping_items_unchecked') }} items on your shopping list"
-```
-
-## Add-on vs integration
-
-| Setup | Use |
-|-------|-----|
-| **laro.food** (cloud) | This custom integration → URL `https://laro.food` |
-| Self-hosted Docker / VPS | This custom integration → your server URL |
-| Want Laro **inside** HA OS | [Supervisor add-on](../laro-home-assistant-addon) (separate from this integration) |
-
-## Troubleshooting
-
-### Cannot connect to laro.food
-
-- Confirm the URL is exactly `https://laro.food` (HTTPS, no trailing path)
-- Confirm the API token was copied in full
-- From a machine on the HA network: `curl -I https://laro.food/api/health`
-- If you get Cloudflare/WAF blocks (403/challenge), allow Home Assistant’s egress IP or ask support to allowlist `/api/health`, `/api/auth/me`, and `/api/homeassistant/*`
-
-### Integration not discovering local Laro
-
-- Discovery is LAN/Zeroconf only — cloud users should configure manually
-- Ensure Laro is running and reachable
-- Try manual setup with the server URL
-
-### Invalid token
-
-- Create a new API token in Laro Settings
-- Use an API token, not a browser session cookie / JWT from DevTools
-- Confirm the token has not been revoked
-
-### Cannot connect (self-host)
-
-- Verify the URL (include port if needed, e.g. `:8001`)
-- Ensure Home Assistant can reach the host (same network or valid public HTTPS)
-- Check firewall / reverse-proxy headers
+- Docs / issues: [Domocn/Laro](https://github.com/Domocn/Laro/issues)
+- HACS + add-on store repo: [Domocn/Laro-home-assistant-addon](https://github.com/Domocn/Laro-home-assistant-addon)
 
 ## License
 
-MIT License — see [LICENSE](../LICENSE).
+MIT
