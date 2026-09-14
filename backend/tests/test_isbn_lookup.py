@@ -117,6 +117,111 @@ async def test_isbn_lookup_404_when_catalogs_empty():
 
 
 @pytest.mark.asyncio
+async def test_isbn_lookup_503_when_catalogs_unreachable():
+    from routers import cookbooks as cookbooks_router
+
+    user = {"id": "user-1", "household_id": None}
+    app = FastAPI()
+    app.include_router(cookbooks_router.router, prefix="/api")
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, params=None, timeout=None, **kwargs):
+            raise cookbooks_router.httpx.ConnectTimeout("simulated timeout")
+
+    with patch.object(
+        cookbooks_router.cookbook_repository,
+        "find_by_isbn",
+        AsyncMock(return_value=None),
+    ), patch.object(cookbooks_router.httpx, "AsyncClient", FakeClient):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.get("/api/cookbooks/lookup", params={"isbn": "9780143127741"})
+
+    assert res.status_code == 503
+    assert "unreachable" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_isbn_lookup_404_when_one_catalog_answers_empty():
+    """Reachable empty search + flaky books API must not become 503."""
+    from routers import cookbooks as cookbooks_router
+
+    user = {"id": "user-1", "household_id": None}
+    app = FastAPI()
+    app.include_router(cookbooks_router.router, prefix="/api")
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, url, params=None, timeout=None, **kwargs):
+            if "search.json" in url:
+                return Response(200, json={"numFound": 0, "docs": []})
+            if "/api/books" in url:
+                raise cookbooks_router.httpx.ConnectTimeout("simulated")
+            if "googleapis.com" in url:
+                return Response(429, json={"error": {"code": 429}})
+            raise AssertionError(url)
+
+    with patch.object(
+        cookbooks_router.cookbook_repository,
+        "find_by_isbn",
+        AsyncMock(return_value=None),
+    ), patch.object(cookbooks_router.httpx, "AsyncClient", FakeClient):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.get("/api/cookbooks/lookup", params={"isbn": "9781970903119"})
+
+    assert res.status_code == 404
+    assert "manually" in res.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_isbn_http_client_forces_ipv4_local_address():
+    from routers import cookbooks as cookbooks_router
+
+    captured = {}
+
+    class FakeTransport:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            captured["client_kwargs"] = k
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+    with patch.object(
+        cookbooks_router.httpx, "AsyncHTTPTransport", FakeTransport
+    ), patch.object(cookbooks_router.httpx, "AsyncClient", FakeClient):
+        client = cookbooks_router._isbn_http_client()
+        assert captured.get("local_address") == "0.0.0.0"
+        assert "transport" in captured.get("client_kwargs", {})
+
+
+@pytest.mark.asyncio
 async def test_create_cookbook_accepts_android_published_year_alias():
     from routers import cookbooks as cookbooks_router
 

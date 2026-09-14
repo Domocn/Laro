@@ -14,7 +14,6 @@ from models import (
 from dependencies import get_current_user, cookbook_repository, recipe_repository
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
-from utils.security import sanitize_error_message
 import asyncio
 import logging
 import os
@@ -27,6 +26,32 @@ from urllib.parse import quote_plus
 
 router = APIRouter(prefix="/cookbooks", tags=["Cookbooks"])
 logger = logging.getLogger(__name__)
+
+
+def _isbn_http_client(**kwargs) -> httpx.AsyncClient:
+    """Outbound catalog client forced to IPv4.
+
+    Our VPS resolves openlibrary.org / Google to IPv6 first; those routes often
+    hang or ConnectTimeout from the backend container, while IPv4 works.
+    Binding local_address to 0.0.0.0 makes httpx use IPv4 only.
+    """
+    timeout = kwargs.pop("timeout", httpx.Timeout(20.0, connect=8.0))
+    headers = kwargs.pop(
+        "headers",
+        {"User-Agent": "LaroCookbookLookup/1.0 (https://laro.food)"},
+    )
+    transport = kwargs.pop(
+        "transport",
+        httpx.AsyncHTTPTransport(local_address="0.0.0.0"),
+    )
+    return httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=True,
+        headers=headers,
+        transport=transport,
+        **kwargs,
+    )
+
 
 # Blocklist: never emit outbound links to known pirate / shadow libraries.
 _PIRATE_HOST_RE = re.compile(
@@ -395,24 +420,25 @@ async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
         )
 
     catalogs_unreachable = False
+    catalog_answered = False
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(20.0, connect=8.0),
-        follow_redirects=True,
-        headers={"User-Agent": "LaroCookbookLookup/1.0 (https://laro.food)"},
-    ) as client:
+    async with _isbn_http_client() as client:
         # Race catalogs — Open Library /api/books and /search.json flip between
         # reachable/unreachable from our VPS; Google is often daily-quota limited.
         results = await asyncio.gather(
             _isbn_from_open_library_search(client, clean_isbn),
             _isbn_from_open_library_books_api(client, clean_isbn),
-            _isbn_from_google_books_safe(client, clean_isbn),
+            _isbn_from_google_books(client, clean_isbn),
             return_exceptions=True,
         )
         hits: List[ISBNLookupResponse] = []
         for r in results:
             if isinstance(r, ISBNLookupResponse):
                 hits.append(r)
+                catalog_answered = True
+            elif r is None:
+                # Completed without a network error (empty result or soft miss)
+                catalog_answered = True
             elif isinstance(r, httpx.RequestError):
                 catalogs_unreachable = True
                 logger.warning("ISBN catalog request error: %s", r)
@@ -423,8 +449,10 @@ async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
             # Prefer a result that has a real title (all should)
             return hits[0]
 
-    # Fix unbound hits reference in unreachable branch
-    if catalogs_unreachable:
+    # Only 503 when every catalog failed to answer (pure network failures).
+    # An empty-but-reachable Open Library response must stay a 404 so users
+    # can enter the title manually without a scary "unreachable" toast.
+    if catalogs_unreachable and not catalog_answered:
         raise HTTPException(
             status_code=503,
             detail=(
@@ -439,21 +467,11 @@ async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
     )
 
 
-async def _isbn_from_google_books_safe(
-    client: httpx.AsyncClient, clean_isbn: str
-) -> Optional[ISBNLookupResponse]:
-    try:
-        return await _isbn_from_google_books(client, clean_isbn)
-    except httpx.RequestError as e:
-        logger.warning("Google Books ISBN request failed for %s: %s", clean_isbn, e)
-        return None
-
-
 async def _isbn_from_open_library_search(
     client: httpx.AsyncClient, clean_isbn: str
 ) -> Optional[ISBNLookupResponse]:
     """Primary Open Library path — ``/search.json?isbn=``."""
-    last_err: Optional[Exception] = None
+    last_err: Optional[httpx.RequestError] = None
     for attempt in range(3):
         try:
             response = await client.get(
@@ -502,7 +520,7 @@ async def _isbn_from_open_library_search(
             )
             continue
     if last_err:
-        logger.warning("Open Library search exhausted for ISBN %s: %s", clean_isbn, last_err)
+        raise last_err
     return None
 
 
@@ -510,19 +528,15 @@ async def _isbn_from_open_library_books_api(
     client: httpx.AsyncClient, clean_isbn: str
 ) -> Optional[ISBNLookupResponse]:
     """Legacy Open Library books API — often flaky from some networks."""
-    try:
-        ol_response = await client.get(
-            "https://openlibrary.org/api/books",
-            params={
-                "bibkeys": f"ISBN:{clean_isbn}",
-                "format": "json",
-                "jscmd": "data",
-            },
-            timeout=8.0,
-        )
-    except httpx.RequestError as e:
-        logger.warning("Open Library books API failed for ISBN %s: %s", clean_isbn, e)
-        return None
+    ol_response = await client.get(
+        "https://openlibrary.org/api/books",
+        params={
+            "bibkeys": f"ISBN:{clean_isbn}",
+            "format": "json",
+            "jscmd": "data",
+        },
+        timeout=8.0,
+    )
 
     if ol_response.status_code != 200:
         return None
@@ -618,7 +632,7 @@ async def search_cookbooks_to_buy(
         raise HTTPException(status_code=400, detail="Search query too short")
 
     results: List[CookbookBuySearchResult] = []
-    async with httpx.AsyncClient() as client:
+    async with _isbn_http_client() as client:
         try:
             results.extend(await _search_open_library(client, query, limit))
         except httpx.RequestError:
