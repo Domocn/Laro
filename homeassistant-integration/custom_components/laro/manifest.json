@@ -6,13 +6,13 @@
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/Domocn/Laro",
+  "documentation": "https://github.com/Domocn/laro-ha-intergration",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Domocn/Laro/issues",
   "requirements": [
     "aiohttp>=3.8.0"
   ],
-  "version": "1.4.0",
+  "version": "1.4.2",
   "zeroconf": [
     "_laro._tcp.local."
   ]

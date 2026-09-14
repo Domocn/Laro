@@ -19,19 +19,16 @@ from . import LaroDataUpdateCoordinator
 from .const import DOMAIN
 
 
-@dataclass
-class LaroSensorEntityDescriptionMixin:
-    """Mixin for Laro sensor descriptions."""
+@dataclass(frozen=True, kw_only=True)
+class LaroSensorEntityDescription(SensorEntityDescription):
+    """Describes a Laro sensor entity.
+
+    kw_only avoids dataclass field-order errors when combining required
+    fields like ``key`` with optional helpers such as ``attr_fn``.
+    """
 
     value_fn: Callable[[dict[str, Any]], Any]
     attr_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
-
-
-@dataclass
-class LaroSensorEntityDescription(
-    SensorEntityDescription, LaroSensorEntityDescriptionMixin
-):
-    """Describes a Laro sensor entity."""
 
 
 def _meal_title(meal: dict) -> str:
