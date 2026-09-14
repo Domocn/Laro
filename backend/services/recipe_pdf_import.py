@@ -116,12 +116,16 @@ def split_recipe_text_chunks(text: str, max_chunks: int = 25) -> List[str]:
     return [text]
 
 
-def mark_recipe_for_review(recipe: Dict[str, Any]) -> Dict[str, Any]:
+def mark_recipe_for_review(
+    recipe: Dict[str, Any],
+    *,
+    import_tag: str = IMPORTED_PDF_TAG,
+) -> Dict[str, Any]:
     """Ensure recipe carries needs-review tag + flag for client UIs."""
     out = dict(recipe or {})
     tags = list(out.get("tags") or [])
-    for t in (NEEDS_REVIEW_TAG, IMPORTED_PDF_TAG):
-        if t not in tags:
+    for t in (NEEDS_REVIEW_TAG, import_tag):
+        if t and t not in tags:
             tags.append(t)
     out["tags"] = tags
     out["needs_review"] = True
@@ -131,6 +135,8 @@ def mark_recipe_for_review(recipe: Dict[str, Any]) -> Dict[str, Any]:
 def dedupe_recipes(
     recipes: List[Dict[str, Any]],
     existing_titles: Optional[Set[str]] = None,
+    *,
+    import_tag: str = IMPORTED_PDF_TAG,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """
     Drop overlapping / duplicate titles within the batch and vs existing library.
@@ -154,7 +160,7 @@ def dedupe_recipes(
             skipped.append({"title": title, "reason": "already_in_library"})
             continue
         seen.add(key)
-        recipe = mark_recipe_for_review({**raw, "title": title})
+        recipe = mark_recipe_for_review({**raw, "title": title}, import_tag=import_tag)
         kept.append(recipe)
 
     return kept, skipped
@@ -226,6 +232,44 @@ Return ONLY valid JSON (no markdown):
       "category": "Dinner",
       "tags": [],
       "nutrition": {"calories": null, "protein": null, "carbs": null, "fat": null}
+    }
+  ]
+}
+Categories: Breakfast, Lunch, Dinner, Dessert, Appetizer, Snack, Beverage, Meal Pack, Other.
+If only one recipe is present, return an array of length 1."""
+
+IMPORTED_PHOTO_TAG = "imported-photo"
+
+# Cap for Quick Add → Photos (many cookbook pages / separate dishes).
+MAX_PHOTO_EXTRACT_IMAGES = 20
+# Vision calls stay reliable when batched (token + image limits).
+PHOTO_EXTRACT_BATCH_SIZE = 5
+
+MULTI_RECIPE_IMAGES_PROMPT = """You are a recipe extraction assistant. The user uploaded cookbook / recipe page PHOTO(S).
+Each image may be a different recipe OR consecutive pages of the same recipe.
+Extract EVERY distinct recipe as its own object. Do NOT invent recipes that are not visible.
+Rules:
+- If an image is a complete recipe on its own, make it its own object.
+- If consecutive images clearly continue THE SAME recipe (e.g. ingredients then instructions), combine into ONE object.
+- Do NOT merge different dishes into one recipe.
+- Do NOT repeat the same dish twice.
+- Prefer the printed title (strip leading numbers like "1." or "10.").
+- Ignore reverse-side bleed-through, spiral binding holes, shadows, hands, and table clutter.
+- Include nutrition fields when printed on the page (calories, protein, carbs/fat/fiber/sugar as numbers when possible).
+Return ONLY valid JSON (no markdown):
+{
+  "recipes": [
+    {
+      "title": "Recipe Name",
+      "description": "Brief description",
+      "ingredients": [{"name": "ingredient", "amount": "1", "unit": "cup"}],
+      "instructions": ["Step 1", "Step 2"],
+      "prep_time": 15,
+      "cook_time": 30,
+      "servings": 4,
+      "category": "Breakfast",
+      "tags": [],
+      "nutrition": {"calories": null, "protein": null, "carbs": null, "fat": null, "fiber": null, "sugar": null}
     }
   ]
 }

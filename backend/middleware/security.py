@@ -156,7 +156,9 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
     - Invalid content types
     """
 
-    MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10MB
+    # Cookbook photo batches (base64 JSON) routinely exceed 10MB before client
+    # compression; 25MB covers ~15–20 downscaled pages with headroom.
+    MAX_CONTENT_LENGTH = 25 * 1024 * 1024  # 25MB
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         client_ip = request.client.host if request.client else "unknown"
