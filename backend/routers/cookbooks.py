@@ -15,6 +15,7 @@ from dependencies import get_current_user, cookbook_repository, recipe_repositor
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
 from utils.security import sanitize_error_message
+import logging
 import os
 import re
 import uuid
@@ -24,6 +25,7 @@ from typing import List, Optional
 from urllib.parse import quote_plus
 
 router = APIRouter(prefix="/cookbooks", tags=["Cookbooks"])
+logger = logging.getLogger(__name__)
 
 # Blocklist: never emit outbound links to known pirate / shadow libraries.
 _PIRATE_HOST_RE = re.compile(
@@ -366,17 +368,20 @@ async def lookup_isbn_path(
 
 
 async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
-    """Shared ISBN lookup: local shelf → Google Books → Open Library."""
-    # Clean ISBN (remove dashes, spaces); keep trailing X for ISBN-10
+    """Shared ISBN lookup: local shelf → Open Library search → Google Books.
+
+    Production often hits Google Books daily quota (429). Open Library's
+    ``/api/books`` endpoint is intermittently unreachable from our VPS, while
+    ``/search.json?isbn=`` remains reliable — prefer that path.
+    """
     clean_isbn = isbn.replace("-", "").replace(" ", "").upper()
     if not clean_isbn:
         raise HTTPException(status_code=400, detail="ISBN is required")
 
-    # Check if we already have this cookbook
     existing = await cookbook_repository.find_by_isbn(
         isbn=clean_isbn,
         user_id=user["id"],
-        household_id=user.get("household_id")
+        household_id=user.get("household_id"),
     )
     if existing:
         return ISBNLookupResponse(
@@ -385,99 +390,199 @@ async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
             publisher=existing.get("publisher"),
             year=existing.get("year"),
             cover_image_url=existing.get("cover_image_url"),
-            isbn=clean_isbn
+            isbn=clean_isbn,
         )
 
-    async with httpx.AsyncClient() as client:
+    catalogs_unreachable = False
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(20.0, connect=8.0),
+        follow_redirects=True,
+        headers={"User-Agent": "LaroCookbookLookup/1.0 (https://laro.food)"},
+    ) as client:
+        # 1) Open Library search.json (most reliable from our hosts)
+        ol = await _isbn_from_open_library_search(client, clean_isbn)
+        if ol:
+            return ol
+
+        # 2) Open Library legacy books API (best-effort)
+        ol = await _isbn_from_open_library_books_api(client, clean_isbn)
+        if ol:
+            return ol
+
+        # 3) Google Books (may be quota-limited)
         try:
-            google_hit = None
+            google = await _isbn_from_google_books(client, clean_isbn)
+            if google:
+                return google
+        except httpx.RequestError:
+            catalogs_unreachable = True
+
+    if catalogs_unreachable:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Book catalogs are temporarily unreachable. "
+                "Enter the title and author manually, or try again in a minute."
+            ),
+        )
+
+    raise HTTPException(
+        status_code=404,
+        detail="Book not found in catalogs. Enter the title and author manually.",
+    )
+
+
+async def _isbn_from_open_library_search(
+    client: httpx.AsyncClient, clean_isbn: str
+) -> Optional[ISBNLookupResponse]:
+    """Primary Open Library path — ``/search.json?isbn=``."""
+    last_err: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            response = await client.get(
+                "https://openlibrary.org/search.json",
+                params={"isbn": clean_isbn, "limit": 1},
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json() or {}
+            docs = data.get("docs") or []
+            if not docs:
+                return None
+            doc = docs[0]
+            title = (doc.get("title") or "").strip()
+            if not title:
+                return None
+            authors = doc.get("author_name") or []
+            author = ", ".join(a for a in authors if a) or None
+            publishers = doc.get("publisher") or []
+            publisher = publishers[0] if publishers else None
+            year = doc.get("first_publish_year")
             try:
-                response = await client.get(
-                    "https://www.googleapis.com/books/v1/volumes",
-                    params={"q": f"isbn:{clean_isbn}"},
-                    timeout=10.0
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("totalItems", 0) > 0:
-                        google_hit = data["items"][0]["volumeInfo"]
-            except httpx.RequestError:
-                google_hit = None
-
-            if google_hit:
-                book = google_hit
-                cover_url = None
-                if "imageLinks" in book:
-                    cover_url = book["imageLinks"].get("large") or book["imageLinks"].get("thumbnail")
-                    if cover_url:
-                        cover_url = cover_url.replace("http://", "https://")
-                        cover_url = cover_url.replace("&edge=curl", "")
-
+                year = int(year) if year is not None else None
+            except (TypeError, ValueError):
                 year = None
-                if "publishedDate" in book:
-                    try:
-                        year = int(book["publishedDate"][:4])
-                    except (ValueError, IndexError):
-                        pass
-
-                return ISBNLookupResponse(
-                    title=book.get("title", "Unknown"),
-                    author=", ".join(book.get("authors", [])) or None,
-                    publisher=book.get("publisher"),
-                    year=year,
-                    cover_image_url=cover_url,
-                    isbn=clean_isbn
-                )
-
-            # Open Library fallback (also when Google is down / rate-limited)
-            ol_response = await client.get(
-                "https://openlibrary.org/api/books",
-                params={"bibkeys": f"ISBN:{clean_isbn}", "format": "json", "jscmd": "data"},
-                timeout=10.0
+            cover_i = doc.get("cover_i")
+            cover_url = (
+                f"https://covers.openlibrary.org/b/id/{cover_i}-L.jpg"
+                if cover_i
+                else f"https://covers.openlibrary.org/b/isbn/{clean_isbn}-L.jpg"
             )
-
-            if ol_response.status_code == 200:
-                ol_data = ol_response.json()
-                book_key = f"ISBN:{clean_isbn}"
-                if book_key in ol_data:
-                    book = ol_data[book_key]
-                    authors = book.get("authors", [])
-                    author_names = ", ".join([a.get("name", "") for a in authors])
-                    publishers = book.get("publishers", [])
-                    publisher = publishers[0].get("name") if publishers else None
-
-                    cover_url = None
-                    if "cover" in book:
-                        cover_url = book["cover"].get("large") or book["cover"].get("medium")
-                    if not cover_url:
-                        cover_url = f"https://covers.openlibrary.org/b/isbn/{clean_isbn}-L.jpg"
-
-                    year = None
-                    publish_date = book.get("publish_date") or ""
-                    if len(publish_date) >= 4 and publish_date[:4].isdigit():
-                        year = int(publish_date[:4])
-
-                    return ISBNLookupResponse(
-                        title=book.get("title", "Unknown"),
-                        author=author_names or None,
-                        publisher=publisher,
-                        year=year,
-                        cover_image_url=cover_url,
-                        isbn=clean_isbn
-                    )
-
-            raise HTTPException(
-                status_code=404,
-                detail="Book not found. Try entering details manually."
+            return ISBNLookupResponse(
+                title=title,
+                author=author,
+                publisher=publisher if isinstance(publisher, str) else None,
+                year=year,
+                cover_image_url=cover_url,
+                isbn=clean_isbn,
             )
-
-        except HTTPException:
-            raise
         except httpx.RequestError as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Could not connect to book lookup service: {sanitize_error_message(e)}"
+            last_err = e
+            logger.warning(
+                "Open Library search ISBN attempt %s failed: %s",
+                attempt + 1,
+                e,
             )
+            continue
+    if last_err:
+        logger.warning("Open Library search exhausted for ISBN %s: %s", clean_isbn, last_err)
+    return None
+
+
+async def _isbn_from_open_library_books_api(
+    client: httpx.AsyncClient, clean_isbn: str
+) -> Optional[ISBNLookupResponse]:
+    """Legacy Open Library books API — often flaky from some networks."""
+    try:
+        ol_response = await client.get(
+            "https://openlibrary.org/api/books",
+            params={
+                "bibkeys": f"ISBN:{clean_isbn}",
+                "format": "json",
+                "jscmd": "data",
+            },
+            timeout=8.0,
+        )
+    except httpx.RequestError as e:
+        logger.warning("Open Library books API failed for ISBN %s: %s", clean_isbn, e)
+        return None
+
+    if ol_response.status_code != 200:
+        return None
+    ol_data = ol_response.json() or {}
+    book = ol_data.get(f"ISBN:{clean_isbn}")
+    if not book:
+        return None
+
+    authors = book.get("authors", [])
+    author_names = ", ".join([a.get("name", "") for a in authors if isinstance(a, dict)])
+    publishers = book.get("publishers", [])
+    publisher = publishers[0].get("name") if publishers else None
+
+    cover_url = None
+    if "cover" in book:
+        cover_url = book["cover"].get("large") or book["cover"].get("medium")
+    if not cover_url:
+        cover_url = f"https://covers.openlibrary.org/b/isbn/{clean_isbn}-L.jpg"
+
+    year = None
+    publish_date = book.get("publish_date") or ""
+    if len(publish_date) >= 4 and publish_date[:4].isdigit():
+        year = int(publish_date[:4])
+
+    return ISBNLookupResponse(
+        title=book.get("title", "Unknown"),
+        author=author_names or None,
+        publisher=publisher,
+        year=year,
+        cover_image_url=cover_url,
+        isbn=clean_isbn,
+    )
+
+
+async def _isbn_from_google_books(
+    client: httpx.AsyncClient, clean_isbn: str
+) -> Optional[ISBNLookupResponse]:
+    response = await client.get(
+        "https://www.googleapis.com/books/v1/volumes",
+        params={"q": f"isbn:{clean_isbn}"},
+        timeout=10.0,
+    )
+    if response.status_code != 200:
+        # 429 quota etc. — caller will try other catalogs / 404
+        logger.info(
+            "Google Books ISBN lookup status=%s for %s",
+            response.status_code,
+            clean_isbn,
+        )
+        return None
+    data = response.json() or {}
+    if data.get("totalItems", 0) <= 0:
+        return None
+    book = data["items"][0]["volumeInfo"]
+
+    cover_url = None
+    if "imageLinks" in book:
+        cover_url = book["imageLinks"].get("large") or book["imageLinks"].get("thumbnail")
+        if cover_url:
+            cover_url = cover_url.replace("http://", "https://").replace("&edge=curl", "")
+
+    year = None
+    if "publishedDate" in book:
+        try:
+            year = int(book["publishedDate"][:4])
+        except (ValueError, IndexError):
+            pass
+
+    return ISBNLookupResponse(
+        title=book.get("title", "Unknown"),
+        author=", ".join(book.get("authors", [])) or None,
+        publisher=book.get("publisher"),
+        year=year,
+        cover_image_url=cover_url,
+        isbn=clean_isbn,
+    )
 
 
 @router.get("/search-buy", response_model=CookbookBuySearchResponse)
