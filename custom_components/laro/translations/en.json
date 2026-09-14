@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Laro",
+        "description": "Enter your Laro URL and API token. Works with the cloud app (https://laro.food) or any self-hosted server. Create a token in Laro → Settings → API Tokens.",
+        "data": {
+          "url": "Laro Server URL",
+          "token": "API Token"
+        },
+        "data_description": {
+          "url": "Cloud: https://laro.food — Self-host: http://192.168.1.100:8001 (or your HTTPS URL)",
+          "token": "API token from Laro → Settings → API Tokens"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Laro Discovered",
+        "description": "Laro was found at {url}. Enter your API token to connect. Generate a token from Laro Settings > Integrations.",
+        "data": {
+          "token": "API Token"
+        },
+        "data_description": {
+          "token": "Your API token from Laro Settings > Integrations"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Laro server",
+      "invalid_auth": "Invalid authentication token",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This Laro account is already configured"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "recipe_count": {
+        "name": "Recipe Count"
+      },
+      "today_meals": {
+        "name": "Today's Meals"
+      },
+      "tonight_suggestion": {
+        "name": "Tonight's Suggestion"
+      },
+      "shopping_items_unchecked": {
+        "name": "Shopping List Items"
+      },
+      "favorite_count": {
+        "name": "Favorite Recipes"
+      },
+      "meal_plans_this_week": {
+        "name": "Meals This Week"
+      }
+    },
+    "calendar": {
+      "meal_plan": {
+        "name": "Meal Plan"
+      }
+    }
+  }
+}

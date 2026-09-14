@@ -1,0 +1,55 @@
+add_to_shopping_list:
+  name: Add to Shopping List
+  description: Add items to the Laro shopping list
+  fields:
+    items:
+      name: Items
+      description: List of items to add to the shopping list
+      required: true
+      example: '["Milk", "Eggs", "Bread"]'
+      selector:
+        object:
+
+create_meal_plan:
+  name: Create Meal Plan
+  description: Add a recipe to the meal plan
+  fields:
+    recipe_id:
+      name: Recipe ID
+      description: The ID of the recipe to add
+      required: true
+      example: "abc123"
+      selector:
+        text:
+    date:
+      name: Date
+      description: The date for the meal plan (YYYY-MM-DD)
+      required: true
+      example: "2024-01-15"
+      selector:
+        date:
+    meal_type:
+      name: Meal Type
+      description: Type of meal (breakfast, lunch, dinner, snack)
+      required: false
+      default: "dinner"
+      example: "dinner"
+      selector:
+        select:
+          options:
+            - "breakfast"
+            - "lunch"
+            - "dinner"
+            - "snack"
+
+import_recipe:
+  name: Import Recipe
+  description: Import a recipe from a URL
+  fields:
+    url:
+      name: URL
+      description: The URL of the recipe to import
+      required: true
+      example: "https://www.allrecipes.com/recipe/12345"
+      selector:
+        text:

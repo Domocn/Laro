@@ -13,6 +13,7 @@
   <a href="#dont-want-to-self-host">Cloud Version</a> •
   <a href="#quick-start">Self-Host</a> •
   <a href="#features">Features</a> •
+  <a href="#home-assistant">Home Assistant</a> •
   <a href="#configuration">Configuration</a>
 </p>
 
@@ -128,12 +129,42 @@ docker run -d --name laro-db \
 ### Shopping Lists
 - Auto-generate from meal plans
 - Check off as you shop
-- Smart ingredient grouping
+- Smart ingredient grouping + taught grocery aisles
+- Offline queue (check / add / remove / aisle / create / delete list)
+- UK-first barcode lookup (camera on web when supported)
+- Live presence when others view the same list
 
 ### Cooking Mode
 - Full-screen step-by-step
 - AI cooking assistant
 - Timer integration
+
+### Kitchen & Nutrition
+- Ingredient aliases / merge duplicates
+- Store aisle overrides
+- UK Open Prices + % Reference Intake nutrition
+
+---
+
+## Home Assistant
+
+Works with **cloud** ([laro.food](https://laro.food)) and **self-hosted** Laro.
+
+### Custom integration (recommended for cloud or remote Laro)
+
+1. Copy `custom_components/laro` into your Home Assistant `config/custom_components/` folder (or use the packaged tree under `homeassistant-integration/`).
+2. In Laro: **Settings → API Tokens** → create a token.
+3. In Home Assistant: **Settings → Devices & Services → Add Integration → Laro**.
+4. URL:
+   - Cloud: `https://laro.food`
+   - Self-host: `http://YOUR_LAN_IP:8001` (or your HTTPS URL)
+5. Paste the API token.
+
+### Supervisor add-on (run Laro inside HA OS)
+
+Install from [`Domocn/mise-home-assistant-addon`](https://github.com/Domocn/mise-home-assistant-addon).
+
+> Using **laro.food**? Skip the add-on — use the custom integration with `https://laro.food`.
 
 ---
 
