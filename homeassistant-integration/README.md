@@ -1,63 +1,53 @@
-# Laro Home Assistant Integration
+# Laro Home Assistant Integration (HACS)
 
-**For cloud users ([laro.food](https://laro.food)) and self-hosted Laro.**
+Connect **[laro.food](https://laro.food)** (cloud) or any self-hosted Laro server to Home Assistant.
 
-This is the Home Assistant **custom integration** (sensors, meal calendar, services).  
-It is **not** the Supervisor add-on (that runs a full Laro server inside HA OS).
+This repository is the **HACS custom integration only** — sensors, meal calendar, and services.
 
-| You use… | Install this |
-|----------|----------------|
-| **laro.food** (cloud) | This integration via **HACS** |
-| Your own Laro server | This integration via **HACS** |
-| Want Laro **inside** HA OS | [Supervisor add-on](https://github.com/Domocn/Laro-home-assistant-addon) instead |
+It is **not** the Supervisor add-on. The add-on runs a full Laro stack inside Home Assistant OS and lives here separately:
 
-## Install with HACS (cloud-friendly)
+→ [Domocn/Laro-home-assistant-addon](https://github.com/Domocn/Laro-home-assistant-addon)
 
-1. Open **HACS → Integrations**
-2. ⋮ → **Custom repositories**
-3. Repository (pick one):
-   - Preferred (when available): `https://github.com/Domocn/Laro-home-assistant`
-   - Works today: `https://github.com/Domocn/Laro`
-4. Category: **Integration**
-5. Download **Laro** → restart Home Assistant
-6. **Settings → Devices & Services → Add Integration → Laro**
-7. Server URL: `https://laro.food`  
-8. API token: from Laro **Settings → API Tokens**
+| Goal | Use |
+|------|-----|
+| Cloud (**laro.food**) in Home Assistant | **This repo** via HACS |
+| Remote / self-hosted Laro API in Home Assistant | **This repo** via HACS |
+| Run Laro server inside HA OS | [Supervisor add-on](https://github.com/Domocn/Laro-home-assistant-addon) |
 
-## Manual install
+## Install with HACS
 
-Copy `custom_components/laro` into Home Assistant `config/custom_components/`, restart, then add the integration as above.
-
-## Configuration
+1. **HACS → Integrations → ⋮ → Custom repositories**
+2. Repository: `https://github.com/Domocn/laro-ha-intergration`
+3. Category: **Integration**
+4. Download **Laro** → restart Home Assistant
+5. **Settings → Devices & Services → Add Integration → Laro**
 
 ### Cloud (laro.food)
 
 1. Sign in at [laro.food](https://laro.food)
 2. **Settings → API Tokens** → create a token (e.g. `Home Assistant`)
-3. In Home Assistant add the **Laro** integration
-4. URL: `https://laro.food`
-5. Paste the token
+3. In the Laro integration: URL `https://laro.food` → paste the token
 
-### Self-hosted Laro
+### Self-hosted
 
 Same steps with your server URL, e.g. `http://192.168.1.50:8001` or `https://laro.yourdomain.com`.
 
-## What you get
+## Manual install
 
-- Sensors: recipes, today’s meals, tonight’s suggestion, shopping items, favorites, weekly plans, AI quota  
-- Calendar: meal plan  
-- Services: shopping list, meal plan, import recipe  
+Copy `custom_components/laro` into Home Assistant `config/custom_components/`, restart, then add the integration.
 
-## Not this package
+## Features
 
-- **Supervisor add-on** (Postgres/Redis/full stack in HA OS):  
-  `https://github.com/Domocn/Laro-home-assistant-addon`  
-  Skip that if you only use **laro.food**.
+- Sensors: recipes, today’s meals, tonight’s suggestion, shopping items, favorites, weekly plans, AI quota
+- Calendar: meal plan
+- Services: shopping list, meal plan, import recipe
+- Zeroconf discovery for local self-hosted instances
 
 ## Support
 
-- Issues: https://github.com/Domocn/Laro/issues  
-- Cloud app: https://laro.food  
+- Issues: https://github.com/Domocn/Laro/issues
+- Cloud app: https://laro.food
+- Supervisor add-on (separate): https://github.com/Domocn/Laro-home-assistant-addon
 
 ## License
 
