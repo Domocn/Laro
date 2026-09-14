@@ -317,9 +317,9 @@ async def create_cookbook(
         "author": cookbook.author,
         "isbn": cookbook.isbn,
         "publisher": cookbook.publisher,
-        "year": cookbook.year,
+        "year": cookbook.resolved_year(),
         "cover_image_url": cookbook.cover_image_url,
-        "notes": cookbook.notes,
+        "notes": cookbook.resolved_notes(),
         "created_at": now,
         "updated_at": now
     }
@@ -351,9 +351,26 @@ async def lookup_isbn(
     request: Request,
     user: dict = Depends(get_current_user)
 ):
-    """Look up cookbook information by ISBN using Google Books API"""
-    # Clean ISBN (remove dashes, spaces)
-    clean_isbn = isbn.replace("-", "").replace(" ", "")
+    """Look up cookbook metadata by ISBN (Google Books, then Open Library)."""
+    return await _lookup_isbn_impl(isbn, user)
+
+
+@router.get("/isbn/{isbn}", response_model=ISBNLookupResponse)
+async def lookup_isbn_path(
+    isbn: str,
+    request: Request,
+    user: dict = Depends(get_current_user)
+):
+    """Alias for Android clients that call GET /cookbooks/isbn/{isbn}."""
+    return await _lookup_isbn_impl(isbn, user)
+
+
+async def _lookup_isbn_impl(isbn: str, user: dict) -> ISBNLookupResponse:
+    """Shared ISBN lookup: local shelf → Google Books → Open Library."""
+    # Clean ISBN (remove dashes, spaces); keep trailing X for ISBN-10
+    clean_isbn = isbn.replace("-", "").replace(" ", "").upper()
+    if not clean_isbn:
+        raise HTTPException(status_code=400, detail="ISBN is required")
 
     # Check if we already have this cookbook
     existing = await cookbook_repository.find_by_isbn(
@@ -371,87 +388,91 @@ async def lookup_isbn(
             isbn=clean_isbn
         )
 
-    # Look up via Google Books API
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(
-                f"https://www.googleapis.com/books/v1/volumes",
-                params={"q": f"isbn:{clean_isbn}"},
+            google_hit = None
+            try:
+                response = await client.get(
+                    "https://www.googleapis.com/books/v1/volumes",
+                    params={"q": f"isbn:{clean_isbn}"},
+                    timeout=10.0
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("totalItems", 0) > 0:
+                        google_hit = data["items"][0]["volumeInfo"]
+            except httpx.RequestError:
+                google_hit = None
+
+            if google_hit:
+                book = google_hit
+                cover_url = None
+                if "imageLinks" in book:
+                    cover_url = book["imageLinks"].get("large") or book["imageLinks"].get("thumbnail")
+                    if cover_url:
+                        cover_url = cover_url.replace("http://", "https://")
+                        cover_url = cover_url.replace("&edge=curl", "")
+
+                year = None
+                if "publishedDate" in book:
+                    try:
+                        year = int(book["publishedDate"][:4])
+                    except (ValueError, IndexError):
+                        pass
+
+                return ISBNLookupResponse(
+                    title=book.get("title", "Unknown"),
+                    author=", ".join(book.get("authors", [])) or None,
+                    publisher=book.get("publisher"),
+                    year=year,
+                    cover_image_url=cover_url,
+                    isbn=clean_isbn
+                )
+
+            # Open Library fallback (also when Google is down / rate-limited)
+            ol_response = await client.get(
+                "https://openlibrary.org/api/books",
+                params={"bibkeys": f"ISBN:{clean_isbn}", "format": "json", "jscmd": "data"},
                 timeout=10.0
             )
 
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Could not find book information for this ISBN"
-                )
+            if ol_response.status_code == 200:
+                ol_data = ol_response.json()
+                book_key = f"ISBN:{clean_isbn}"
+                if book_key in ol_data:
+                    book = ol_data[book_key]
+                    authors = book.get("authors", [])
+                    author_names = ", ".join([a.get("name", "") for a in authors])
+                    publishers = book.get("publishers", [])
+                    publisher = publishers[0].get("name") if publishers else None
 
-            data = response.json()
-            if data.get("totalItems", 0) == 0:
-                # Try Open Library as fallback
-                ol_response = await client.get(
-                    f"https://openlibrary.org/api/books",
-                    params={"bibkeys": f"ISBN:{clean_isbn}", "format": "json", "jscmd": "data"},
-                    timeout=10.0
-                )
+                    cover_url = None
+                    if "cover" in book:
+                        cover_url = book["cover"].get("large") or book["cover"].get("medium")
+                    if not cover_url:
+                        cover_url = f"https://covers.openlibrary.org/b/isbn/{clean_isbn}-L.jpg"
 
-                if ol_response.status_code == 200:
-                    ol_data = ol_response.json()
-                    book_key = f"ISBN:{clean_isbn}"
-                    if book_key in ol_data:
-                        book = ol_data[book_key]
-                        authors = book.get("authors", [])
-                        author_names = ", ".join([a.get("name", "") for a in authors])
-                        publishers = book.get("publishers", [])
-                        publisher = publishers[0].get("name") if publishers else None
+                    year = None
+                    publish_date = book.get("publish_date") or ""
+                    if len(publish_date) >= 4 and publish_date[:4].isdigit():
+                        year = int(publish_date[:4])
 
-                        cover_url = None
-                        if "cover" in book:
-                            cover_url = book["cover"].get("large") or book["cover"].get("medium")
+                    return ISBNLookupResponse(
+                        title=book.get("title", "Unknown"),
+                        author=author_names or None,
+                        publisher=publisher,
+                        year=year,
+                        cover_image_url=cover_url,
+                        isbn=clean_isbn
+                    )
 
-                        return ISBNLookupResponse(
-                            title=book.get("title", "Unknown"),
-                            author=author_names or None,
-                            publisher=publisher,
-                            year=int(book.get("publish_date", "")[:4]) if book.get("publish_date", "")[:4].isdigit() else None,
-                            cover_image_url=cover_url,
-                            isbn=clean_isbn
-                        )
-
-                raise HTTPException(
-                    status_code=404,
-                    detail="Book not found. Try entering details manually."
-                )
-
-            # Parse Google Books response
-            book = data["items"][0]["volumeInfo"]
-
-            # Get cover image (prefer large, fall back to thumbnail)
-            cover_url = None
-            if "imageLinks" in book:
-                cover_url = book["imageLinks"].get("large") or book["imageLinks"].get("thumbnail")
-                # Convert to HTTPS and remove zoom parameter for better quality
-                if cover_url:
-                    cover_url = cover_url.replace("http://", "https://")
-                    cover_url = cover_url.replace("&edge=curl", "")
-
-            # Parse publication year
-            year = None
-            if "publishedDate" in book:
-                try:
-                    year = int(book["publishedDate"][:4])
-                except (ValueError, IndexError):
-                    pass
-
-            return ISBNLookupResponse(
-                title=book.get("title", "Unknown"),
-                author=", ".join(book.get("authors", [])) or None,
-                publisher=book.get("publisher"),
-                year=year,
-                cover_image_url=cover_url,
-                isbn=clean_isbn
+            raise HTTPException(
+                status_code=404,
+                detail="Book not found. Try entering details manually."
             )
 
+        except HTTPException:
+            raise
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=503,
@@ -531,11 +552,22 @@ async def update_cookbook(
     if existing["user_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Not authorized to update this cookbook")
 
-    # Build update data (only include non-None fields)
+    # Build update data (only include non-None fields); map Android aliases
     update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
-    for field, value in cookbook_update.model_dump().items():
+    raw = cookbook_update.model_dump(exclude_unset=True)
+    raw.pop("published_year", None)
+    raw.pop("description", None)
+    for field, value in raw.items():
         if value is not None:
             update_data[field] = value
+    if "year" not in update_data or update_data.get("year") is None:
+        resolved_year = cookbook_update.resolved_year()
+        if resolved_year is not None:
+            update_data["year"] = resolved_year
+    if "notes" not in update_data or update_data.get("notes") is None:
+        resolved_notes = cookbook_update.resolved_notes()
+        if resolved_notes is not None:
+            update_data["notes"] = resolved_notes
 
     await cookbook_repository.update_cookbook(cookbook_id, update_data)
     updated = await cookbook_repository.find_by_id(cookbook_id)

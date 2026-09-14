@@ -577,6 +577,54 @@ def _normalize_image_base64(image_base64: str) -> str:
     return raw
 
 
+def prepare_vision_images(
+    images: list[str] | tuple[str, ...] | str,
+    *,
+    max_side: int = 1600,
+    quality: int = 82,
+) -> list[str]:
+    """
+    Normalize + downscale cookbook / receipt photos for vision APIs.
+
+    Phone camera JPEGs often exceed the request body limit when base64-encoded
+    in batches; JPEG re-encode keeps OCR-readable detail while shrinking payload.
+    """
+    import base64
+    import io
+
+    if isinstance(images, str):
+        raw_list = [images] if images else []
+    else:
+        raw_list = [i for i in (images or []) if i]
+
+    out: list[str] = []
+    try:
+        from PIL import Image
+    except Exception:
+        return [_normalize_image_base64(i) for i in raw_list]
+
+    for item in raw_list:
+        raw = _normalize_image_base64(item)
+        try:
+            data = base64.b64decode(raw, validate=False)
+            with Image.open(io.BytesIO(data)) as im:
+                im = im.convert("RGB")
+                w, h = im.size
+                longest = max(w, h)
+                if longest > max_side:
+                    scale = max_side / float(longest)
+                    im = im.resize(
+                        (max(1, int(w * scale)), max(1, int(h * scale))),
+                        Image.Resampling.LANCZOS,
+                    )
+                buf = io.BytesIO()
+                im.save(buf, format="JPEG", quality=quality, optimize=True)
+                out.append(base64.b64encode(buf.getvalue()).decode("ascii"))
+        except Exception:
+            out.append(raw)
+    return out
+
+
 def _ollama_vision_model(configured_model: str | None) -> str:
     """Pick a multimodal model — text-only cloud models (e.g. gpt-oss) cannot OCR receipts."""
     explicit = (getattr(settings, "ollama_vision_model", None) or "").strip()
@@ -1091,6 +1139,8 @@ __all__ = [
     # LLM
     'call_llm',
     'call_llm_with_image',
+    'call_llm_with_images',
+    'prepare_vision_images',
     'clean_llm_json',
 
     # Repositories

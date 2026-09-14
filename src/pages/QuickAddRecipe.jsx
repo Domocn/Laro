@@ -49,8 +49,9 @@ export const QuickAddRecipe = () => {
   const [imageLoading, setImageLoading] = useState(false);
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfRecipes, setPdfRecipes] = useState(null); // multi-recipe preview from one PDF
+  const [pdfRecipes, setPdfRecipes] = useState(null); // multi-recipe preview (PDF or photos)
   const [pdfSkipped, setPdfSkipped] = useState([]);
+  const [multiRecipeSource, setMultiRecipeSource] = useState(null); // 'pdf' | 'photo' | null
   const [cookbooks, setCookbooks] = useState([]);
   const [selectedCookbookId, setSelectedCookbookId] = useState('');
   const [cookbookPage, setCookbookPage] = useState('');
@@ -180,27 +181,89 @@ export const QuickAddRecipe = () => {
     reader.readAsDataURL(file);
   });
 
+  /** Downscale cookbook photos so multi-page JSON uploads stay under body limits. */
+  const fileToCompressedDataUrl = (file, maxSide = 1600, quality = 0.82) =>
+    new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth || img.width;
+          const h = img.naturalHeight || img.height;
+          const longest = Math.max(w, h) || 1;
+          const scale = longest > maxSide ? maxSide / longest : 1;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(w * scale));
+          canvas.height = Math.max(1, Math.round(h * scale));
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (err) {
+          reject(err);
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      };
+      img.onerror = (err) => {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      };
+      img.src = objectUrl;
+    });
+
   const handleImageSubmit = async () => {
     if (!imageFiles.length) {
       toast.error(t('toastAddPhoto'));
       return;
     }
     setImageLoading(true);
+    setPdfRecipes(null);
+    setPdfSkipped([]);
+    setMultiRecipeSource(null);
     try {
-      const images = await Promise.all(imageFiles.slice(0, 5).map(fileToDataUrl));
+      const images = await Promise.all(
+        imageFiles.slice(0, 20).map(async (file) => {
+          try {
+            return await fileToCompressedDataUrl(file);
+          } catch {
+            return fileToDataUrl(file);
+          }
+        })
+      );
       const pageNum = cookbookPage ? parseInt(cookbookPage, 10) : null;
       const res = await aiApi.extractFromImages(
         images,
         selectedCookbookId || null,
         Number.isFinite(pageNum) ? pageNum : null
       );
-      setExtractedRecipe(res.data.recipe || res.data);
-      toast.success(
-        t('toastRecipeExtractedPhoto') +
-          (res.data.images_processed > 1
-            ? ` (${res.data.images_processed} ${t('pagesLabel')})`
-            : '')
-      );
+      const list = res.data.recipes?.length
+        ? res.data.recipes
+        : res.data.recipe
+          ? [res.data.recipe]
+          : [];
+      setPdfSkipped(res.data.skipped || []);
+      if (!list.length) {
+        toast.error(res.data.message || t('toastNoRecipesInPhotos'));
+        return;
+      }
+      if (list.length === 1) {
+        setExtractedRecipe(list[0]);
+        setPdfRecipes(null);
+        setMultiRecipeSource(null);
+        toast.success(
+          t('toastRecipeExtractedPhoto') +
+            (res.data.images_processed > 1
+              ? ` (${res.data.images_processed} ${t('pagesLabel')})`
+              : '')
+        );
+      } else {
+        setExtractedRecipe(null);
+        setPdfRecipes(list);
+        setMultiRecipeSource('photo');
+        toast.success(
+          t('toastSeparatedRecipesFromPhotos', { count: list.length })
+        );
+      }
     } catch (error) {
       toast.error(
         getAiQuotaErrorMessage(
@@ -225,6 +288,7 @@ export const QuickAddRecipe = () => {
     setPdfLoading(true);
     setPdfRecipes(null);
     setPdfSkipped([]);
+    setMultiRecipeSource(null);
     try {
       const formData = new FormData();
       formData.append('file', pdfFile);
@@ -245,6 +309,7 @@ export const QuickAddRecipe = () => {
       if (list.length === 1) {
         setExtractedRecipe(list[0]);
         setPdfRecipes(null);
+        setMultiRecipeSource(null);
         toast.success(
           res.data.source === 'scanned_pdf'
             ? t('toastRecipeExtractedScannedPdf')
@@ -253,6 +318,7 @@ export const QuickAddRecipe = () => {
       } else {
         setExtractedRecipe(null);
         setPdfRecipes(list);
+        setMultiRecipeSource('pdf');
         toast.success(
           t('toastSeparatedRecipesReviewEach', { count: list.length })
         );
@@ -269,10 +335,64 @@ export const QuickAddRecipe = () => {
     }
   };
 
+  const buildRecipeCreatePayload = (recipe) => {
+    const tags = Array.from(
+      new Set([
+        ...(recipe.tags || []),
+        'needs-review',
+        ...(multiRecipeSource === 'photo' || imageFiles.length
+          ? ['imported-photo']
+          : pdfFile
+            ? ['imported-pdf']
+            : []),
+      ].filter(Boolean))
+    );
+    const pageNum = cookbookPage ? parseInt(cookbookPage, 10) : null;
+    const cookbookId = selectedCookbookId || recipe.cookbook_id || null;
+    return {
+      title: recipe.title,
+      description: recipe.description || '',
+      category: recipe.category || 'Other',
+      prep_time: recipe.prep_time || 0,
+      cook_time: recipe.cook_time || 0,
+      servings: recipe.servings || 4,
+      tags,
+      ingredients: recipe.ingredients || [],
+      instructions: recipe.instructions || [],
+      image_url: recipe.image_url || '',
+      ...(recipe.nutrition ? { nutrition: recipe.nutrition } : {}),
+      ...(cookbookId
+        ? {
+            cookbook_id: cookbookId,
+            source_type: 'cookbook',
+            ...(Number.isFinite(pageNum) ? { cookbook_page: pageNum } : {}),
+          }
+        : {}),
+    };
+  };
+
   const handleSavePdfRecipes = async () => {
     if (!pdfRecipes?.length) return;
     setSaving(true);
     try {
+      if (multiRecipeSource === 'photo') {
+        let saved = 0;
+        for (const recipe of pdfRecipes) {
+          await recipeApi.create(buildRecipeCreatePayload(recipe));
+          saved += 1;
+        }
+        const skipped = pdfSkipped?.length || 0;
+        toast.success(
+          t('toastAddedRecipesForReview', {
+            count: saved,
+            plural: saved === 1 ? '' : 's',
+          }) +
+            (skipped ? t('toastSkippedDuplicatesSuffix', { count: skipped }) : '')
+        );
+        navigate('/recipes?review=1');
+        return;
+      }
+
       const formData = new FormData();
       formData.append('file', pdfFile);
       formData.append('apply', 'true');
@@ -302,40 +422,7 @@ export const QuickAddRecipe = () => {
     
     setSaving(true);
     try {
-      const tags = Array.from(
-        new Set([
-          ...(extractedRecipe.tags || []),
-          'needs-review',
-          ...(pdfFile ? ['imported-pdf'] : imageFiles.length ? ['imported-photo'] : []),
-        ].filter(Boolean))
-      );
-      const pageNum = cookbookPage ? parseInt(cookbookPage, 10) : null;
-      const cookbookId =
-        selectedCookbookId ||
-        extractedRecipe.cookbook_id ||
-        null;
-      const recipeData = {
-        title: extractedRecipe.title,
-        description: extractedRecipe.description || '',
-        category: extractedRecipe.category || 'Other',
-        prep_time: extractedRecipe.prep_time || 0,
-        cook_time: extractedRecipe.cook_time || 0,
-        servings: extractedRecipe.servings || 4,
-        tags,
-        ingredients: extractedRecipe.ingredients || [],
-        instructions: extractedRecipe.instructions || [],
-        image_url: extractedRecipe.image_url || '',
-        ...(extractedRecipe.nutrition ? { nutrition: extractedRecipe.nutrition } : {}),
-        ...(cookbookId
-          ? {
-              cookbook_id: cookbookId,
-              source_type: 'cookbook',
-              ...(Number.isFinite(pageNum) ? { cookbook_page: pageNum } : {}),
-            }
-          : {}),
-      };
-      
-      const res = await recipeApi.create(recipeData);
+      const res = await recipeApi.create(buildRecipeCreatePayload(extractedRecipe));
       toast.success(t('toastRecipeSavedForReview'));
       navigate(`/recipes/${res.data.id}`);
     } catch (error) {
@@ -617,10 +704,14 @@ export const QuickAddRecipe = () => {
             >
               <div>
                 <h2 className="font-heading text-lg font-semibold">
-                  {t('recipesSeparatedFromPdf', { count: pdfRecipes.length })}
+                  {multiRecipeSource === 'photo'
+                    ? t('recipesSeparatedFromPhotos', { count: pdfRecipes.length })
+                    : t('recipesSeparatedFromPdf', { count: pdfRecipes.length })}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {t('pdfRecipesReviewHint')}
+                  {multiRecipeSource === 'photo'
+                    ? t('photoRecipesReviewHint')
+                    : t('pdfRecipesReviewHint')}
                 </p>
               </div>
               <ul className="space-y-2 max-h-80 overflow-y-auto">
@@ -652,6 +743,7 @@ export const QuickAddRecipe = () => {
                   onClick={() => {
                     setPdfRecipes(null);
                     setPdfSkipped([]);
+                    setMultiRecipeSource(null);
                   }}
                 >
                   {t('back')}
@@ -659,7 +751,10 @@ export const QuickAddRecipe = () => {
                 <Button
                   className="flex-1 rounded-full bg-laro hover:bg-laro-dark"
                   onClick={handleSavePdfRecipes}
-                  disabled={saving || !pdfFile}
+                  disabled={
+                    saving ||
+                    (multiRecipeSource === 'photo' ? !imageFiles.length : !pdfFile)
+                  }
                   data-testid="save-pdf-recipes-btn"
                 >
                   {saving ? (

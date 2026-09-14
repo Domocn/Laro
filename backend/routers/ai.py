@@ -4789,6 +4789,98 @@ import uuid
 from datetime import datetime, timezone
 
 
+def _safe_int(value, default: int = 0) -> int:
+    """Coerce LLM ints / floats / '5 minutes' strings into ints."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    text = str(value).strip()
+    if not text:
+        return default
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        import re as _re
+        m = _re.search(r"-?\d+(?:\.\d+)?", text)
+        if not m:
+            return default
+        try:
+            return int(float(m.group(0)))
+        except (TypeError, ValueError):
+            return default
+
+
+def _photo_recipe_to_client(
+    recipe: dict,
+    *,
+    user: dict,
+    cookbook: Optional[dict],
+    cookbook_id: Optional[str],
+    cookbook_page: Optional[int],
+) -> dict:
+    """Shape a parsed photo-import recipe for Quick Add preview / save."""
+    import uuid
+    from datetime import datetime, timezone
+
+    ingredients = []
+    for ing in recipe.get("ingredients") or []:
+        if isinstance(ing, dict):
+            ingredients.append(
+                Ingredient(
+                    name=ing.get("name", "") or "",
+                    amount=str(ing.get("amount", "") or ""),
+                    unit=ing.get("unit", "") or "",
+                )
+            )
+        elif isinstance(ing, str) and ing.strip():
+            ingredients.append(Ingredient(name=ing.strip(), amount="", unit=""))
+
+    instructions = recipe.get("instructions") or []
+    if isinstance(instructions, str):
+        instructions = [instructions]
+
+    recipe_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    tags = list(recipe.get("tags") or [])
+    for t in ("needs-review", "imported-photo"):
+        if t not in tags:
+            tags.append(t)
+    nutrition = recipe.get("nutrition") if isinstance(recipe.get("nutrition"), dict) else {}
+    payload = {
+        **RecipeResponse(
+            id=recipe_id,
+            title=recipe.get("title") or "Untitled Recipe",
+            description=recipe.get("description") or "",
+            ingredients=ingredients,
+            instructions=instructions,
+            prep_time=_safe_int(recipe.get("prep_time"), 0),
+            cook_time=_safe_int(recipe.get("cook_time"), 0),
+            servings=_safe_int(recipe.get("servings"), 4) or 4,
+            category=recipe.get("category") or "Other",
+            tags=tags,
+            image_url=recipe.get("image_url") or "",
+            author_id=user["id"],
+            household_id=user.get("household_id"),
+            created_at=now,
+            updated_at=now,
+            is_favorite=False,
+        ).model_dump(),
+        "cookbook_id": cookbook_id or (cookbook["id"] if cookbook else None),
+        "cookbook_page": cookbook_page,
+        "source_type": "cookbook" if cookbook else "photo",
+        "needs_review": True,
+    }
+    if nutrition:
+        payload["nutrition"] = nutrition
+    return payload
+
+
 @router.post("/extract-from-images")
 async def extract_recipe_from_images(
     request: Request,
@@ -4796,180 +4888,181 @@ async def extract_recipe_from_images(
     user: dict = Depends(get_current_user)
 ):
     """
-    Extract recipe from cookbook page images using AI vision.
+    Extract one or many recipes from cookbook page photos using AI vision.
 
-    Supports single or multiple images (for multi-page recipes) — ALL images are
-    sent to the vision model in one call. Returns extracted recipe data ready to save.
+    Each image may be a separate dish (typical) or a continuation page of the same
+    recipe. Returns `recipes` (always) plus `recipe` when exactly one was found.
+    Images are processed in batches so large uploads (e.g. 11 pages) still register.
     """
+    import httpx
+    from services.recipe_pdf_import import (
+        IMPORTED_PHOTO_TAG,
+        MAX_PHOTO_EXTRACT_IMAGES,
+        MULTI_RECIPE_IMAGES_PROMPT,
+        PHOTO_EXTRACT_BATCH_SIZE,
+        dedupe_recipes,
+        normalize_recipe_title,
+        parse_llm_recipes_payload,
+    )
+
     if not data.images:
         raise HTTPException(status_code=400, detail="At least one image is required")
 
-    if len(data.images) > 5:
-        raise HTTPException(status_code=400, detail="Maximum 5 images allowed per extraction")
+    if len(data.images) > MAX_PHOTO_EXTRACT_IMAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {MAX_PHOTO_EXTRACT_IMAGES} images allowed per extraction",
+        )
 
     cookbook = await _resolve_cookbook_for_user(user, data.cookbook_id)
 
-    system_prompt = """You are a recipe extraction assistant. Extract recipe information from cookbook page images.
+    from dependencies import prepare_vision_images
 
-Your task is to carefully read the cookbook page(s) and extract all recipe information.
-
-Return a JSON object with this EXACT structure:
-{
-    "title": "Recipe Title",
-    "description": "Brief description of the dish",
-    "ingredients": [
-        {"name": "ingredient name", "amount": "1", "unit": "cup"},
-        {"name": "another ingredient", "amount": "2", "unit": "tbsp"}
-    ],
-    "instructions": [
-        "First step instruction",
-        "Second step instruction"
-    ],
-    "prep_time": 15,
-    "cook_time": 30,
-    "servings": 4,
-    "category": "Dinner",
-    "tags": ["tag1", "tag2"]
-}
-
-Guidelines:
-- Extract ALL ingredients with amounts and units
-- Keep instructions as separate steps (numbered if possible)
-- Estimate times if not explicitly stated
-- Choose category from: Breakfast, Lunch, Dinner, Dessert, Appetizer, Snack, Beverage, Other
-- Add relevant tags (cuisine type, dietary info, etc.)
-- If text is hard to read, do your best to interpret it
-- For multi-page images, combine all information into one recipe
-- Read EVERY provided page image; do not ignore later pages
-
-Return ONLY the JSON object, no additional text or markdown."""
-
-    n = len(data.images)
-    if n == 1:
-        user_prompt = "Please extract the recipe from this cookbook page image."
-    else:
-        user_prompt = (
-            f"Please extract the recipe from these {n} cookbook page images "
-            f"(pages 1–{n} in order). Combine all information into a single recipe."
-        )
+    # Downscale phone-camera JPEGs so multi-page uploads stay under body limits
+    # and vision OCR ignores less of the page due to token/image caps.
+    images = prepare_vision_images(data.images)
+    n = len(images)
+    if n == 0:
+        raise HTTPException(status_code=400, detail="At least one image is required")
 
     try:
-        # Image OCR extraction counts against free AI quota (one use for the batch)
+        # One free-tier AI use for the whole upload (all batches)
         await require_ai_quota(user)
         http_client = getattr(getattr(request, "app", None), "state", None)
         http_client = getattr(http_client, "http_client", None)
-        if http_client is None:
-            import httpx
-            async with httpx.AsyncClient() as client:
-                result = await call_llm_with_images(
-                    client, system_prompt, user_prompt, data.images, user["id"]
+
+        parsed_all: List[dict] = []
+        batch_size = max(1, min(PHOTO_EXTRACT_BATCH_SIZE, MAX_PHOTO_EXTRACT_IMAGES))
+
+        async def _vision(client, batch_images, batch_idx: int, batch_count: int):
+            if batch_count == 1 and len(batch_images) == 1:
+                user_prompt = (
+                    "Extract every distinct recipe from this cookbook page photo. "
+                    "Ignore reverse-side bleed-through, spiral binding, shadows, and "
+                    "background clutter. Prefer the dominant printed recipe."
                 )
-        else:
-            result = await call_llm_with_images(
-                http_client, system_prompt, user_prompt, data.images, user["id"]
+            elif batch_count == 1:
+                user_prompt = (
+                    f"These are {len(batch_images)} cookbook page photo(s) in order. "
+                    "Extract EVERY distinct recipe. Combine only when consecutive "
+                    "pages clearly continue the same recipe. Ignore bleed-through text."
+                )
+            else:
+                user_prompt = (
+                    f"Batch {batch_idx + 1} of {batch_count}: "
+                    f"{len(batch_images)} cookbook page photo(s). "
+                    "Extract EVERY distinct recipe in this batch only. "
+                    "Combine only when consecutive pages clearly continue the same recipe. "
+                    "Ignore reverse-side bleed-through."
+                )
+            return await call_llm_with_images(
+                client, MULTI_RECIPE_IMAGES_PROMPT, user_prompt, batch_images, user["id"]
             )
+
+        async def _run_batches(client):
+            nonlocal parsed_all
+            batches = [
+                images[i : i + batch_size]
+                for i in range(0, n, batch_size)
+            ]
+            for bi, batch in enumerate(batches):
+                result = await _vision(client, batch, bi, len(batches))
+                try:
+                    cleaned = clean_llm_json(result)
+                    batch_parsed = parse_llm_recipes_payload(json.loads(cleaned))
+                except (json.JSONDecodeError, TypeError, ValueError) as e:
+                    logger.error(f"Failed to parse photo batch {bi + 1} JSON: {e}")
+                    # Soft-fail one batch when uploading many pages; hard-fail if none parse
+                    continue
+                parsed_all.extend(batch_parsed)
+
+        if http_client is None:
+            async with httpx.AsyncClient() as client:
+                await _run_batches(client)
+        else:
+            await _run_batches(http_client)
+
         if not is_premium_user(user):
             await consume_ai_quota(user["id"])
 
-        # Clean and parse JSON response
-        cleaned = clean_llm_json(result)
-        recipe_data = json.loads(cleaned)
-
-        # Validate required fields
-        if not recipe_data.get("title"):
+        if not parsed_all:
             raise HTTPException(
                 status_code=422,
-                detail="Could not extract recipe title from image. Please try with a clearer image."
+                detail="Could not extract any recipes from these images. Please try clearer photos.",
             )
 
-        # Build recipe response
-        recipe_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        for r in parsed_all:
+            if cookbook:
+                r["cookbook_id"] = cookbook["id"]
+                r["source_type"] = "cookbook"
 
-        # Format ingredients
-        ingredients = []
-        for ing in recipe_data.get("ingredients", []):
-            if isinstance(ing, dict):
-                ingredients.append(Ingredient(
-                    name=ing.get("name", ""),
-                    amount=str(ing.get("amount", "")),
-                    unit=ing.get("unit", "")
-                ))
-            elif isinstance(ing, str):
-                ingredients.append(Ingredient(name=ing, amount="", unit=""))
-
-        tags = list(recipe_data.get("tags") or [])
-        for t in ("needs-review", "imported-photo"):
-            if t not in tags:
-                tags.append(t)
-
-        # Build full recipe document
-        recipe_doc = {
-            "id": recipe_id,
-            "title": recipe_data.get("title", "Untitled Recipe"),
-            "description": recipe_data.get("description", ""),
-            "ingredients": [i.model_dump() for i in ingredients],
-            "instructions": recipe_data.get("instructions", []),
-            "prep_time": recipe_data.get("prep_time", 0),
-            "cook_time": recipe_data.get("cook_time", 0),
-            "servings": recipe_data.get("servings", 4),
-            "category": recipe_data.get("category", "Other"),
-            "tags": tags,
-            "image_url": "",
-            "author_id": user["id"],
-            "household_id": user.get("household_id"),
-            "source_type": "cookbook" if cookbook else "photo",
-            "cookbook_id": data.cookbook_id,
-            "cookbook_page": data.cookbook_page,
-            "created_at": now,
-            "updated_at": now,
-            "needs_review": True,
-            "images_processed": n,
+        existing = await recipe_repository.find_by_household_or_author(
+            author_id=user["id"],
+            household_id=user.get("household_id"),
+            limit=500,
+        )
+        existing_titles = {
+            normalize_recipe_title(r.get("title") or "") for r in (existing or [])
         }
+        existing_titles.discard("")
+        recipes, skipped = dedupe_recipes(
+            parsed_all, existing_titles, import_tag=IMPORTED_PHOTO_TAG
+        )
 
-        # Return extracted data (not saved yet - client will confirm)
+        client_recipes = [
+            _photo_recipe_to_client(
+                r,
+                user=user,
+                cookbook=cookbook,
+                cookbook_id=data.cookbook_id,
+                cookbook_page=data.cookbook_page,
+            )
+            for r in recipes
+        ]
+
+        if not client_recipes:
+            return {
+                "status": "success",
+                "message": "All recipes from these photos already exist or were duplicates.",
+                "needs_review": True,
+                "images_processed": n,
+                "recipe_count": 0,
+                "recipes": [],
+                "recipe": None,
+                "skipped": skipped,
+                "cookbook": {
+                    "id": cookbook["id"],
+                    "title": cookbook["title"],
+                }
+                if cookbook
+                else None,
+                "page_number": data.cookbook_page,
+            }
+
+        msg = (
+            f"Extracted {len(client_recipes)} recipe(s) from {n} image(s)"
+            if len(client_recipes) != 1
+            else f"Recipe extracted from {n} image(s)"
+        )
         return {
             "status": "success",
-            "message": f"Recipe extracted from {n} image(s)",
+            "message": msg,
             "needs_review": True,
             "images_processed": n,
-            "recipe": {
-                **RecipeResponse(
-                    id=recipe_id,
-                    title=recipe_doc["title"],
-                    description=recipe_doc["description"],
-                    ingredients=ingredients,
-                    instructions=recipe_doc["instructions"],
-                    prep_time=recipe_doc["prep_time"],
-                    cook_time=recipe_doc["cook_time"],
-                    servings=recipe_doc["servings"],
-                    category=recipe_doc["category"],
-                    tags=recipe_doc["tags"],
-                    image_url=recipe_doc["image_url"],
-                    author_id=recipe_doc["author_id"],
-                    household_id=recipe_doc["household_id"],
-                    created_at=now,
-                    updated_at=now,
-                    is_favorite=False
-                ).model_dump(),
-                "cookbook_id": data.cookbook_id,
-                "cookbook_page": data.cookbook_page,
-                "source_type": recipe_doc["source_type"],
-                "needs_review": True,
-            },
+            "recipe_count": len(client_recipes),
+            "recipes": client_recipes,
+            # Always include first recipe for older clients that only read `.recipe`
+            "recipe": client_recipes[0],
+            "skipped": skipped,
             "cookbook": {
                 "id": cookbook["id"],
-                "title": cookbook["title"]
-            } if cookbook else None,
-            "page_number": data.cookbook_page
+                "title": cookbook["title"],
+            }
+            if cookbook
+            else None,
+            "page_number": data.cookbook_page,
         }
 
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse AI response as JSON: {e}")
-        raise HTTPException(
-            status_code=422,
-            detail="Could not extract recipe from image. The AI response was not valid. Please try with a clearer image."
-        )
     except HTTPException:
         raise
     except Exception as e:
