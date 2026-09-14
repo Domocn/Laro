@@ -265,6 +265,6 @@ class LaroSensor(CoordinatorEntity[LaroDataUpdateCoordinator], SensorEntity):
 
 
 # Backwards-compatible aliases
-MiseSensorEntityDescription = LaroSensorEntityDescription
-MiseSensor = LaroSensor
-MiseDataUpdateCoordinator = LaroDataUpdateCoordinator
+LaroSensorEntityDescription = LaroSensorEntityDescription
+LaroSensor = LaroSensor
+LaroDataUpdateCoordinator = LaroDataUpdateCoordinator

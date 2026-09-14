@@ -4,14 +4,14 @@ services:
   # Ollama Local LLM (optional - for AI features without API)
   ollama:
     image: ollama/ollama:latest
-    container_name: mise-ollama
+    container_name: laro-ollama
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
     networks:
-      - mise-network
+      - laro-network
     # Uncomment for GPU support (NVIDIA)
     # deploy:
     #   resources:
@@ -24,7 +24,7 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:17-alpine
-    container_name: mise-postgres
+    container_name: laro-postgres
     restart: unless-stopped
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-laro}
@@ -35,7 +35,7 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-laro}"]
       interval: 10s
@@ -45,7 +45,7 @@ services:
   # Redis for Pub/Sub (multi-instance WebSocket support)
   redis:
     image: redis:7-alpine
-    container_name: mise-redis
+    container_name: laro-redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
@@ -53,7 +53,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
       interval: 10s
@@ -67,7 +67,7 @@ services:
       dockerfile: Dockerfile
       args:
         - APP_VERSION=${APP_VERSION:-2.0.0}
-    container_name: mise-backend
+    container_name: laro-backend
     restart: unless-stopped
     ports:
       - "8001:8001"
@@ -107,7 +107,7 @@ services:
       ollama:
         condition: service_started
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8001/api/health || exit 1"]
       interval: 30s
@@ -121,7 +121,7 @@ services:
       dockerfile: Dockerfile
       args:
         - APP_VERSION=${APP_VERSION:-2.0.0}
-    container_name: mise-worker
+    container_name: laro-worker
     restart: unless-stopped
     command: python -m celery -A workers.celery_app worker --loglevel=${LOG_LEVEL:-info} --concurrency=4 -Q celery,laro-jobs
     environment:
@@ -148,7 +148,7 @@ services:
       ollama:
         condition: service_started
     networks:
-      - mise-network
+      - laro-network
 
   # Flower Dashboard (Celery monitoring)
   flower:
@@ -157,7 +157,7 @@ services:
       dockerfile: Dockerfile
       args:
         - APP_VERSION=${APP_VERSION:-2.0.0}
-    container_name: mise-flower
+    container_name: laro-flower
     restart: unless-stopped
     command: python -m celery -A workers.celery_app flower --port=5555
     ports:
@@ -168,14 +168,14 @@ services:
       - redis
       - worker
     networks:
-      - mise-network
+      - laro-network
 
   # Frontend
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: mise-frontend
+    container_name: laro-frontend
     restart: unless-stopped
     ports:
       - "3000:80"
@@ -187,7 +187,7 @@ services:
     depends_on:
       - backend
     networks:
-      - mise-network
+      - laro-network
 
   # OpenPanel Services (optional analytics)
   op-db:
@@ -200,7 +200,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -215,7 +215,7 @@ services:
       - op-kv-data:/data
     command: ["redis-server", "--maxmemory-policy", "noeviction"]
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping"]
       interval: 10s
@@ -239,7 +239,7 @@ services:
         soft: 262144
         hard: 262144
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", 'clickhouse-client --query "SELECT 1"']
       interval: 10s
@@ -280,7 +280,7 @@ services:
     ports:
       - "3002:3000"
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/healthcheck || exit 1"]
       interval: 10s
@@ -301,7 +301,7 @@ services:
     ports:
       - "3001:3000"
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/healthcheck || exit 1"]
       interval: 10s
@@ -322,7 +322,7 @@ services:
       - CLICKHOUSE_URL=http://default:password@op-ch:8123
       - DATABASE_URL=postgresql://postgres:postgres@op-db:5432/postgres?schema=public
     networks:
-      - mise-network
+      - laro-network
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/healthcheck || exit 1"]
       interval: 10s
@@ -341,5 +341,5 @@ volumes:
   op-ch-logs:
 
 networks:
-  mise-network:
+  laro-network:
     driver: bridge

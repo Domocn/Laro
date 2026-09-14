@@ -84,7 +84,7 @@ export const ServerConfig = () => {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.app === 'Laro' || data.app === 'Mise') { // Mise: legacy self-host discovery
+        if (data.app === 'Laro') {
           setServerStatus('success');
           setServerInfo(data);
           setServerUrl(normalizedUrl);

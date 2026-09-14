@@ -44,7 +44,7 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
 - Host: `/opt/laro`, user `agentdeploy` (docker group, no sudo). SSH key: `~/.ssh/laro_ovh`.
 - Compose: `docker compose -f docker-compose.simple.yml -f docker-compose.production.yml …`
   **Never** `docker compose up` / `docker compose -f docker-compose.yml` alone — that
-  starts the legacy `mise-*` stack, tears down `laro-*` services, and can 502
+  starts the non-production `docker-compose.yml` stack, tears down `laro-*` services, and can 502
   `laro.food`. Build frontend with the same two-file compose (or
   `docker build -t ghcr.io/domocn/laro-frontend:latest ./frontend` then
   `up -d --force-recreate frontend`).
@@ -183,16 +183,16 @@ Two pieces:
    URL = Laro base (no `/api`), token = Settings → API Tokens in Laro (`laro_…`).
    Coordinator prefers `GET /api/homeassistant/all`.
 2. **Supervisor add-on** (runs full Laro inside HA OS): source tree
-   `laro-home-assistant-addon/`. Public store repo today is still named
-   `Domocn/mise-home-assistant-addon` (deploy key on this VM cannot push there).
-   Install URL: `https://github.com/Domocn/mise-home-assistant-addon`.
+   `laro-home-assistant-addon/`. Public store repo: `Domocn/laro-home-assistant-addon`
+   (if that GitHub path is not renamed yet, set `HA_ADDON_REPO_URL` when syncing).
+   Install URL: `https://github.com/Domocn/laro-home-assistant-addon`.
    Sync workflow source-of-truth copy: `docs/github-workflows/sync-ha-addon.yaml`
    (copy into `.github/workflows/` with a `workflow`-scoped PAT). Manual sync:
    `scripts/sync-ha-addon-repo.sh` when you have push access to the public add-on repo.
    Secret: `ADDON_REPO_TOKEN`.
 
 HA unit tests: `backend/venv/bin/python -m pytest backend/tests/test_ha_addon_functionality.py`.
-Addon mode env: `LARO_HA_ADDON=true` (`MISE_HA_ADDON` legacy alias). JWT must persist in
+Addon mode env: `LARO_HA_ADDON=true`. JWT must persist in
 `/data/jwt_secret` across addon restarts (`rootfs/run.sh`).
 
 ### Mobile (Compose) polish

@@ -1,5 +1,5 @@
 /**
- * Debug Utilities for Mise Frontend
+ * Debug Utilities for Laro Frontend
  *
  * Provides comprehensive debugging capabilities:
  * - Console logging with levels and colors
