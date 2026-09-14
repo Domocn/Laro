@@ -148,30 +148,30 @@ docker run -d --name laro-db \
 
 ## Home Assistant
 
-Works with **cloud** ([laro.food](https://laro.food)) and **self-hosted** Laro.
+Laro has **two separate** Home Assistant packages:
 
-### Custom integration via HACS (recommended for cloud or remote Laro)
+### 1. HACS integration (cloud / remote Laro)
 
-1. In Home Assistant: **HACS → Integrations → ⋮ → Custom repositories**
-2. Repository: `https://github.com/Domocn/Laro-home-assistant-addon`
+**Repo:** [`Domocn/laro-ha-intergration`](https://github.com/Domocn/laro-ha-intergration)
+
+For **[laro.food](https://laro.food)** or any existing Laro server (sensors, meal calendar, services).
+
+1. **HACS → Integrations → ⋮ → Custom repositories**
+2. `https://github.com/Domocn/laro-ha-intergration`
 3. Category: **Integration**
 4. Download **Laro** → restart Home Assistant
-5. In Laro: **Settings → API Tokens** → create a token
+5. Laro **Settings → API Tokens** → create a token
 6. **Settings → Devices & Services → Add Integration → Laro**
-7. URL:
-   - Cloud: `https://laro.food`
-   - Self-host: `http://YOUR_LAN_IP:8001` (or your HTTPS URL)
-8. Paste the API token
+7. URL `https://laro.food` + paste the token
 
-Manual install: copy `custom_components/laro` into HA `config/custom_components/`.
+### 2. Supervisor add-on (self-host inside HA OS)
 
-### Supervisor add-on (run Laro inside HA OS)
+**Repo:** [`Domocn/Laro-home-assistant-addon`](https://github.com/Domocn/Laro-home-assistant-addon)
 
-Install from [`Domocn/Laro-home-assistant-addon`](https://github.com/Domocn/Laro-home-assistant-addon).
+Runs a full Laro stack inside Home Assistant OS.
 
-> Using **laro.food**? Skip the add-on — use the HACS integration with `https://laro.food`.
+> Using **laro.food**? Skip the add-on — use the HACS integration above.
 
----
 
 ## Android App
 

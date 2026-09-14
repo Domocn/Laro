@@ -432,8 +432,19 @@ class CookbookCreate(BaseModel):
     isbn: Optional[str] = None
     publisher: Optional[str] = None
     year: Optional[int] = None
+    # Android historically sent published_year / description
+    published_year: Optional[int] = None
     cover_image_url: Optional[str] = None
     notes: Optional[str] = None
+    description: Optional[str] = None
+
+    def resolved_year(self) -> Optional[int]:
+        return self.year if self.year is not None else self.published_year
+
+    def resolved_notes(self) -> Optional[str]:
+        if self.notes is not None and str(self.notes).strip() != "":
+            return self.notes
+        return self.description
 
 
 class CookbookUpdate(BaseModel):
@@ -442,8 +453,20 @@ class CookbookUpdate(BaseModel):
     isbn: Optional[str] = None
     publisher: Optional[str] = None
     year: Optional[int] = None
+    published_year: Optional[int] = None
     cover_image_url: Optional[str] = None
     notes: Optional[str] = None
+    description: Optional[str] = None
+
+    def resolved_year(self) -> Optional[int]:
+        if self.year is not None:
+            return self.year
+        return self.published_year
+
+    def resolved_notes(self) -> Optional[str]:
+        if self.notes is not None:
+            return self.notes
+        return self.description
 
 
 class CookbookResponse(BaseModel):
