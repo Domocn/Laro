@@ -619,34 +619,12 @@ export const RecipeDetail = () => {
                 <h1 className="font-heading text-3xl font-bold text-foreground" data-testid="recipe-title">
                   {recipe.title}
                 </h1>
-            {presenceViewers.length > 0 && (
-              <p className="text-xs text-emerald-700 mt-1" data-testid="recipe-presence">
-                {presenceViewers.length === 1
-                  ? t('presenceOne', { name: presenceViewers[0].name })
-                  : t('presenceMany', { name: presenceViewers[0].name, count: presenceViewers.length - 1 })}
-              </p>
-            )}
-                {recipe.source_author && (
-                  <a
-                    href={
-                      recipe.source_url && /instagram\.com/i.test(recipe.source_url)
-                        ? `https://www.instagram.com/${String(recipe.source_author).replace(/^@/, '')}/`
-                        : recipe.source_url && /tiktok\.com/i.test(recipe.source_url)
-                          ? `https://www.tiktok.com/@${String(recipe.source_author).replace(/^@/, '')}`
-                          : recipe.source_url || undefined
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block mt-2 text-sm font-medium text-primary hover:underline"
-                    data-testid="recipe-source-author"
-                  >
-                    {(() => {
-                      const author = String(recipe.source_author).replace(/^@/, '').trim();
-                      const social = recipe.source_url && /(instagram|tiktok)\.com/i.test(recipe.source_url);
-                      const looksHost = author.includes('.') && !author.includes(' ');
-                      return social && !looksHost ? `Source: @${author}` : `Source: ${author}`;
-                    })()}
-                  </a>
+                {presenceViewers.length > 0 && (
+                  <p className="text-xs text-emerald-700 mt-1" data-testid="recipe-presence">
+                    {presenceViewers.length === 1
+                      ? t('presenceOne', { name: presenceViewers[0].name })
+                      : t('presenceMany', { name: presenceViewers[0].name, count: presenceViewers.length - 1 })}
+                  </p>
                 )}
                 {recipe.description && (
                   <p className="text-muted-foreground mt-2">{recipe.description}</p>
@@ -1123,6 +1101,54 @@ export const RecipeDetail = () => {
                   currentVersion={recipe.current_version}
                   onRestore={() => loadRecipe()}
                 />
+              </section>
+            )}
+
+            {/* Original source — kept at the bottom so it is not easy to tap on open */}
+            {(recipe.source_author || recipe.source_url) && (
+              <section
+                className="mt-2 pt-6 border-t border-border/60"
+                data-testid="recipe-original-source"
+              >
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+                  {t('originalSource')}
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  {recipe.source_author && (
+                    <a
+                      href={
+                        recipe.source_url && /instagram\.com/i.test(recipe.source_url)
+                          ? `https://www.instagram.com/${String(recipe.source_author).replace(/^@/, '')}/`
+                          : recipe.source_url && /tiktok\.com/i.test(recipe.source_url)
+                            ? `https://www.tiktok.com/@${String(recipe.source_author).replace(/^@/, '')}`
+                            : recipe.source_url || undefined
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block text-sm font-medium text-primary hover:underline"
+                      data-testid="recipe-source-author"
+                    >
+                      {(() => {
+                        const author = String(recipe.source_author).replace(/^@/, '').trim();
+                        const social = recipe.source_url && /(instagram|tiktok)\.com/i.test(recipe.source_url);
+                        const looksHost = author.includes('.') && !author.includes(' ');
+                        return social && !looksHost ? `Source: @${author}` : `Source: ${author}`;
+                      })()}
+                    </a>
+                  )}
+                  {recipe.source_url && (
+                    <a
+                      href={recipe.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                      data-testid="recipe-source-url"
+                    >
+                      <LinkIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                      {t('original')}
+                    </a>
+                  )}
+                </div>
               </section>
             )}
           </div>

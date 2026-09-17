@@ -20,12 +20,27 @@ router = APIRouter(prefix="/meal-plans", tags=["Meal Plans"])
 VALID_ENTRY_TYPES = {"recipe", "note", "leftover"}
 
 
+def _plan_date(raw) -> str:
+    """Normalize stored plan dates to YYYY-MM-DD for the calendar UI."""
+    if raw is None:
+        return ""
+    if isinstance(raw, datetime):
+        return raw.date().isoformat()
+    text = str(raw).strip()
+    return text[:10] if len(text) >= 10 else text
+
+
 def _shape_plan(plan: dict) -> dict:
     shaped = dict(plan)
     if not shaped.get("entry_type"):
         shaped["entry_type"] = "recipe" if shaped.get("recipe_id") else "note"
     if shaped.get("adult_boost") is None:
         shaped["adult_boost"] = ""
+    if shaped.get("notes") is None:
+        shaped["notes"] = ""
+    if shaped.get("recipe_title") is None:
+        shaped["recipe_title"] = ""
+    shaped["date"] = _plan_date(shaped.get("date"))
     return shaped
 
 
@@ -106,7 +121,7 @@ async def create_meal_plan(plan: MealPlanCreate, request: Request, user: dict = 
         data=plan_doc
     )
 
-    return MealPlanResponse(**plan_doc)
+    return MealPlanResponse(**_shape_plan(plan_doc))
 
 
 @router.get("", response_model=List[MealPlanResponse])

@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { aiApi } from '../lib/api';
 import { toastAiQuotaError, getAiQuotaErrorMessage } from '../lib/aiQuota';
 import { toast } from 'sonner';
@@ -21,9 +20,17 @@ import {
   Trash2,
   Flag,
   ArrowLeft,
+  MoreVertical,
 } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
 import { useChat } from '../context/ChatContext';
+import { useTheme } from '../context/ThemeContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 const WELCOME =
   "Hi! I'm Laro, your cooking assistant. Ask about recipes, techniques, substitutions, or meal ideas — I only answer food and cooking questions. For anything else, I'll point you to Google.";
@@ -60,16 +67,17 @@ const makeWelcome = (recipe) => {
 const recipeSuggestions = (title) => {
   const short = (title || 'this recipe').trim() || 'this recipe';
   return [
-    `Do you have tips for ${short}?`,
-    'What can I substitute in this recipe?',
-    'How can I scale this recipe?',
-    'Any timing tips for this recipe?',
+    `Tips for ${short}?`,
+    'What can I substitute?',
+    'How do I scale this?',
+    'Any timing tips?',
   ];
 };
 
 export const ChatModal = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
   const { recipeContext } = useChat();
+  const { reducedMotion } = useTheme();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -82,6 +90,7 @@ export const ChatModal = ({ isOpen, onClose }) => {
   const [reporting, setReporting] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const panelRef = useRef(null);
 
   const suggestedQuestions = recipeContext?.title
     ? recipeSuggestions(recipeContext.title)
@@ -108,18 +117,47 @@ export const ChatModal = ({ isOpen, onClose }) => {
     }
   }, []);
 
+  const resizeComposer = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  }, []);
+
   useEffect(() => {
     if (isOpen && !isMinimized && !showHistory && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      const t = setTimeout(() => {
+        inputRef.current?.focus();
+        resizeComposer();
+      }, 80);
+      return () => clearTimeout(t);
     }
-  }, [isOpen, isMinimized, showHistory]);
+  }, [isOpen, isMinimized, showHistory, resizeComposer]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+    messagesEndRef.current?.scrollIntoView({
+      behavior: reducedMotion ? 'auto' : 'smooth',
+    });
+  }, [messages, loading, reducedMotion]);
 
-  // Opening chat (or landing on a recipe) with no real conversation yet →
-  // greet and ask if they have a question about this recipe.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (showHistory) {
+          setShowHistory(false);
+        } else if (!isMinimized) {
+          onClose();
+        } else {
+          setIsMinimized(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, showHistory, isMinimized, onClose]);
+
   useEffect(() => {
     if (!isOpen) return;
     setMessages((prev) => {
@@ -211,6 +249,11 @@ export const ChatModal = ({ isOpen, onClose }) => {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    requestAnimationFrame(() => {
+      if (inputRef.current) {
+        inputRef.current.style.height = 'auto';
+      }
+    });
 
     try {
       const conversationHistory = messages.slice(-10).map((m) => ({
@@ -287,331 +330,406 @@ export const ChatModal = ({ isOpen, onClose }) => {
     }
   };
 
+  const motionProps = reducedMotion
+    ? { initial: false, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0 } }
+    : {
+        initial: { opacity: 0, y: 20, scale: 0.98 },
+        animate: { opacity: 1, y: 0, scale: 1 },
+        exit: { opacity: 0, y: 12, scale: 0.98 },
+        transition: { type: 'spring', damping: 28, stiffness: 320 },
+      };
+
+  const headerTitle = showHistory
+    ? 'Your chats'
+    : sessionTitle && sessionTitle !== 'New chat'
+      ? sessionTitle
+      : 'Chat with Laro';
+
+  const headerSubtitle = showHistory
+    ? 'Only you can see these'
+    : recipeContext?.title
+      ? `About ${recipeContext.title}`
+      : 'Food and cooking questions';
+
+  const showWelcomePrompts = messages.length <= 2 && !loading;
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
-          key="chat-modal"
-          initial={{ opacity: 0, y: 24, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 16, scale: 0.98 }}
-          transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-          className={`fixed z-50 flex flex-col overflow-hidden bg-white dark:bg-card border border-border/60 shadow-card
-            bottom-20 right-4 left-4 sm:left-auto sm:bottom-6 sm:right-6 sm:w-[22rem]
-            rounded-2xl
-            ${isMinimized ? '' : 'h-[min(70vh,32rem)]'}`}
-          data-testid="chat-modal"
-          role="dialog"
-          aria-label="Chat with Laro"
-        >
-          <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/60 bg-cream-subtle/80 dark:bg-muted/40">
-            <div className="flex items-center gap-3 min-w-0">
-              {showHistory ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowHistory(false)}
-                  className="h-8 w-8 text-muted-foreground shrink-0"
-                  title="Back to chat"
-                  type="button"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-laro flex items-center justify-center shrink-0 shadow-sm">
-                  <ChefHat className="w-5 h-5 text-white" aria-hidden="true" />
+        <>
+          {!isMinimized && (
+            <motion.button
+              key="chat-backdrop"
+              type="button"
+              aria-label="Close chat"
+              initial={reducedMotion ? false : { opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: reducedMotion ? 0 : 0.15 }}
+              className="fixed inset-0 z-40 bg-black/25 dark:bg-black/45"
+              onClick={onClose}
+            />
+          )}
+          <motion.div
+            key="chat-modal"
+            ref={panelRef}
+            {...motionProps}
+            className={`fixed z-50 flex flex-col overflow-hidden bg-white dark:bg-card border border-border/70 shadow-2xl
+              left-3 right-3 sm:left-auto sm:right-6
+              ${isMinimized
+                ? 'bottom-[max(1.25rem,env(safe-area-inset-bottom))] sm:w-[22rem]'
+                : 'bottom-[max(0.75rem,env(safe-area-inset-bottom))] sm:bottom-6 sm:w-[26rem] md:w-[28rem] h-[min(82dvh,40rem)]'
+              }
+              rounded-2xl`}
+            data-testid="chat-modal"
+            role="dialog"
+            aria-modal={!isMinimized}
+            aria-labelledby="laro-chat-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border/60 bg-cream-subtle/90 dark:bg-muted/40">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {showHistory ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowHistory(false)}
+                    className="h-9 w-9 text-muted-foreground shrink-0"
+                    title="Back to chat"
+                    type="button"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-laro flex items-center justify-center shrink-0 shadow-sm">
+                    <ChefHat className="w-5 h-5 text-white" aria-hidden="true" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3
+                    id="laro-chat-title"
+                    className="font-heading font-semibold text-foreground text-sm truncate"
+                  >
+                    {headerTitle}
+                  </h3>
+                  <p className="text-xs text-muted-foreground truncate">{headerSubtitle}</p>
                 </div>
-              )}
-              <div className="min-w-0">
-                <h3 className="font-heading font-semibold text-foreground text-sm truncate">
-                  {showHistory ? 'Your chats' : sessionTitle || 'Chat with Laro'}
-                </h3>
-                <p className="text-xs text-muted-foreground truncate">
-                  {showHistory ? 'Only you can see these' : 'Food & cooking only'}
-                </p>
               </div>
-            </div>
-            <div className="flex items-center gap-0.5 shrink-0">
-              {!showHistory && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={openHistory}
-                    className="h-8 w-8 text-muted-foreground"
-                    title="Chat history"
-                    type="button"
-                    data-testid="chat-history-btn"
-                  >
-                    <History className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={startFresh}
-                    className="h-8 w-8 text-muted-foreground"
-                    title="New chat"
-                    type="button"
-                    data-testid="chat-new-btn"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                  {sessionId && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                {!showHistory && !isMinimized && (
+                  <>
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={reportBug}
-                      disabled={reporting}
-                      className="h-8 w-8 text-muted-foreground"
-                      title="Report bug with transcript"
+                      onClick={openHistory}
+                      className="h-9 w-9 text-muted-foreground"
+                      title="Chat history"
                       type="button"
+                      data-testid="chat-history-btn"
                     >
-                      {reporting ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Flag className="w-4 h-4" />
-                      )}
+                      <History className="w-4 h-4" />
                     </Button>
-                  )}
-                  {messages.length > 1 && (
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={startFresh}
-                      className="h-8 w-8 text-muted-foreground"
-                      title="Clear chat"
+                      className="h-9 w-9 text-muted-foreground"
+                      title="New chat"
                       type="button"
+                      data-testid="chat-new-btn"
                     >
-                      <RefreshCw className="w-4 h-4" />
+                      <Plus className="w-4 h-4" />
                     </Button>
-                  )}
-                </>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsMinimized((v) => !v)}
-                className="h-8 w-8 text-muted-foreground"
-                title={isMinimized ? 'Expand' : 'Minimize'}
-                type="button"
-              >
-                {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onClose}
-                className="h-8 w-8 text-muted-foreground"
-                title="Close"
-                type="button"
-              >
-                <X className="w-4 h-4" />
-              </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 text-muted-foreground"
+                          title="More"
+                          type="button"
+                          aria-label="More chat actions"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem
+                          onClick={startFresh}
+                          disabled={messages.length <= 1}
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          Clear chat
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={reportBug} disabled={!sessionId || reporting}>
+                          {reporting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Flag className="w-4 h-4" />
+                          )}
+                          Report a problem
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsMinimized((v) => !v)}
+                  className="h-9 w-9 text-muted-foreground"
+                  title={isMinimized ? 'Expand' : 'Minimize'}
+                  type="button"
+                >
+                  {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="h-9 w-9 text-muted-foreground"
+                  title="Close"
+                  type="button"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
-          </div>
 
-          {!isMinimized && showHistory && (
-            <div
-              className="flex-1 overflow-y-auto px-3 py-3 space-y-2 min-h-0 bg-cream/40 dark:bg-background"
-              data-testid="chat-history-list"
-            >
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-start gap-2 rounded-xl border-border/60"
-                onClick={startFresh}
+            {!isMinimized && showHistory && (
+              <div
+                className="flex-1 overflow-y-auto px-3 py-3 space-y-2 min-h-0 bg-cream/40 dark:bg-background"
+                data-testid="chat-history-list"
               >
-                <Plus className="w-4 h-4" />
-                Start a new chat
-              </Button>
-              {sessionsLoading && (
-                <div className="flex items-center justify-center py-8 text-muted-foreground">
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                </div>
-              )}
-              {!sessionsLoading && sessions.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-8 px-4">
-                  No saved chats yet. Ask a cooking question and it will appear here — only for your account.
-                </p>
-              )}
-              {!sessionsLoading &&
-                sessions.map((s) => (
-                  <div
-                    key={s.id}
-                    className={`group flex items-start gap-2 rounded-xl border border-border/50 bg-white dark:bg-muted/40 px-3 py-2.5 cursor-pointer hover:border-laro/40 transition-colors ${
-                      sessionId === s.id ? 'border-laro/50 bg-laro-light/30' : ''
-                    }`}
-                    onClick={() => loadSession(s.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        loadSession(s.id);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    data-testid={`chat-session-${s.id}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {s.title || 'New chat'}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {formatSessionDate(s.updated_at || s.created_at)}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start gap-2 rounded-xl border-border/60 h-11"
+                  onClick={startFresh}
+                >
+                  <Plus className="w-4 h-4" />
+                  Start a new chat
+                </Button>
+                {sessionsLoading && (
+                  <div className="flex items-center justify-center py-8 text-muted-foreground">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  </div>
+                )}
+                {!sessionsLoading && sessions.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-8 px-4">
+                    No saved chats yet. Ask a cooking question and it will appear here — only for your account.
+                  </p>
+                )}
+                {!sessionsLoading &&
+                  sessions.map((s) => (
+                    <div
+                      key={s.id}
+                      className={`group flex items-start gap-2 rounded-xl border border-border/50 bg-white dark:bg-muted/40 px-3 py-2.5 cursor-pointer hover:border-laro/40 transition-colors ${
+                        sessionId === s.id ? 'border-laro/50 bg-laro-light/30' : ''
+                      }`}
+                      onClick={() => loadSession(s.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          loadSession(s.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      data-testid={`chat-session-${s.id}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {s.title || 'New chat'}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {formatSessionDate(s.updated_at || s.created_at)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-muted-foreground opacity-70 group-hover:opacity-100"
+                        type="button"
+                        title="Delete chat"
+                        onClick={(e) => deleteSession(s.id, e)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {!isMinimized && !showHistory && (
+              <>
+                <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0 bg-cream/40 dark:bg-background">
+                  {recipeContext?.title && (
+                    <div className="sticky top-0 z-[1] pb-1">
+                      <p className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-laro-light/80 dark:bg-muted px-2.5 py-1 text-[11px] text-laro border border-laro/15">
+                        <ChefHat className="w-3 h-3 shrink-0" aria-hidden="true" />
+                        <span className="truncate">Helping with {recipeContext.title}</span>
                       </p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 shrink-0 text-muted-foreground opacity-70 group-hover:opacity-100"
-                      type="button"
-                      title="Delete chat"
-                      onClick={(e) => deleteSession(s.id, e)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                ))}
-            </div>
-          )}
-
-          {!isMinimized && !showHistory && (
-            <>
-              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0 bg-cream/40 dark:bg-background">
-                {messages.map((msg, i) => {
-                  const isUser = msg.role === 'user';
-                  return (
-                    <motion.div
-                      key={msg.id || `${msg.role}-${i}-${msg.timestamp?.valueOf?.() || i}`}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
-                    >
-                      <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                          isUser ? 'bg-laro text-white' : 'bg-laro-light text-laro'
-                        }`}
-                        aria-hidden="true"
+                  )}
+                  {messages.map((msg, i) => {
+                    const isUser = msg.role === 'user';
+                    const isLast = i === messages.length - 1;
+                    return (
+                      <motion.div
+                        key={msg.id || `${msg.role}-${i}-${msg.timestamp?.valueOf?.() || i}`}
+                        initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: reducedMotion ? 0 : 0.18 }}
+                        className={`flex items-end gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
                       >
-                        {isUser ? (
-                          <span className="text-[10px] font-semibold">You</span>
-                        ) : (
-                          <ChefHat className="w-3.5 h-3.5" />
-                        )}
-                      </div>
-                      <div className={`max-w-[78%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                         <div
-                          className={`rounded-2xl px-3.5 py-2 ${
-                            isUser
-                              ? 'bg-laro text-white rounded-br-md'
-                              : 'bg-white dark:bg-muted text-foreground border border-border/50 rounded-bl-md shadow-sm'
+                          className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                            isUser ? 'bg-laro text-white' : 'bg-laro-light text-laro'
                           }`}
+                          aria-hidden="true"
                         >
                           {isUser ? (
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                              {msg.content}
-                            </p>
+                            <span className="text-[10px] font-semibold">You</span>
                           ) : (
-                            <ChatMarkdown content={msg.content} />
+                            <ChefHat className="w-3.5 h-3.5" />
                           )}
                         </div>
-                        {msg.timestamp && (
-                          <p
-                            className={`text-[10px] text-muted-foreground mt-1 px-1 ${
-                              isUser ? 'text-right' : 'text-left'
+                        <div className={`max-w-[82%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                          <div
+                            className={`rounded-2xl px-3.5 py-2.5 ${
+                              isUser
+                                ? 'bg-laro text-white rounded-br-md'
+                                : 'bg-white dark:bg-muted text-foreground border border-border/50 rounded-bl-md shadow-sm'
                             }`}
                           >
-                            {formatTime(msg.timestamp)}
-                          </p>
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                            {isUser ? (
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                                {msg.content}
+                              </p>
+                            ) : (
+                              <ChatMarkdown content={msg.content} />
+                            )}
+                          </div>
+                          {isLast && msg.timestamp && (
+                            <p
+                              className={`text-[10px] text-muted-foreground mt-1 px-1 ${
+                                isUser ? 'text-right' : 'text-left'
+                              }`}
+                            >
+                              {formatTime(msg.timestamp)}
+                            </p>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
 
-                {loading && (
-                  <div className="flex items-end gap-2">
-                    <div className="w-7 h-7 rounded-full bg-laro-light text-laro flex items-center justify-center shrink-0">
-                      <ChefHat className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="bg-white dark:bg-muted border border-border/50 rounded-2xl rounded-bl-md px-3.5 py-2.5 shadow-sm">
-                      <div className="flex gap-1">
-                        <span className="w-1.5 h-1.5 bg-laro/70 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <span className="w-1.5 h-1.5 bg-laro/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <span className="w-1.5 h-1.5 bg-laro/70 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  {loading && (
+                    <div className="flex items-end gap-2" aria-live="polite" aria-label="Laro is typing">
+                      <div className="w-7 h-7 rounded-full bg-laro-light text-laro flex items-center justify-center shrink-0">
+                        <ChefHat className="w-3.5 h-3.5" />
                       </div>
+                      <div className="bg-white dark:bg-muted border border-border/50 rounded-2xl rounded-bl-md px-3.5 py-2.5 shadow-sm">
+                        <div className="flex gap-1">
+                          <span
+                            className={`w-1.5 h-1.5 bg-laro/70 rounded-full ${reducedMotion ? '' : 'animate-bounce'}`}
+                            style={reducedMotion ? undefined : { animationDelay: '0ms' }}
+                          />
+                          <span
+                            className={`w-1.5 h-1.5 bg-laro/70 rounded-full ${reducedMotion ? '' : 'animate-bounce'}`}
+                            style={reducedMotion ? undefined : { animationDelay: '150ms' }}
+                          />
+                          <span
+                            className={`w-1.5 h-1.5 bg-laro/70 rounded-full ${reducedMotion ? '' : 'animate-bounce'}`}
+                            style={reducedMotion ? undefined : { animationDelay: '300ms' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {showWelcomePrompts && (
+                  <div className="px-3 pb-2 border-t border-border/40 bg-white dark:bg-card">
+                    <p className="text-[11px] text-muted-foreground mb-1.5 mt-2 flex items-center gap-1">
+                      <Lightbulb className="w-3 h-3" />
+                      Try asking
+                    </p>
+                    <div className="grid grid-cols-1 gap-1.5 pb-1">
+                      {suggestedQuestions.map((q, i) => (
+                        <button
+                          key={`suggestion-${i}`}
+                          type="button"
+                          onClick={() => handleSend(q)}
+                          disabled={loading}
+                          className="text-left text-xs px-3 py-2 rounded-xl bg-cream-subtle dark:bg-muted text-foreground/90 hover:bg-laro-light hover:text-laro transition-colors border border-border/40"
+                        >
+                          {q}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
-                <div ref={messagesEndRef} />
-              </div>
 
-              {messages.length <= 2 && !loading && (
-                <div className="px-3 pb-2 border-t border-border/40 bg-white dark:bg-card">
-                  <p className="text-[11px] text-muted-foreground mb-1.5 mt-2 flex items-center gap-1">
-                    <Lightbulb className="w-3 h-3" />
-                    Try asking
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 pb-1">
-                    {suggestedQuestions.map((q, i) => (
-                      <button
-                        key={`suggestion-${i}`}
-                        type="button"
-                        onClick={() => handleSend(q)}
-                        disabled={loading}
-                        className="text-xs px-2.5 py-1 rounded-full bg-cream-subtle dark:bg-muted text-foreground/80 hover:bg-laro-light hover:text-laro transition-colors border border-border/40"
-                      >
-                        {q}
-                      </button>
-                    ))}
+                <div className="p-3 border-t border-border/60 bg-white dark:bg-card">
+                  <div className="flex gap-2 items-end">
+                    <label htmlFor="laro-chat-input" className="sr-only">
+                      Message Laro
+                    </label>
+                    <textarea
+                      id="laro-chat-input"
+                      ref={inputRef}
+                      value={input}
+                      rows={1}
+                      onChange={(e) => {
+                        setInput(e.target.value);
+                        resizeComposer();
+                      }}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Ask about food or cooking…"
+                      className="flex-1 resize-none rounded-2xl bg-cream-subtle dark:bg-muted border border-border/60 min-h-11 max-h-32 px-3.5 py-2.5 text-sm leading-5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+                      disabled={loading}
+                    />
+                    <Button
+                      onClick={() => handleSend()}
+                      disabled={!input.trim() || loading}
+                      className="rounded-full bg-laro hover:bg-laro-dark w-11 h-11 p-0 shrink-0"
+                      type="button"
+                      aria-label="Send message"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </Button>
                   </div>
+                  <p className="text-[10px] text-muted-foreground mt-1.5 px-1">
+                    Enter to send · Shift+Enter for a new line · Esc to close
+                  </p>
                 </div>
-              )}
-
-              <div className="p-3 border-t border-border/60 bg-white dark:bg-card">
-                <div className="flex gap-2 items-center">
-                  <Input
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Ask about food or cooking…"
-                    className="flex-1 rounded-full bg-cream-subtle dark:bg-muted border-border/60 h-10"
-                    disabled={loading}
-                  />
-                  <Button
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() || loading}
-                    className="rounded-full bg-laro hover:bg-laro-dark w-10 h-10 p-0 shrink-0"
-                    type="button"
-                    aria-label="Send message"
-                  >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </motion.div>
+              </>
+            )}
+          </motion.div>
+        </>
       )}
     </AnimatePresence>
   );
 };
 
 export const ChatButton = ({ onClick, className = '' }) => {
+  const { reducedMotion } = useTheme();
   return (
     <motion.button
       type="button"
-      initial={{ scale: 0.9, opacity: 0 }}
+      initial={reducedMotion ? false : { scale: 0.9, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      whileHover={{ scale: 1.04 }}
-      whileTap={{ scale: 0.96 }}
+      whileHover={reducedMotion ? undefined : { scale: 1.04 }}
+      whileTap={reducedMotion ? undefined : { scale: 0.96 }}
       onClick={onClick}
-      className={`fixed bottom-6 right-6 w-14 h-14 rounded-full bg-laro text-white shadow-lg flex items-center justify-center z-40 hover:bg-laro-dark hover:shadow-xl transition-colors ${className}`}
+      className={`fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-5 w-14 h-14 rounded-full bg-laro text-white shadow-lg flex items-center justify-center z-40 hover:bg-laro-dark hover:shadow-xl transition-colors ${className}`}
       data-testid="chat-button"
       aria-label="Chat with Laro"
     >

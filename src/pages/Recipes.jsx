@@ -78,7 +78,7 @@ export const Recipes = () => {
       if (showFavoritesOnly) params.favorites_only = true;
 
       const res = await recipeApi.getAll(params);
-      setRecipes(res.data);
+      setRecipes(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       if (!silent) {
         toast.error(error.response?.data?.detail || `${t('toastLoadRecipesFailed')} (E-RC001)`);

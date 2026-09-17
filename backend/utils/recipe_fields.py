@@ -185,8 +185,16 @@ def prepare_recipe_for_response(
     from utils.upload_tokens import sign_upload_path, DEFAULT_TTL_SECONDS, SHARE_TTL_SECONDS
 
     data = dict(row)
-    data["dietary_tags"] = ensure_list_field(data.get("dietary_tags"))
-    data["tags"] = ensure_list_field(data.get("tags"))
+    data["dietary_tags"] = [
+        t if isinstance(t, str) else str(t)
+        for t in ensure_list_field(data.get("dietary_tags"))
+        if t is not None and t != ""
+    ]
+    data["tags"] = [
+        t if isinstance(t, str) else (t.get("name") if isinstance(t, dict) and t.get("name") else str(t))
+        for t in ensure_list_field(data.get("tags"))
+        if t is not None and t != ""
+    ]
     data["ingredients"] = [
         normalize_ingredient(item) for item in ensure_list_field(data.get("ingredients"))
     ]

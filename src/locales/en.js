@@ -950,6 +950,8 @@ yourImports: 'Your imports',
   yourPersonalKitchen: 'Your personal kitchen',
   yourPreferences: 'Your Preferences',
   yourPreferencesDesc: 'Theme, language, dietary needs, and units',
+  originalSource: 'Original source',
+  original: 'Original',
   yourRating: 'Your rating:',
   youreAllSet: 'You\'re All Set!',
 
