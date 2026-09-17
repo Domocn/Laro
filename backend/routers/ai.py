@@ -3,6 +3,7 @@ AI Router - AI-powered recipe operations
 Heavy operations are processed via background job queue (arq)
 """
 from fastapi import APIRouter, HTTPException, Depends, Request, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from models import (
     ImportURLRequest, ImportTextRequest, AutoMealPlanRequest, ImportMealPlanRequest,
     ImportMealPlanUrlRequest, ImportFeedbackRequest,
@@ -23,6 +24,7 @@ from utils.ai_quota import (
     is_premium_user,
 )
 from bs4 import BeautifulSoup
+import asyncio
 import json
 import logging
 import os
@@ -1747,6 +1749,24 @@ async def list_my_imports(
     return {"imports": items}
 
 
+@router.get("/imports/{import_id}")
+async def get_my_import(
+    import_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Poll a single import attempt (includes extracted recipe when succeeded)."""
+    from database.repositories.import_attempt_repository import import_attempt_repository
+
+    item = await import_attempt_repository.get_for_user(
+        import_id=import_id,
+        user_id=str(user["id"]),
+        include_result=True,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return item
+
+
 @router.post("/import-url")
 async def import_recipe_from_url(
     request: Request,
@@ -2359,68 +2379,112 @@ async def import_recipe_from_text(
     user: dict = Depends(get_current_user)
 ):
     """
-    Extract recipe from pasted text using AI (synchronous - returns recipe data for review)
+    Extract recipe from pasted text using AI.
+
+    Returns 202 immediately with import_id so Cloudflare (~100s) and browser
+    proxies cannot kill long LLM runs. Clients poll GET /ai/imports/{import_id}.
     """
     import httpx
     from services.import_log import ImportTrace, recipe_summary
 
     text = (data.text or "")[:8000]
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Paste some recipe text to import")
+
+    # Fail fast on quota before accepting the job (avoid orphaned imports).
+    await require_ai_quota(user)
+
     trace = ImportTrace(
         "import-text",
         user_id=str(user.get("id") or ""),
         extra={
             "text_chars": len(text),
+            "async": True,
             "client": request.headers.get("user-agent", "")[:120],
         },
     )
 
-    try:
-        # Get user's custom prompt or default
-        from routers.prompts import get_user_prompt
-        system_prompt = await get_user_prompt(user["id"], "recipe_extraction")
+    # Snapshot only what the background task needs (request ends after 202).
+    user_snapshot = {
+        "id": user["id"],
+        "email": user.get("email"),
+        "subscription_status": user.get("subscription_status"),
+        "subscription_expires": user.get("subscription_expires"),
+        "subscription_source": user.get("subscription_source"),
+        "is_admin": user.get("is_admin"),
+        "role": user.get("role"),
+        "ai_bonus_uses": user.get("ai_bonus_uses"),
+        "referral_trial_ends_at": user.get("referral_trial_ends_at"),
+    }
 
-        # Call LLM for recipe parsing (counts against free AI quota)
-        async with httpx.AsyncClient() as client:
-            logger.info(f"Calling LLM for text recipe parsing (user: {user['id']})")
-            trace.step("llm_start", text_chars=len(text))
-            result = await call_llm_metered(
-                client,
-                system_prompt,
-                f"Parse this recipe (may be a social-media caption):\n{text}",
-                user,
+    # Ensure the row exists before we return 202 (ImportTrace also schedules start).
+    from database.repositories.import_attempt_repository import import_attempt_repository
+
+    await import_attempt_repository.start_attempt(
+        import_id=trace.import_id,
+        user_id=str(user["id"]),
+        kind="import-text",
+    )
+
+    async def _run_text_import() -> None:
+        try:
+            from routers.prompts import get_user_prompt
+
+            system_prompt = await get_user_prompt(user_snapshot["id"], "recipe_extraction")
+            async with httpx.AsyncClient() as client:
+                logger.info(
+                    "Calling LLM for text recipe parsing (user: %s, import_id=%s)",
+                    user_snapshot["id"],
+                    trace.import_id,
+                )
+                trace.step("llm_start", text_chars=len(text))
+                result = await call_llm_metered(
+                    client,
+                    system_prompt,
+                    f"Parse this recipe (may be a social-media caption):\n{text}",
+                    user_snapshot,
+                    max_tokens=4000,
+                )
+
+            result = clean_llm_json(result)
+            recipe_data = json.loads(result)
+            logger.info(
+                "Successfully parsed recipe from text: %s (import_id=%s)",
+                recipe_data.get("title", "Unknown"),
+                trace.import_id,
             )
-
-        result = clean_llm_json(result)
-        recipe_data = json.loads(result)
-
-        logger.info(f"Successfully parsed recipe from text: {recipe_data.get('title', 'Unknown')}")
-        trace.finish("success", **recipe_summary(recipe_data))
-
-        return {
-            "status": "success",
-            "recipe": recipe_data,
-            "used_ai": True,
-            "import_id": trace.import_id,
-        }
-
-    except HTTPException as he:
-        if "trace" in locals() and trace.status == "started":
             trace.finish(
-                "error",
-                http_status=getattr(he, "status_code", None),
-                detail=str(getattr(he, "detail", ""))[:300],
+                "success",
+                **recipe_summary(recipe_data),
+                recipe=recipe_data,
+                used_ai=True,
             )
-        raise
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse recipe JSON: {e}")
-        if "trace" in locals():
-            trace.finish("error", http_status=422, reason="json_decode", error=str(e)[:200])
-        raise HTTPException(status_code=422, detail="Could not parse recipe from text. Please check the format.")
-    except Exception as e:
-        logger.error(f"Import text failed: {e}")
-        if "trace" in locals():
-            trace.finish("error", http_status=500, error=sanitize_error_message(e))
-        raise HTTPException(status_code=500, detail=f"Failed to import: {sanitize_error_message(e)}")
+        except HTTPException as he:
+            if trace.status == "started":
+                trace.finish(
+                    "error",
+                    http_status=getattr(he, "status_code", None),
+                    detail=str(getattr(he, "detail", ""))[:300],
+                )
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse recipe JSON (import_id=%s): %s", trace.import_id, e)
+            if trace.status == "started":
+                trace.finish("error", http_status=422, reason="json_decode", error=str(e)[:200])
+        except Exception as e:
+            logger.error("Import text failed (import_id=%s): %s", trace.import_id, e)
+            if trace.status == "started":
+                trace.finish("error", http_status=500, error=sanitize_error_message(e))
+
+    asyncio.create_task(_run_text_import())
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "importing",
+            "import_id": trace.import_id,
+            "message": "Import started — poll GET /ai/imports/{import_id}",
+        },
+    )
 
 
 @router.post("/import-video")

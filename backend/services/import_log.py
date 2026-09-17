@@ -153,6 +153,15 @@ def _schedule_persist_finish(trace: "ImportTrace", status: str, data: dict) -> N
     if error is not None:
         error = str(error)[:2000]
     recipe_id = data.get("recipe_id")
+    # Persist extracted recipe so clients can poll after Cloudflare/proxy timeouts.
+    result_payload = None
+    if isinstance(data.get("recipe"), dict):
+        result_payload = {
+            "recipe": data["recipe"],
+            "used_ai": bool(data.get("used_ai", True)),
+        }
+    elif data.get("store_result") and isinstance(data.get("result"), dict):
+        result_payload = data["result"]
 
     async def _run():
         try:
@@ -167,6 +176,7 @@ def _schedule_persist_finish(trace: "ImportTrace", status: str, data: dict) -> N
                 source_url=trace.url,
                 user_id=trace.user_id,
                 kind=trace.kind,
+                result=result_payload,
             )
         except Exception:
             logger.debug("import attempt finish persist failed", exc_info=True)

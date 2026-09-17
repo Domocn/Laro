@@ -379,6 +379,7 @@ CREATE TABLE IF NOT EXISTS import_attempts (
     title TEXT,
     error TEXT,
     recipe_id VARCHAR(255),
+    result_json TEXT,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
@@ -1555,10 +1556,17 @@ BEGIN
             title TEXT,
             error TEXT,
             recipe_id VARCHAR(255),
+            result_json TEXT,
             created_at TIMESTAMP NOT NULL,
             updated_at TIMESTAMP NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='import_attempts' AND column_name='result_json'
+    ) THEN
+        ALTER TABLE import_attempts ADD COLUMN result_json TEXT;
     END IF;
     IF NOT EXISTS (
         SELECT 1 FROM pg_indexes WHERE indexname='idx_import_attempts_user_created'
