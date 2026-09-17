@@ -262,6 +262,11 @@ FOOD_DATABASE: Dict[str, FoodEntry] = {
         "calories": 389, "protein": 17, "carbs": 66, "fat": 7, "fiber": 11,
         "tags": ["high-protein", "grain", "pantry", "vegan", "vegetarian"], "category": "grain",
     },
+    # Official UK Weetabix: 2 biscuits (37.5g) = 136 kcal / 4.5g protein / 26g carbs / 0.8g fat
+    "weetabix": {
+        "calories": 363, "protein": 12, "carbs": 69, "fat": 2.1, "fiber": 10,
+        "tags": ["grain", "pantry", "vegan", "vegetarian", "breakfast"], "category": "grain",
+    },
     "quinoa": {
         "calories": 120, "protein": 4.4, "carbs": 21, "fat": 1.9, "fiber": 2.8,
         "tags": ["grain", "pantry", "vegan", "vegetarian"], "category": "grain",
@@ -417,6 +422,16 @@ FOOD_DATABASE: Dict[str, FoodEntry] = {
     "pumpkin seeds": {
         "calories": 559, "protein": 30, "carbs": 11, "fat": 49, "fiber": 6,
         "tags": ["high-protein", "seeds", "vegan", "vegetarian"], "category": "nuts",
+    },
+
+    # --- Chocolate / cocoa ---
+    "cocoa powder": {
+        "calories": 228, "protein": 20, "carbs": 58, "fat": 14, "fiber": 37,
+        "tags": ["pantry", "vegan", "vegetarian"], "category": "pantry",
+    },
+    "dark chocolate": {
+        "calories": 570, "protein": 8, "carbs": 46, "fat": 42, "fiber": 11,
+        "tags": ["pantry", "vegetarian"], "category": "pantry",
     },
 
     # --- Sweeteners / condiments ---
@@ -955,7 +970,141 @@ UNIT_CONVERSIONS = {
     "l": 1000,
     "liter": 1000,
     "liters": 1000,
+    # Count units — grams resolved via PIECE_WEIGHTS_G for known foods.
+    # Placeholder 1 keeps parse_ingredient_amount able to strip these tokens.
+    "biscuit": 1,
+    "biscuits": 1,
+    "piece": 1,
+    "pieces": 1,
+    "slice": 1,
+    "slices": 1,
+    "clove": 1,
+    "cloves": 1,
+    "item": 1,
+    "items": 1,
+    "serving": 1,
+    "servings": 1,
 }
+
+# Count / discrete items → grams each (longest-key match wins).
+# Without this, "2 Weetabix" was treated as 200g (qty × 100).
+PIECE_WEIGHTS_G = {
+    "weetabix": 18.75,  # 2 biscuits = 37.5g (official)
+    "egg white": 33.0,
+    "egg": 50.0,
+    "banana": 118.0,
+    "apple": 182.0,
+    "slice bread": 30.0,
+    "bread": 30.0,  # per slice when counted
+    "tortilla": 45.0,
+    "clove garlic": 3.0,
+    "garlic": 3.0,
+}
+
+COUNT_UNITS = frozenset(
+    {
+        "biscuit",
+        "biscuits",
+        "piece",
+        "pieces",
+        "slice",
+        "slices",
+        "clove",
+        "cloves",
+        "item",
+        "items",
+        "serving",
+        "servings",
+        "egg",
+        "eggs",
+    }
+)
+
+MASS_VOLUME_UNITS = frozenset(
+    {
+        "g",
+        "gram",
+        "grams",
+        "kg",
+        "kilogram",
+        "oz",
+        "ounce",
+        "ounces",
+        "lb",
+        "pound",
+        "pounds",
+        "cup",
+        "cups",
+        "tbsp",
+        "tablespoon",
+        "tablespoons",
+        "tsp",
+        "teaspoon",
+        "teaspoons",
+        "ml",
+        "l",
+        "liter",
+        "liters",
+    }
+)
+
+
+def piece_weight_grams(food_name: str) -> Optional[float]:
+    """Return grams-per-item for known count foods, else None."""
+    cleaned = _normalize_name(food_name or "")
+    if not cleaned:
+        return None
+    best_key = ""
+    best_g: Optional[float] = None
+    for key, grams in PIECE_WEIGHTS_G.items():
+        if key in cleaned and len(key) > len(best_key):
+            best_key = key
+            best_g = grams
+    return best_g
+
+
+def grams_from_parsed(
+    parsed: Dict[str, Any],
+    *,
+    food_name: Optional[str] = None,
+) -> float:
+    """Convert a parsed ingredient amount into grams for nutrition scaling.
+
+    - Mass/volume units use UNIT_CONVERSIONS.
+    - Count units (biscuit, piece, …) and bare counts ("2 Weetabix") use
+      PIECE_WEIGHTS_G when the food is known.
+    - Unknown bare counts still default to qty × 100g (legacy behaviour).
+    - No quantity defaults to one piece weight or 100g.
+    """
+    qty = parsed.get("quantity")
+    unit_raw = (parsed.get("unit") or "").strip().lower()
+    unit = unit_raw.rstrip("s") if unit_raw else ""
+    # Keep full plural for COUNT_UNITS membership ("biscuits")
+    unit_key = unit_raw or unit
+    search_name = " ".join(
+        p for p in (food_name or "", parsed.get("name") or "") if p
+    )
+    piece_g = piece_weight_grams(search_name)
+
+    if qty is None:
+        return float(piece_g) if piece_g is not None else 100.0
+
+    if unit_key in MASS_VOLUME_UNITS or unit in MASS_VOLUME_UNITS:
+        conv = UNIT_CONVERSIONS.get(unit_key) or UNIT_CONVERSIONS.get(unit) or 1
+        return float(qty) * float(conv)
+
+    is_count = (not unit_key) or unit_key in COUNT_UNITS or unit in COUNT_UNITS
+    if is_count and piece_g is not None:
+        return float(qty) * float(piece_g)
+
+    if unit_key and unit_key not in COUNT_UNITS and unit not in COUNT_UNITS:
+        # Unknown non-count unit (e.g. "pack") — prefer piece weight, else qty×100
+        if piece_g is not None:
+            return float(qty) * float(piece_g)
+        return float(qty) * 100.0
+
+    # Bare count / count unit without a known piece weight
+    return float(qty) * 100.0
 
 
 def parse_ingredient_amount(ingredient_str: str) -> Dict[str, Any]:
@@ -980,14 +1129,11 @@ def parse_ingredient_amount(ingredient_str: str) -> Dict[str, Any]:
             quantity = float(qty_str)
 
         remaining = ingredient_str[fraction_match.end():].strip()
-        for unit_name in UNIT_CONVERSIONS:
-            if remaining.startswith(unit_name + " ") or remaining.startswith(unit_name + "s "):
-                unit = unit_name.rstrip("s")
+        # Prefer longer unit tokens first (tablespoons before tbsp, biscuits before …)
+        for unit_name in sorted(UNIT_CONVERSIONS.keys(), key=len, reverse=True):
+            if remaining == unit_name or remaining.startswith(unit_name + " "):
+                unit = unit_name
                 remaining = remaining[len(unit_name):].strip()
-                if remaining.startswith("s "):
-                    remaining = remaining[2:]
-                elif remaining.startswith(" "):
-                    remaining = remaining[1:]
                 break
         name = remaining
 
@@ -1003,7 +1149,8 @@ def estimate_nutrition_from_foods(
     Estimate nutrition for ingredient list using the food DB.
 
     ingredients: strings or dicts with name/amount/unit.
-    Amounts without units are treated as 100g portions.
+    Count foods (e.g. Weetabix biscuits) use piece weights; mass/volume units
+    scale normally. Unknown bare counts still default to qty × 100g.
     """
     results = []
     unknown = []
@@ -1014,9 +1161,20 @@ def estimate_nutrition_from_foods(
             amount = ingredient.get("amount", "")
             unit = ingredient.get("unit", "")
             name = ingredient.get("name", "")
+            amount_s = str(amount).strip().lower() if amount is not None else ""
+            name_s = str(name).strip().lower() if name is not None else ""
+            # Skip seasoning phrases with no measurable quantity
+            if amount_s in ("to taste", "as needed", "optional", "pinch") or (
+                not amount_s and re.search(r"\b(to taste|as needed|optional)\b", name_s)
+            ):
+                continue
             ingredient_str = f"{amount} {unit} {name}".strip()
         else:
             ingredient_str = str(ingredient)
+            if re.search(r"\b(to taste|as needed|optional)\b", ingredient_str.lower()) and not re.match(
+                r"^\d", ingredient_str.strip()
+            ):
+                continue
 
         parsed = parse_ingredient_amount(ingredient_str)
         match = find_food(parsed["name"], remote=True)
@@ -1026,17 +1184,7 @@ def estimate_nutrition_from_foods(
         canonical, entry = match
         macros = macros_only(entry)
 
-        grams = 100.0
-        if parsed["quantity"] is not None:
-            if parsed["unit"]:
-                unit_key = parsed["unit"]
-                unit_grams = UNIT_CONVERSIONS.get(
-                    unit_key, UNIT_CONVERSIONS.get(unit_key.rstrip("s"), 1)
-                )
-                grams = parsed["quantity"] * unit_grams
-            else:
-                grams = parsed["quantity"] * 100
-
+        grams = grams_from_parsed(parsed, food_name=canonical)
         scale = grams / 100.0
         row = {
             "ingredient": canonical,

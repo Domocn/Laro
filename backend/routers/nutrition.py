@@ -17,7 +17,7 @@ router = APIRouter(prefix="/nutrition", tags=["Nutrition"])
 # NUTRITION DATABASE — curated food DB (utils.food_db)
 # =============================================================================
 
-from utils.food_db import NUTRITION_PER_100G, UNIT_CONVERSIONS, find_food
+from utils.food_db import NUTRITION_PER_100G, UNIT_CONVERSIONS, find_food, grams_from_parsed
 
 NUTRITION_DATABASE = NUTRITION_PER_100G
 
@@ -120,15 +120,7 @@ def calculate_nutrition(parsed: Dict) -> Optional[Dict]:
     if not nutrition:
         return None
 
-    grams = 100
-
-    if parsed["quantity"] is not None:
-        if parsed["unit"]:
-            unit_grams = UNIT_CONVERSIONS.get(parsed["unit"], 1)
-            grams = parsed["quantity"] * unit_grams
-        else:
-            grams = parsed["quantity"] * 100
-
+    grams = grams_from_parsed(parsed, food_name=parsed.get("name"))
     scale = grams / 100
 
     return {

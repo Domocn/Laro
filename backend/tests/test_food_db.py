@@ -136,6 +136,41 @@ def test_estimate_nutrition_from_foods():
     assert result["per_serving"]["protein"] == round(result["totals"]["protein"] / 2, 1)
 
 
+def test_weetabix_count_uses_biscuit_weight_not_100g_each():
+    """Regression: '2 Weetabix' was 200g (~720 kcal) instead of ~37.5g (~136 kcal)."""
+    from utils.food_db import grams_from_parsed, parse_ingredient_amount
+
+    parsed = parse_ingredient_amount("2 biscuits Weetabix biscuits")
+    assert parsed["quantity"] == 2
+    assert "biscuit" in (parsed["unit"] or "")
+    grams = grams_from_parsed(parsed, food_name="weetabix")
+    assert abs(grams - 37.5) < 0.1
+
+    # Dict shape from AI import (unit empty, name starts with biscuits)
+    result = estimate_nutrition_from_foods(
+        [
+            {"amount": "2", "unit": "", "name": "biscuits Weetabix biscuits"},
+            {"amount": "250", "unit": "g", "name": "Fat-free Skyr"},
+            {"amount": "100", "unit": "ml", "name": "Semi-skimmed milk"},
+            {"amount": "10", "unit": "g", "name": "Dark chocolate"},
+            {"amount": "to taste", "unit": "", "name": "Skinny Food Co. Toffee Syrup"},
+        ],
+        servings=1,
+    )
+    weet = next(r for r in result["ingredients"] if "weetabix" in r["ingredient"])
+    assert abs(weet["amount_grams"] - 37.5) < 0.1
+    assert 120 <= weet["calories"] <= 150  # ~136
+    # Whole bowl should be far below the old ~900 kcal bug
+    assert result["per_serving"]["calories"] < 550
+    assert result["per_serving"]["calories"] > 300
+
+
+def test_unitless_chicken_still_uses_legacy_100g_portions():
+    result = estimate_nutrition_from_foods(["2 chicken breast"], servings=1)
+    row = result["ingredients"][0]
+    assert abs(row["amount_grams"] - 200) < 0.1
+
+
 def test_preference_context_includes_nutrition_goals():
     ctx = format_preference_context(
         {
