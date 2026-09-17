@@ -2,8 +2,11 @@
 Recipe Repository - Handles all recipe-related database operations
 """
 import json
+import logging
 from typing import Optional, List, Dict, Any
 from .base_repository import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class RecipeRepository(BaseRepository):
@@ -67,14 +70,25 @@ class RecipeRepository(BaseRepository):
                 await conn.execute(
                     "DELETE FROM meal_plans WHERE recipe_id = $1", recipe_id
                 )
-                await conn.execute(
-                    """
-                    UPDATE google_health_nutrition_logs
-                    SET recipe_id = NULL
-                    WHERE recipe_id = $1
-                    """,
-                    recipe_id,
-                )
+                # Optional table: a missing relation must not abort this transaction
+                # (Postgres aborts the whole TX after UndefinedTableError).
+                await conn.execute("SAVEPOINT optional_nutrition_logs")
+                try:
+                    await conn.execute(
+                        """
+                        UPDATE google_health_nutrition_logs
+                        SET recipe_id = NULL
+                        WHERE recipe_id = $1
+                        """,
+                        recipe_id,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Skipping nutrition-log cleanup for recipe %s: %s",
+                        recipe_id,
+                        exc,
+                    )
+                    await conn.execute("ROLLBACK TO SAVEPOINT optional_nutrition_logs")
                 result = await conn.execute(
                     "DELETE FROM recipes WHERE id = $1", recipe_id
                 )

@@ -185,8 +185,8 @@ export const MealPlanner = () => {
         }),
         recipeApi.getAll(),
       ]);
-      setMealPlans(plansRes.data);
-      setRecipes(recipesRes.data);
+      setMealPlans(Array.isArray(plansRes.data) ? plansRes.data : []);
+      setRecipes(Array.isArray(recipesRes.data) ? recipesRes.data : []);
     } catch (error) {
       toast.error(`${t('toastLoadMealPlansFailed')} (E-MP001)`);
     } finally {
@@ -248,7 +248,7 @@ export const MealPlanner = () => {
 
   const getMealsForDay = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
-    return mealPlans.filter(plan => plan.date === dateStr);
+    return mealPlans.filter((plan) => String(plan?.date || '').slice(0, 10) === dateStr);
   };
 
   const handleAddMeal = async () => {

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Any, List, Optional, Union
+from datetime import date as date_cls
 from datetime import datetime
 import re
 
@@ -226,14 +227,32 @@ class MealPlanResponse(BaseModel):
     date: str
     meal_type: str
     recipe_id: Optional[str] = None
-    recipe_title: str
-    notes: str
+    recipe_title: str = ""
+    notes: str = ""
     adult_boost: Optional[str] = ""
     entry_type: Optional[str] = "recipe"
     household_id: str
     created_at: str
 
-    @field_validator('created_at', 'date', mode='before')
+    @field_validator("notes", "recipe_title", mode="before")
+    @classmethod
+    def empty_null_strings(cls, v):
+        return "" if v is None else v
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def convert_plan_date(cls, v):
+        # Planner UI matches YYYY-MM-DD; a datetime isoformat hides meals on the calendar.
+        if v is None:
+            return v
+        if isinstance(v, datetime):
+            return v.date().isoformat()
+        if isinstance(v, date_cls):
+            return v.isoformat()
+        text = str(v).strip()
+        return text[:10] if len(text) >= 10 else text
+
+    @field_validator("created_at", mode="before")
     @classmethod
     def convert_datetime_to_string(cls, v):
         if isinstance(v, datetime):

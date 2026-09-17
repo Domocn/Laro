@@ -47,6 +47,10 @@ async def test_delete_recipe_clears_share_and_related_rows_before_recipe():
     assert any("DELETE FROM meal_plans" in s for s in sqls)
     assert any("google_health_nutrition_logs" in s for s in sqls)
     assert any("DELETE FROM recipes WHERE id" in s for s in sqls)
+    assert any("SAVEPOINT optional_nutrition_logs" in s for s in sqls)
     # Recipe row deleted last
     assert sqls[-1].strip().startswith("DELETE FROM recipes")
-    assert all(args == (recipe_id,) or recipe_id in args for _, _, args in executed)
+    for sql, args in ((sql, args) for _, sql, args in executed):
+        if "SAVEPOINT" in sql or "ROLLBACK TO" in sql:
+            continue
+        assert args == (recipe_id,) or recipe_id in args

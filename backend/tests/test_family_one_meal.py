@@ -55,3 +55,44 @@ def test_shape_plan_defaults_adult_boost():
     shaped = _shape_plan({"id": "1", "recipe_id": "r", "adult_boost": None})
     assert shaped["adult_boost"] == ""
     assert shaped["entry_type"] == "recipe"
+
+
+def test_shape_plan_normalizes_date_and_null_notes():
+    from datetime import datetime, timezone
+    from routers.meal_plans import _shape_plan
+    from models import MealPlanResponse
+
+    shaped = _shape_plan({
+        "id": "1",
+        "date": datetime(2026, 9, 17, 0, 0, tzinfo=timezone.utc),
+        "meal_type": "Dinner",
+        "recipe_id": "r1",
+        "recipe_title": None,
+        "notes": None,
+        "household_id": "h1",
+        "created_at": datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc),
+    })
+    assert shaped["date"] == "2026-09-17"
+    assert shaped["notes"] == ""
+    assert shaped["recipe_title"] == ""
+
+    response = MealPlanResponse(**shaped)
+    assert response.date == "2026-09-17"
+    assert response.notes == ""
+    assert response.recipe_title == ""
+
+
+def test_meal_plan_response_accepts_iso_datetime_date():
+    from models import MealPlanResponse
+
+    response = MealPlanResponse(
+        id="1",
+        date="2026-09-17T00:00:00",
+        meal_type="Dinner",
+        recipe_id="r1",
+        recipe_title="Pasta",
+        notes="ok",
+        household_id="h1",
+        created_at="2026-09-17T12:00:00",
+    )
+    assert response.date == "2026-09-17"
