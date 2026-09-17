@@ -116,7 +116,8 @@ export const QuickAddRecipe = () => {
     setPasteLoading(true);
     try {
       const res = await aiApi.importText(pasteText);
-      setExtractedRecipe(res.data);
+      // API returns { status, recipe, ... } — same unwrap as URL import
+      setExtractedRecipe(res.data?.recipe || res.data);
       toast.success(t('toastRecipeParsed'));
     } catch (error) {
       toast.error(
