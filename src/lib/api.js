@@ -301,10 +301,78 @@ export const favoritesApi = {
 };
 
 // AI
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll GET /ai/imports/:id until the async import finishes (or times out). */
+async function pollImportResult(importId, { timeoutMs = 300000, intervalMs = 2000 } = {}) {
+  const started = Date.now();
+  let lastError = null;
+  while (Date.now() - started < timeoutMs) {
+    await sleep(intervalMs);
+    try {
+      const st = await api.get(`/ai/imports/${importId}`, { timeout: 20000 });
+      const data = st.data || {};
+      if (data.status === 'succeeded') {
+        return {
+          data: {
+            status: 'success',
+            recipe: data.recipe,
+            used_ai: data.used_ai !== false,
+            import_id: importId,
+          },
+          status: 200,
+        };
+      }
+      if (data.status === 'failed') {
+        const err = new Error(data.error || 'Import failed');
+        err.response = {
+          status: 422,
+          data: { detail: data.error || 'Could not parse recipe from text. Please check the format.' },
+        };
+        throw err;
+      }
+      // still importing
+    } catch (e) {
+      if (e?.response?.status === 404) {
+        lastError = e;
+        continue;
+      }
+      if (e?.response?.status && e.response.status !== 404) {
+        throw e;
+      }
+      lastError = e;
+    }
+  }
+  const err = lastError || new Error('Import timed out');
+  if (!err.response) {
+    err.response = {
+      status: 504,
+      data: { detail: 'Recipe import is taking too long. Check Settings → Imports, or try again.' },
+    };
+  }
+  throw err;
+}
+
 export const aiApi = {
   importUrl: (url) => api.post('/ai/import-url', { url }, { timeout: 120000 }),
-  importText: (text) => api.post('/ai/import-text', { text }, { timeout: 120000 }),
+  /**
+   * Paste-text import. Backend returns 202 + import_id quickly; we poll until
+   * the LLM finishes so Cloudflare's ~100s limit cannot kill long parses.
+   */
+  importText: async (text) => {
+    const res = await api.post('/ai/import-text', { text }, { timeout: 30000 });
+    const body = res.data || {};
+    if (res.status === 202 || body.status === 'importing') {
+      if (!body.import_id) {
+        throw new Error('Import started but no import_id returned');
+      }
+      return pollImportResult(body.import_id);
+    }
+    // Backward-compatible sync response
+    return res;
+  },
   importFeedback: (payload) => api.post('/ai/import-feedback', payload, { timeout: 30000 }),
+  getImport: (importId) => api.get(`/ai/imports/${importId}`, { timeout: 20000 }),
   listImports: ({ limit = 50, offset = 0, status } = {}) =>
     api.get('/ai/imports', {
       params: {
