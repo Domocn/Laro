@@ -970,7 +970,7 @@ UNIT_CONVERSIONS = {
     "l": 1000,
     "liter": 1000,
     "liters": 1000,
-    # Count units — grams resolved via PIECE_WEIGHTS_G for known foods.
+    # Count units — grams resolved via PIECE_WEIGHTS_G / COUNT_UNIT_DEFAULT_G.
     # Placeholder 1 keeps parse_ingredient_amount able to strip these tokens.
     "biscuit": 1,
     "biscuits": 1,
@@ -984,21 +984,170 @@ UNIT_CONVERSIONS = {
     "items": 1,
     "serving": 1,
     "servings": 1,
+    "egg": 1,
+    "eggs": 1,
+    "can": 1,
+    "cans": 1,
+    "jar": 1,
+    "jars": 1,
+    "pack": 1,
+    "packs": 1,
+    "package": 1,
+    "packages": 1,
+    "bag": 1,
+    "bags": 1,
+    "box": 1,
+    "boxes": 1,
+    "stick": 1,
+    "sticks": 1,
+    "stalk": 1,
+    "stalks": 1,
+    "head": 1,
+    "heads": 1,
+    "ear": 1,
+    "ears": 1,
+    "sheet": 1,
+    "sheets": 1,
+    "leaf": 1,
+    "leaves": 1,
+    "sprig": 1,
+    "sprigs": 1,
+    "bunch": 1,
+    "bunches": 1,
+    "pinch": 1,
+    "pinches": 1,
+    "dash": 1,
+    "dashes": 1,
+    "drop": 1,
+    "drops": 1,
+    "fillet": 1,
+    "fillets": 1,
+    "breast": 1,
+    "breasts": 1,
+    "thigh": 1,
+    "thighs": 1,
 }
 
 # Count / discrete items → grams each (longest-key match wins).
-# Without this, "2 Weetabix" was treated as 200g (qty × 100).
+# Without this, "2 Weetabix" / "4 eggs" were treated as qty × 100g.
 PIECE_WEIGHTS_G = {
+    # Breakfast cereals / bakery
     "weetabix": 18.75,  # 2 biscuits = 37.5g (official)
+    "shredded wheat": 22.0,
+    "rice cake": 9.0,
+    "cracker": 5.0,
+    "digestive": 15.0,
+    "biscuit": 12.0,
+    "cookie": 15.0,
+    "slice bread": 30.0,
+    "bread": 30.0,
+    "bagel": 95.0,
+    "tortilla": 45.0,
+    "wrap": 45.0,
+    "pita": 60.0,
+    "english muffin": 57.0,
+    "croissant": 58.0,
+    # Eggs / dairy pieces
     "egg white": 33.0,
     "egg": 50.0,
+    "stick butter": 113.0,  # US stick
+    "butter": 10.0,  # knobs when counted without "stick"
+    # Fruit (edible portion averages)
     "banana": 118.0,
     "apple": 182.0,
-    "slice bread": 30.0,
-    "bread": 30.0,  # per slice when counted
-    "tortilla": 45.0,
+    "orange": 131.0,
+    "lemon": 58.0,
+    "lime": 67.0,
+    "strawberry": 12.0,
+    "blueberry": 1.5,
+    "avocado": 150.0,
+    "pear": 178.0,
+    "peach": 150.0,
+    "mango": 200.0,
+    "kiwi": 69.0,
+    "grape": 5.0,
+    "date": 7.5,
+    "fig": 50.0,
+    # Veg counted as pieces
     "clove garlic": 3.0,
     "garlic": 3.0,
+    "onion": 110.0,
+    "shallot": 25.0,
+    "tomato": 123.0,
+    "potato": 173.0,
+    "sweet potato": 130.0,
+    "carrot": 61.0,
+    "bell pepper": 120.0,
+    "pepper": 120.0,  # when counted (not ground spice with mass unit)
+    "cucumber": 300.0,
+    "zucchini": 200.0,
+    "courgette": 200.0,
+    "mushroom": 18.0,
+    "broccoli": 150.0,  # small head / florets bunch approx when counted
+    "cauliflower": 150.0,
+    "corn": 90.0,  # ear
+    "asparagus": 12.0,  # spear
+    "celery": 40.0,  # stalk
+    "spring onion": 15.0,
+    "scallion": 15.0,
+    "lettuce": 150.0,  # small head when counted
+    "cabbage": 150.0,
+    # Protein pieces / fillets (typical retail unit)
+    "chicken breast": 175.0,
+    "chicken thigh": 120.0,
+    "turkey breast": 175.0,
+    "salmon": 150.0,
+    "cod": 150.0,
+    "tuna steak": 150.0,
+    "shrimp": 8.0,
+    "prawn": 8.0,
+    "fillet": 150.0,
+    "tofu": 100.0,  # when counted as blocks/pieces without mass
+    # Canned / packaged defaults keyed by food
+    "canned tuna": 112.0,  # drained can approx
+    "tuna": 112.0,
+    "chickpeas": 240.0,  # drained can when "1 can"
+    "black beans": 240.0,
+    "kidney beans": 240.0,
+    "beans": 240.0,
+    "lentils": 240.0,
+    # Nuts (per piece when counted)
+    "almond": 1.2,
+    "walnut": 4.0,
+    "cashew": 1.6,
+    "peanut": 1.0,
+}
+
+# When the unit is a count word but the food has no PIECE_WEIGHTS entry,
+# use a conservative per-unit default instead of qty × 100g.
+COUNT_UNIT_DEFAULT_G = {
+    "biscuit": 12.0,
+    "piece": 50.0,
+    "slice": 30.0,
+    "clove": 3.0,
+    "item": 50.0,
+    "serving": 100.0,
+    "egg": 50.0,
+    "can": 240.0,  # drained canned goods typical
+    "jar": 200.0,
+    "pack": 50.0,
+    "package": 50.0,
+    "bag": 100.0,
+    "box": 100.0,
+    "stick": 50.0,
+    "stalk": 40.0,
+    "head": 400.0,
+    "ear": 90.0,
+    "sheet": 20.0,
+    "leaf": 1.0,
+    "sprig": 2.0,
+    "bunch": 60.0,
+    "pinch": 0.3,
+    "dash": 0.3,
+    "drop": 0.05,
+    "fillet": 150.0,
+    "breast": 175.0,
+    "thigh": 120.0,
 }
 
 COUNT_UNITS = frozenset(
@@ -1017,6 +1166,61 @@ COUNT_UNITS = frozenset(
         "servings",
         "egg",
         "eggs",
+        "can",
+        "cans",
+        "jar",
+        "jars",
+        "pack",
+        "packs",
+        "package",
+        "packages",
+        "bag",
+        "bags",
+        "box",
+        "boxes",
+        "stick",
+        "sticks",
+        "stalk",
+        "stalks",
+        "head",
+        "heads",
+        "ear",
+        "ears",
+        "sheet",
+        "sheets",
+        "leaf",
+        "leaves",
+        "sprig",
+        "sprigs",
+        "bunch",
+        "bunches",
+        "pinch",
+        "pinches",
+        "dash",
+        "dashes",
+        "drop",
+        "drops",
+        "fillet",
+        "fillets",
+        "breast",
+        "breasts",
+        "thigh",
+        "thighs",
+    }
+)
+
+# Size adjectives stripped so "1 large egg" → unit=egg, name=…
+SIZE_WORDS = frozenset(
+    {
+        "large",
+        "medium",
+        "small",
+        "whole",
+        "extra-large",
+        "extra large",
+        "xl",
+        "jumbo",
+        "mini",
     }
 )
 
@@ -1063,6 +1267,27 @@ def piece_weight_grams(food_name: str) -> Optional[float]:
     return best_g
 
 
+def _normalize_count_unit(unit_key: str) -> str:
+    u = (unit_key or "").strip().lower()
+    if u.endswith("es") and u[:-2] + "e" in COUNT_UNIT_DEFAULT_G:
+        # leaves → leaf handled below; boxes → box
+        pass
+    if u in COUNT_UNIT_DEFAULT_G:
+        return u
+    singular = u.rstrip("s")
+    if singular in COUNT_UNIT_DEFAULT_G:
+        return singular
+    if u.endswith("ies"):
+        alt = u[:-3] + "y"  # berries-like unused
+        if alt in COUNT_UNIT_DEFAULT_G:
+            return alt
+    if u == "leaves":
+        return "leaf"
+    if u == "loaves":
+        return "loaf"
+    return singular or u
+
+
 def grams_from_parsed(
     parsed: Dict[str, Any],
     *,
@@ -1071,15 +1296,15 @@ def grams_from_parsed(
     """Convert a parsed ingredient amount into grams for nutrition scaling.
 
     - Mass/volume units use UNIT_CONVERSIONS.
-    - Count units (biscuit, piece, …) and bare counts ("2 Weetabix") use
-      PIECE_WEIGHTS_G when the food is known.
-    - Unknown bare counts still default to qty × 100g (legacy behaviour).
-    - No quantity defaults to one piece weight or 100g.
+    - Count units (biscuit, piece, can, egg, …) and bare counts ("2 Weetabix",
+      "4 eggs") use PIECE_WEIGHTS_G when the food is known.
+    - Known count units without a food-specific weight use COUNT_UNIT_DEFAULT_G
+      (never qty × 100g).
+    - Bare counts for unknown foods still default to qty × 100g (legacy).
     """
     qty = parsed.get("quantity")
     unit_raw = (parsed.get("unit") or "").strip().lower()
     unit = unit_raw.rstrip("s") if unit_raw else ""
-    # Keep full plural for COUNT_UNITS membership ("biscuits")
     unit_key = unit_raw or unit
     search_name = " ".join(
         p for p in (food_name or "", parsed.get("name") or "") if p
@@ -1097,13 +1322,19 @@ def grams_from_parsed(
     if is_count and piece_g is not None:
         return float(qty) * float(piece_g)
 
+    if unit_key and (unit_key in COUNT_UNITS or unit in COUNT_UNITS):
+        default_key = _normalize_count_unit(unit_key)
+        default_g = COUNT_UNIT_DEFAULT_G.get(default_key) or COUNT_UNIT_DEFAULT_G.get(unit)
+        if default_g is not None:
+            return float(qty) * float(default_g)
+
     if unit_key and unit_key not in COUNT_UNITS and unit not in COUNT_UNITS:
-        # Unknown non-count unit (e.g. "pack") — prefer piece weight, else qty×100
+        # Unknown non-count unit (rare) — prefer piece weight, else qty×100
         if piece_g is not None:
             return float(qty) * float(piece_g)
         return float(qty) * 100.0
 
-    # Bare count / count unit without a known piece weight
+    # Bare count without a known piece weight
     return float(qty) * 100.0
 
 
@@ -1129,12 +1360,20 @@ def parse_ingredient_amount(ingredient_str: str) -> Dict[str, Any]:
             quantity = float(qty_str)
 
         remaining = ingredient_str[fraction_match.end():].strip()
+        # Drop size adjectives: "1 large egg" → "egg …"
+        for size in sorted(SIZE_WORDS, key=len, reverse=True):
+            if remaining == size or remaining.startswith(size + " "):
+                remaining = remaining[len(size):].strip()
+                break
         # Prefer longer unit tokens first (tablespoons before tbsp, biscuits before …)
         for unit_name in sorted(UNIT_CONVERSIONS.keys(), key=len, reverse=True):
             if remaining == unit_name or remaining.startswith(unit_name + " "):
                 unit = unit_name
                 remaining = remaining[len(unit_name):].strip()
                 break
+        # "4 eggs" with nothing after → unit=eggs, name=egg
+        if unit in ("egg", "eggs") and not remaining:
+            remaining = "egg"
         name = remaining
 
     return {"quantity": quantity, "unit": unit, "name": name}

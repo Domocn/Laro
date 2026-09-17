@@ -127,12 +127,12 @@ def test_build_ai_food_context_skips_when_no_goals():
 
 def test_estimate_nutrition_from_foods():
     result = estimate_nutrition_from_foods(
-        ["200g chicken breast", "100g greek yogurt", "mystery spice blend"],
+        ["200g chicken breast", "100g greek yogurt", "xyzzy-unknown-macromolecule-99"],
         servings=2,
     )
     assert result["source"] == "food_db"
     assert result["totals"]["protein"] > 50
-    assert "mystery spice blend" in result["unknown_ingredients"]
+    assert any("xyzzy" in u for u in result["unknown_ingredients"])
     assert result["per_serving"]["protein"] == round(result["totals"]["protein"] / 2, 1)
 
 
@@ -165,10 +165,45 @@ def test_weetabix_count_uses_biscuit_weight_not_100g_each():
     assert result["per_serving"]["calories"] > 300
 
 
-def test_unitless_chicken_still_uses_legacy_100g_portions():
+def test_count_foods_boardwide_eggs_fruit_garlic_bread():
+    from utils.food_db import grams_from_parsed, parse_ingredient_amount
+
+    cases = [
+        ("4 eggs", 200.0),
+        ("1 large egg", 50.0),
+        ("2 bananas", 236.0),
+        ("3 cloves garlic", 9.0),
+        ("2 slices bread", 60.0),
+        ("1 can chickpeas", 240.0),
+    ]
+    for text, expected_g in cases:
+        parsed = parse_ingredient_amount(text)
+        grams = grams_from_parsed(parsed)
+        assert abs(grams - expected_g) < 1.0, f"{text}: got {grams}, want ~{expected_g}"
+
+    result = estimate_nutrition_from_foods(
+        ["4 eggs", "1 banana", "2 cloves garlic"],
+        servings=1,
+    )
+    # Must not look like 4×100g eggs (620 kcal) + 100g banana
+    assert result["per_serving"]["calories"] < 500
+    egg_row = next(r for r in result["ingredients"] if r["ingredient"] == "egg")
+    assert abs(egg_row["amount_grams"] - 200) < 1.0
+
+
+def test_chicken_breast_count_uses_fillet_weight():
     result = estimate_nutrition_from_foods(["2 chicken breast"], servings=1)
     row = result["ingredients"][0]
-    assert abs(row["amount_grams"] - 200) < 0.1
+    # 2 × ~175g fillets — not the old 200g (2×100) under-count nor 400g (2×200)
+    assert abs(row["amount_grams"] - 350) < 1.0
+
+
+def test_grams_from_amount_delegates_to_piece_weights():
+    from utils.ingredient_parse import grams_from_amount
+
+    assert abs(grams_from_amount(2, None, "weetabix") - 37.5) < 0.1
+    assert abs(grams_from_amount(4, "eggs", "egg") - 200) < 0.1
+    assert abs(grams_from_amount(100, "g", "chicken breast") - 100) < 0.1
 
 
 def test_preference_context_includes_nutrition_goals():

@@ -160,22 +160,25 @@ def parse_ingredient_line(line: str) -> Dict[str, Any]:
 
 def grams_from_amount(quantity: Optional[float], unit: Optional[str], food_name: str = "") -> Optional[float]:
     """
-    Convert quantity+unit to grams using food_db table first, then Pint.
+    Convert quantity+unit to grams using food_db piece weights / unit table, then Pint.
     """
     if quantity is None:
         return None
+
+    from utils.food_db import grams_from_parsed
+
+    parsed = {
+        "quantity": float(quantity),
+        "unit": (unit or "").strip().lower() or None,
+        "name": food_name or "",
+    }
+    grams = grams_from_parsed(parsed, food_name=food_name)
+    if grams is not None and grams > 0:
+        return float(grams)
+
     unit_l = (unit or "").strip().lower()
     if not unit_l:
-        # Count-like: treat as 100g portions for nutrition estimates
         return float(quantity) * 100.0
-
-    from utils.food_db import UNIT_CONVERSIONS
-
-    if unit_l in UNIT_CONVERSIONS:
-        return float(quantity) * float(UNIT_CONVERSIONS[unit_l])
-    singular = unit_l.rstrip("s")
-    if singular in UNIT_CONVERSIONS:
-        return float(quantity) * float(UNIT_CONVERSIONS[singular])
 
     try:
         from pint import UnitRegistry
