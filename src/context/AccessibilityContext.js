@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import api from '../lib/api';
+export { confirmDestructive, pulseHaptic } from './accessibilityHelpers';
 
 const AccessibilityContext = createContext();
 
@@ -34,23 +35,6 @@ export const ACCESSIBILITY_PRESETS = {
     name: 'Quiet Mode (Sensory)',
     description: 'No motion flash, quiet timers, simplified chrome',
   },
-};
-
-/** Destructive confirm helper — respects the confirmActions accessibility toggle. */
-export const confirmDestructive = (confirmActions, message) => {
-  if (!confirmActions) return true;
-  if (typeof window === 'undefined') return true;
-  return window.confirm(message);
-};
-
-/** Optional haptic pulse when the user has haptic feedback enabled. */
-export const pulseHaptic = (hapticFeedback, pattern = [40, 30, 40]) => {
-  if (!hapticFeedback || typeof navigator === 'undefined' || !navigator.vibrate) return;
-  try {
-    navigator.vibrate(pattern);
-  } catch {
-    /* ignore unsupported devices */
-  }
 };
 
 export const AccessibilityProvider = ({ children }) => {
@@ -111,13 +95,22 @@ export const AccessibilityProvider = ({ children }) => {
   // Timer notifications
   const [timerNotifications, setTimerNotifications] = useState(() => getInitialValue('timer_notifications', 'both'));
 
+  const userId = user?.id;
+
+  // Reload from server when the signed-in user changes
+  useEffect(() => {
+    setLoadedFromServer(false);
+  }, [userId]);
+
   // Load settings from backend when user logs in
   useEffect(() => {
-    if (!isAuthenticated || !user || loadedFromServer) return;
+    if (!isAuthenticated || !userId || loadedFromServer) return;
 
     const loadServerSettings = async () => {
+      const loadForUserId = userId;
       try {
         const res = await api.get('/preferences');
+        if (loadForUserId !== user?.id) return;
         if (res.data) {
           // Load accessibility settings from server
           if (res.data.dyslexicFont !== undefined) setDyslexicFont(res.data.dyslexicFont);
@@ -135,16 +128,19 @@ export const AccessibilityProvider = ({ children }) => {
           if (res.data.soundEffects !== undefined) setSoundEffects(res.data.soundEffects);
           if (res.data.hapticFeedback !== undefined) setHapticFeedback(res.data.hapticFeedback);
           if (res.data.timerNotifications !== undefined) setTimerNotifications(res.data.timerNotifications);
-
-          setLoadedFromServer(true);
         }
       } catch (error) {
         console.log('Using local accessibility settings:', error);
+      } finally {
+        if (loadForUserId === user?.id) {
+          // Allow debounced saves even when the fetch fails (local prefs still apply)
+          setLoadedFromServer(true);
+        }
       }
     };
 
     loadServerSettings();
-  }, [isAuthenticated, user, loadedFromServer]);
+  }, [isAuthenticated, userId, loadedFromServer]);
 
   // Save to backend (debounced)
   const saveToServer = useCallback(async () => {
