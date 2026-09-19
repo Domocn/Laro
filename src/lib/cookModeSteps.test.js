@@ -1,5 +1,6 @@
 import {
   enrichStepWithAmounts,
+  fixPackageInstructionWording,
   ingredientsForStep,
   nameVariants,
   normalizeCookStepsWithAmounts,
@@ -57,6 +58,30 @@ describe('enrichStepWithAmounts', () => {
     const enriched = enrichStepWithAmounts(step, ingredients);
     expect(enriched.toLowerCase()).toContain('8 sage leaves');
     expect(enriched.toLowerCase()).toContain('20 g butter');
+  });
+
+  it('does not inject weight before "standard package" phrasing', () => {
+    const step =
+      'Bake according to standard package instructions (typically 20-30 minutes) and cool.';
+    const ingredients = [
+      { name: 'standard chocolate brownie mix', amount: '375', unit: 'g' },
+    ];
+    const enriched = enrichStepWithAmounts(step, ingredients);
+    expect(enriched.toLowerCase()).not.toMatch(/375\s*g\s+standard/);
+    expect(enriched.toLowerCase()).toContain('standard package');
+  });
+
+  it('names the boxed product for package bake steps', () => {
+    const step =
+      'Bake according to standard package instructions (typically 20-30 minutes) and cool.';
+    const ingredients = [
+      { name: 'standard chocolate brownie mix', amount: '375', unit: 'g' },
+    ];
+    const fixed = fixPackageInstructionWording(step, ingredients);
+    expect(fixed.toLowerCase()).toContain(
+      'according to the standard chocolate brownie mix package'
+    );
+    expect(fixed.toLowerCase()).not.toMatch(/375\s*g/);
   });
 
   it('does not double amounts already in the step', () => {

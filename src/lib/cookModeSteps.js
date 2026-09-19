@@ -46,6 +46,18 @@ function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Single-word name variants too ambiguous for quantity injection (e.g. "standard package"). */
+const WEAK_INJECTION_VARIANTS = new Set([
+  'standard',
+  'regular',
+  'classic',
+  'original',
+  'generic',
+  'typical',
+  'normal',
+  'plain',
+]);
+
 const NOISE_WORDS = new Set([
   'fresh',
   'dried',
@@ -99,6 +111,12 @@ const NOISE_WORDS = new Set([
   'canned',
   'jarred',
   'packed',
+  'standard',
+  'regular',
+  'classic',
+  'original',
+  'generic',
+  'typical',
   'of',
   'and',
   'or',
@@ -244,6 +262,13 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
   for (const { variant, qty, fullName } of needles) {
     if (injectedNames.has(fullName)) continue;
 
+    if (
+      !variant.includes(' ') &&
+      WEAK_INJECTION_VARIANTS.has(variant.toLowerCase())
+    ) {
+      continue;
+    }
+
     const escapedVariant = escapeRegex(variant);
     const escapedQty = escapeRegex(qty);
 
@@ -258,6 +283,10 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
     if (!match) continue;
 
     const idx = match.index;
+    const afterMatch = result.slice(idx + match[1].length);
+    // "standard package instructions" — not a bare ingredient mention
+    if (/^\s+package\b/i.test(afterMatch)) continue;
+
     const before = result.slice(Math.max(0, idx - 28), idx);
     // If there's already a number + unit right before the name, leave it
     if (/\d[\d./]*\s*(?:g|kg|ml|l|oz|lb|tsp|tbsp|cups?|cloves?|leaves?)?\s*$/i.test(before)) {
@@ -284,6 +313,38 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
   return result.replace(/\s+/g, ' ').trim();
 }
 
+const PACKAGE_INSTRUCTION_RE =
+  /according to (?:the )?(?:(?:\d[\d./]*\s*(?:g|kg|ml|l|oz|lb|)\s+)?standard|standard)\s+package\b/i;
+
+/**
+ * "Bake according to standard package…" → name the boxed product from this step's ingredients.
+ * @param {string} step
+ * @param {Array<{name?: string, amount?: string|number, unit?: string}|string>} ingredients
+ * @param {string} [measurementUnit]
+ */
+export function fixPackageInstructionWording(step, ingredients, measurementUnit = 'metric') {
+  if (!step || typeof step !== 'string' || !PACKAGE_INSTRUCTION_RE.test(step)) {
+    return step || '';
+  }
+
+  const stepIngredients = ingredientsForStep(step, ingredients, measurementUnit);
+  let productName = stepIngredients[0]?.name;
+
+  if (!productName && Array.isArray(ingredients)) {
+    const boxed = ingredients
+      .map((ing) => (typeof ing === 'string' ? { name: ing } : ing))
+      .filter((ing) => ing?.name && /\b(mix|kit|box)\b/i.test(String(ing.name)));
+    productName = boxed[0]?.name;
+  }
+
+  if (!productName) return step;
+
+  return step.replace(
+    PACKAGE_INSTRUCTION_RE,
+    `according to the ${productName} package`
+  );
+}
+
 /**
  * @param {unknown} instructions
  * @param {Array} [ingredients]
@@ -291,7 +352,11 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
  */
 export function normalizeCookStepsWithAmounts(instructions, ingredients, measurementUnit = 'metric') {
   return normalizeCookSteps(instructions).map((step) =>
-    enrichStepWithAmounts(step, ingredients, measurementUnit)
+    fixPackageInstructionWording(
+      enrichStepWithAmounts(step, ingredients, measurementUnit),
+      ingredients,
+      measurementUnit
+    )
   );
 }
 
