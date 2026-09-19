@@ -287,7 +287,11 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
     referred_by = None
     referral_trial_end = None
     if user.referral_code:
-        referrer = await user_repository.find_by_friend_code(user.referral_code.strip().upper())
+        from utils.friend_codes import normalize_friend_code
+
+        referrer = await user_repository.find_by_friend_code(
+            normalize_friend_code(user.referral_code)
+        )
         if referrer and referrer.get("id") != user_id:
             referred_by = referrer["id"]
             now_utc = datetime.now(timezone.utc).replace(tzinfo=None)

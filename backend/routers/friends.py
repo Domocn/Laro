@@ -7,8 +7,8 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from dependencies import get_current_user, user_repository
 import uuid
-import random
-import string
+
+from utils.friend_codes import generate_friend_code, normalize_friend_code
 
 router = APIRouter(prefix="/friends", tags=["Friends"])
 
@@ -22,19 +22,6 @@ class FriendResponse(BaseModel):
     name: str
     friend_code: str
     added_at: str
-
-
-def generate_friend_code(name: str) -> str:
-    """Generate a friend code in format NAME#1234"""
-    # Clean the name - take first part before space, uppercase, max 8 chars
-    clean_name = name.split()[0].upper()[:8] if name else "CHEF"
-    # Remove non-alphanumeric characters
-    clean_name = ''.join(c for c in clean_name if c.isalnum())
-    if not clean_name:
-        clean_name = "CHEF"
-    # Generate 4 digit code
-    code = ''.join(random.choices(string.digits, k=4))
-    return f"{clean_name}#{code}"
 
 
 @router.get("/my-code")
@@ -70,7 +57,7 @@ async def add_friend(
     from utils.free_limits import assert_can_add_friend
     await assert_can_add_friend(user)
 
-    friend_code = data.friend_code.strip().upper()
+    friend_code = normalize_friend_code(data.friend_code)
     friend = await user_repository.find_by_friend_code(friend_code)
 
     if not friend:

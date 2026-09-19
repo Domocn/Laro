@@ -33,12 +33,18 @@ class UserRepository(BaseRepository):
         )
 
     async def find_by_friend_code(self, friend_code: str) -> Optional[dict]:
-        """Find user by friend code"""
-        return await self.find_one(
-            {"friend_code": friend_code},
-            exclude_fields=["password"],
-            json_fields=self.JSON_FIELDS
-        )
+        """Find user by friend code (food word + number or legacy NAME#1234)."""
+        from utils.friend_codes import friend_code_lookup_variants
+
+        for variant in friend_code_lookup_variants(friend_code):
+            user = await self.find_one(
+                {"friend_code": variant},
+                exclude_fields=["password"],
+                json_fields=self.JSON_FIELDS,
+            )
+            if user:
+                return user
+        return None
 
     async def find_by_supabase_id(self, supabase_id: str) -> Optional[dict]:
         """Find user by Supabase auth user ID"""
