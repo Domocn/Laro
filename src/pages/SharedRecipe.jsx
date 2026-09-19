@@ -20,11 +20,12 @@ import {
   BookmarkPlus,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import api, { sharingApi } from '../lib/api';
+import api, { sharingApi, friendsApi } from '../lib/api';
 import { toast } from 'sonner';
 import { IngredientSubstituteButton } from '../components/IngredientSubstituteButton';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { buildWhatsAppRecipeShareText, openWhatsAppShare } from '../lib/whatsappRecipeShare';
 
 // WhatsApp icon component
 const WhatsAppIcon = ({ className }) => (
@@ -103,46 +104,25 @@ export const SharedRecipe = () => {
     }
   };
 
-  const handleWhatsAppShare = () => {
+  const handleWhatsAppShare = async () => {
     const recipe = data.recipe;
-    const url = window.location.href;
     const includeLinks = data.include_links_in_share !== false;
-
-    // Format all ingredients
-    const allIngredients = recipe.ingredients
-      ?.map((ing, i) => `${i + 1}. ${typeof ing === 'string' ? ing : ing.text || ing.name}`)
-      .join('\n');
-
-    // Format all instructions
-    const allInstructions = recipe.instructions
-      ?.map((step, i) => `${i + 1}. ${typeof step === 'string' ? step : step.text || step.instruction}`)
-      .join('\n\n');
-
-    // Build time info line
-    const timeInfo = [
-      recipe.prep_time ? `⏱️ Prep: ${recipe.prep_time}` : '',
-      recipe.cook_time ? `🍳 Cook: ${recipe.cook_time}` : '',
-      recipe.servings ? `👥 Serves ${recipe.servings}` : ''
-    ].filter(Boolean).join(' | ');
-
-    // Create full recipe message
-    let message = `🍳 *${recipe.title}*
-
-${recipe.description ? `${recipe.description}\n\n` : ''}${timeInfo ? `${timeInfo}\n\n` : ''}📝 *Ingredients:*
-${allIngredients || 'No ingredients listed'}
-
-👨‍🍳 *Instructions:*
-${allInstructions || 'No instructions listed'}`;
-
-    // Add link if enabled
-    if (includeLinks) {
-      message += `\n\n👉 View online: ${url}`;
+    let referralCode = '';
+    if (isAuthenticated) {
+      try {
+        const res = await friendsApi.getMyCode();
+        referralCode = res.data?.friend_code || '';
+      } catch {
+        referralCode = '';
+      }
     }
-
-    message += `\n\n_Shared via Laro_`;
-
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
+    const message = buildWhatsAppRecipeShareText(recipe, {
+      shareUrl: window.location.href,
+      includeLink: includeLinks,
+      referralCode,
+      signupOrigin: window.location.origin,
+    });
+    openWhatsAppShare(message);
   };
 
   const handleSaveToAccount = async () => {
