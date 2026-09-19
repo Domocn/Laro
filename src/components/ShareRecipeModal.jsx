@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { sharingApi } from '../lib/api';
+import { buildWhatsAppRecipeShareText, openWhatsAppShare } from '../lib/whatsappRecipeShare';
 
 // WhatsApp icon component
 const WhatsAppIcon = ({ className }) => (
@@ -123,41 +124,11 @@ export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
   };
 
   const handleWhatsAppShare = (shareUrl) => {
-    // Format all ingredients
-    const allIngredients = recipe.ingredients
-      ?.map((ing, i) => `${i + 1}. ${typeof ing === 'string' ? ing : ing.text || ing.name}`)
-      .join('\n');
-
-    // Format all instructions
-    const allInstructions = recipe.instructions
-      ?.map((step, i) => `${i + 1}. ${typeof step === 'string' ? step : step.text || step.instruction}`)
-      .join('\n\n');
-
-    // Build time info line
-    const timeInfo = [
-      recipe.prep_time ? `⏱️ Prep: ${recipe.prep_time}` : '',
-      recipe.cook_time ? `🍳 Cook: ${recipe.cook_time}` : '',
-      recipe.servings ? `👥 Serves ${recipe.servings}` : ''
-    ].filter(Boolean).join(' | ');
-
-    // Create full recipe message
-    let message = `🍳 *${recipe.title}*
-
-${recipe.description ? `${recipe.description}\n\n` : ''}${timeInfo ? `${timeInfo}\n\n` : ''}📝 *Ingredients:*
-${allIngredients || 'No ingredients listed'}
-
-👨‍🍳 *Instructions:*
-${allInstructions || 'No instructions listed'}`;
-
-    // Add link if enabled
-    if (includeLinksInShare && shareUrl) {
-      message += `\n\n👉 View online: ${shareUrl}`;
-    }
-
-    message += `\n\n_Shared via Laro_`;
-
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
+    const message = buildWhatsAppRecipeShareText(recipe, {
+      shareUrl,
+      includeLink: includeLinksInShare && !!shareUrl,
+    });
+    openWhatsAppShare(message);
   };
 
   if (!isOpen) return null;
