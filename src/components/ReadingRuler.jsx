@@ -8,14 +8,14 @@ export const ReadingRuler = () => {
   useEffect(() => {
     if (!readingRuler) return;
 
-    const handleMouseMove = (e) => {
+    const handlePointerMove = (e) => {
       setMouseY(e.clientY);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('pointermove', handlePointerMove);
     };
   }, [readingRuler]);
 
