@@ -20,7 +20,7 @@ import {
   BookmarkPlus,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import api, { sharingApi } from '../lib/api';
+import api, { sharingApi, friendsApi } from '../lib/api';
 import { toast } from 'sonner';
 import { IngredientSubstituteButton } from '../components/IngredientSubstituteButton';
 import { useAuth } from '../context/AuthContext';
@@ -104,12 +104,23 @@ export const SharedRecipe = () => {
     }
   };
 
-  const handleWhatsAppShare = () => {
+  const handleWhatsAppShare = async () => {
     const recipe = data.recipe;
     const includeLinks = data.include_links_in_share !== false;
+    let referralCode = '';
+    if (isAuthenticated) {
+      try {
+        const res = await friendsApi.getMyCode();
+        referralCode = res.data?.friend_code || '';
+      } catch {
+        referralCode = '';
+      }
+    }
     const message = buildWhatsAppRecipeShareText(recipe, {
       shareUrl: window.location.href,
       includeLink: includeLinks,
+      referralCode,
+      signupOrigin: window.location.origin,
     });
     openWhatsAppShare(message);
   };

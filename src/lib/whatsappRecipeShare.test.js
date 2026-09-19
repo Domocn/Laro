@@ -27,8 +27,18 @@ describe('buildWhatsAppRecipeShareText', () => {
 
   it('builds a card without URL when links disabled', () => {
     const text = buildWhatsAppRecipeShareText(recipe, { includeLink: false });
-    expect(text).not.toContain('https://');
+    expect(text).not.toContain('https://laro.food/recipe');
     expect(text).toContain('*Tomato Soup*');
     expect(text).toContain(`Shared via ${LARO_SHARE_TAGLINE}`);
+  });
+
+  it('appends referral code and signup link when provided', () => {
+    const text = buildWhatsAppRecipeShareText(recipe, {
+      shareUrl: 'https://laro.food/recipe/Ab12Cd',
+      referralCode: 'chef42',
+      signupOrigin: 'https://laro.food',
+    });
+    expect(text).toContain('*CHEF42*');
+    expect(text).toContain('https://laro.food/#/register?ref=CHEF42');
   });
 });

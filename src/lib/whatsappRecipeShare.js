@@ -20,12 +20,25 @@ function truncate(text, maxLen) {
   return `${t.slice(0, maxLen - 1).trim()}…`;
 }
 
+/** Signup URL with friend/referral code (hash-router). */
+export function buildReferralSignupUrl(origin, referralCode) {
+  const code = String(referralCode || '')
+    .trim()
+    .toUpperCase();
+  if (!code) return '';
+  const base = String(origin || '')
+    .trim()
+    .replace(/\/$/, '');
+  if (!base) return '';
+  return `${base}/#/register?ref=${encodeURIComponent(code)}`;
+}
+
 /**
  * @param {{ title?: string, description?: string, prep_time?: *, cook_time?: *, servings?: * }} recipe
- * @param {{ shareUrl?: string, includeLink?: boolean }} options
+ * @param {{ shareUrl?: string, includeLink?: boolean, referralCode?: string, signupOrigin?: string }} options
  */
 export function buildWhatsAppRecipeShareText(recipe, options = {}) {
-  const { shareUrl, includeLink = true } = options;
+  const { shareUrl, includeLink = true, referralCode, signupOrigin } = options;
   const title = recipe?.title?.trim() || 'Recipe';
 
   const metaParts = [
@@ -46,6 +59,21 @@ export function buildWhatsAppRecipeShareText(recipe, options = {}) {
     cardLines.push(description);
   }
 
+  const referralLines = [];
+  const code = String(referralCode || '')
+    .trim()
+    .toUpperCase();
+  if (code) {
+    const signupUrl =
+      buildReferralSignupUrl(signupOrigin, code) ||
+      `Use code ${code} at signup`;
+    referralLines.push(
+      '',
+      `New to Laro? Use my code *${code}* for 2 weeks of Pro free:`,
+      signupUrl
+    );
+  }
+
   const url = shareUrl?.trim();
   if (includeLink && url) {
     return [
@@ -54,10 +82,11 @@ export function buildWhatsAppRecipeShareText(recipe, options = {}) {
       ...cardLines,
       '',
       `Full recipe card on ${LARO_SHARE_TAGLINE}`,
+      ...referralLines,
     ].join('\n');
   }
 
-  return [...cardLines, '', `Shared via ${LARO_SHARE_TAGLINE}`].join('\n');
+  return [...cardLines, '', `Shared via ${LARO_SHARE_TAGLINE}`, ...referralLines].join('\n');
 }
 
 export function openWhatsAppShare(message) {

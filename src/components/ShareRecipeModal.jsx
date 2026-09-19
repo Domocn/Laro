@@ -19,7 +19,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { sharingApi } from '../lib/api';
+import { sharingApi, friendsApi } from '../lib/api';
 import { buildWhatsAppRecipeShareText, openWhatsAppShare } from '../lib/whatsappRecipeShare';
 
 // WhatsApp icon component
@@ -36,6 +36,7 @@ export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
   const [copied, setCopied] = useState(false);
   const [showCreateNew, setShowCreateNew] = useState(false);
   const [includeLinksInShare, setIncludeLinksInShare] = useState(true);
+  const [myReferralCode, setMyReferralCode] = useState('');
 
   // New link options
   const [expiresInDays, setExpiresInDays] = useState(30);
@@ -46,8 +47,18 @@ export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
     if (isOpen && recipe) {
       loadExistingLinks();
       loadShareSettings();
+      loadMyReferralCode();
     }
   }, [isOpen, recipe]);
+
+  const loadMyReferralCode = async () => {
+    try {
+      const res = await friendsApi.getMyCode();
+      setMyReferralCode(res.data?.friend_code || '');
+    } catch {
+      setMyReferralCode('');
+    }
+  };
 
   const loadShareSettings = async () => {
     try {
@@ -127,6 +138,8 @@ export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
     const message = buildWhatsAppRecipeShareText(recipe, {
       shareUrl,
       includeLink: includeLinksInShare && !!shareUrl,
+      referralCode: myReferralCode,
+      signupOrigin: window.location.origin,
     });
     openWhatsAppShare(message);
   };
