@@ -5,6 +5,7 @@ from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 import logging
+import os
 import time
 from typing import Callable
 
@@ -94,6 +95,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Skip rate limiting for health checks
         if request.url.path in ["/api/health", "/health"]:
             return await call_next(request)
+
+        # Local Playwright / E2E runs hammer auth + list endpoints in one minute
+        if os.getenv("LARO_E2E") == "1":
+            client_ip = request.client.host if request.client else "unknown"
+            if client_ip in ("127.0.0.1", "::1", "localhost"):
+                return await call_next(request)
 
         # Get client IP
         client_ip = request.client.host if request.client else "unknown"
