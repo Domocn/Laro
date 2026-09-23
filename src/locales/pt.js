@@ -441,16 +441,17 @@ yourImports: 'Your imports',
   manageBilling: 'Gerir faturação',
   manageSubscription: 'Gerir subscrição',
   openPlayStore: 'Abrir Play Store',
-  laroProWebBillingOnlyHint:
-    'Subscreva na web via RevenueCat · sincronizado com a sua conta (faturação Google Play na app desativada para novas subscrições).',
+  laroProSectionSubtitle: 'Importações avançadas, Laro Chat e sem limites do plano gratuito.',
+  laroProSyncedHint: 'Powered by RevenueCat · sincronizado com a sua conta',
+  signInToSubscribe: 'Inicie sessão para desbloquear Laro Pro',
   webCheckoutUnavailableHint:
-    'Não foi possível abrir o checkout web. Atualize a página e tente novamente.',
+    'Não foi possível abrir o checkout. Atualize a página e tente novamente.',
   manageBillingNoPortalHint:
     'Use a ligação de faturação no e-mail de confirmação ou contacte app@laro.food.',
   webBillingKeyNeededHint:
-    'O checkout web ainda não está configurado neste site (falta a chave Web Billing da RevenueCat). O estado Pro continua sincronizado.',
+    'A faturação não está disponível agora. O estado Pro continua sincronizado.',
   webBillingPackagesMissingHint:
-    'O checkout web está temporariamente indisponível. Tente novamente dentro de alguns minutos ou escreva para app@laro.food.',
+    'Os planos estão temporariamente indisponíveis. Tente novamente dentro de alguns minutos ou escreva para app@laro.food.',
   pwdFieldLabel: 'Senha',
   pwdRequirements: 'Requisitos da senha:',
   pwdResetSuccessBody: 'Sua senha foi redefinida com sucesso. Redirecionando para o login...',

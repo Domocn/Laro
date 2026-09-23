@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { aiApi } from '../lib/api';
-import { toastAiQuotaError, getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { getAiQuotaErrorMessage } from '../lib/aiQuota';
 import { toast } from 'sonner';
 import {
   Sparkles,
@@ -289,7 +289,7 @@ export const ChatModal = ({ isOpen, onClose }) => {
       ]);
     } catch (error) {
       console.error('Chat error:', error);
-      toastAiQuotaError(error, { navigate });
+      toast.error(getAiQuotaErrorMessage(error, 'AI request failed. Please try again.'));
       setMessages((prev) => [
         ...prev,
         {

@@ -150,7 +150,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
       return;
     }
     if (!userId) {
-      toast.error('Sign in to unlock Laro Pro on the web');
+      toast.error(t('signInToSubscribe'));
       return;
     }
     setPurchasing(true);
@@ -209,10 +209,10 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           Laro Pro
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Cook smarter — AI, scans, and an unlimited kitchen
+          {t('laroProSectionSubtitle')}
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {t('laroProWebBillingOnlyHint')}
+          {t('laroProSyncedHint')}
         </p>
       </div>
 
@@ -350,19 +350,6 @@ export function SubscriptionSection({ userId, userEmail, user }) {
               )}
             </div>
 
-            {!webBilling && (
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                {t('webBillingKeyNeededHint')}
-              </p>
-            )}
-            {webBilling && webPackagesReady === false && (
-              <p
-                className="text-[11px] text-muted-foreground leading-relaxed"
-                data-testid="web-billing-packages-missing"
-              >
-                {t('webBillingPackagesMissingHint')}
-              </p>
-            )}
           </>
         )}
       </div>

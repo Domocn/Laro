@@ -148,9 +148,10 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
   `role=super_admin` are always Pro on the backend; Android Pro is RevenueCat
   **or** `GET /subscriptions/status` / auth `is_pro` (not RC entitlement alone).
-  **Pro offering UI:** Web Settings is the checkout surface (`SubscriptionSection` +
-  RevenueCat Web Billing paywall). Android should deep-link to `laro.food` Settings
-  for new Pro subs until in-app Play billing is re-enabled.
+  **Pro offering UI:** Settings → Laro Pro (`SubscriptionSection` + RevenueCat paywall)
+  is the only subscribe CTA in the web app. Do not add secondary “pay on the website”
+  banners or Play fallbacks. Android should hide in-app purchase and rely on the same
+  account sync (optional: open Settings in the web app for checkout).
   **Account seamlessness:** login + `/auth/me` (+ OAuth callbacks) always attach
   `is_pro` / `is_owner` / `is_lifetime` via `user_subscription_fields`. Web Settings
   Laro Pro falls back to those auth flags if `/subscriptions/status` fails, so owner

@@ -441,16 +441,17 @@ yourImports: 'Your imports',
   manageBilling: '管理账单',
   manageSubscription: '管理订阅',
   openPlayStore: '打开 Play 商店',
-  laroProWebBillingOnlyHint:
-    '在网页通过 RevenueCat 订阅 · 与账户同步（新用户已关闭 Google Play 应用内购买）。',
+  laroProSectionSubtitle: '高级导入、Laro Chat，无免费版上限。',
+  laroProSyncedHint: 'Powered by RevenueCat · 与账户同步',
+  signInToSubscribe: '登录以解锁 Laro Pro',
   webCheckoutUnavailableHint:
-    '无法打开网页结账。请刷新页面后重试。',
+    '无法打开结账。请刷新页面后重试。',
   manageBillingNoPortalHint:
     '请使用订阅确认邮件中的账单链接，或联系 app@laro.food。',
   webBillingKeyNeededHint:
-    '本站点尚未配置网页结账（缺少 RevenueCat Web Billing 公钥）。Pro 状态仍会同步。',
+    '当前无法使用账单功能。Pro 状态仍会同步。',
   webBillingPackagesMissingHint:
-    '网页结账暂时不可用。请稍后再试，或发送邮件至 app@laro.food。',
+    '套餐暂时不可用。请稍后再试，或发送邮件至 app@laro.food。',
   pwdFieldLabel: '密码',
   pwdRequirements: '密码要求：',
   pwdResetSuccessBody: '密码重置成功，正在跳转到登录页面……',

@@ -573,16 +573,17 @@ yourImports: 'Your imports',
   manageBilling: 'Manage billing',
   manageSubscription: 'Manage subscription',
   openPlayStore: 'Open Play Store',
-  laroProWebBillingOnlyHint:
-    'Subscribe on the web via RevenueCat · synced with your account (Google Play in-app billing is disabled for new subscriptions).',
+  laroProSectionSubtitle: 'Advanced imports, Laro Chat, and no free-tier caps.',
+  laroProSyncedHint: 'Powered by RevenueCat · synced with your account',
+  signInToSubscribe: 'Sign in to unlock Laro Pro',
   webCheckoutUnavailableHint:
-    'Web checkout could not be opened. Refresh this page and try again.',
+    'Checkout could not be opened. Refresh this page and try again.',
   manageBillingNoPortalHint:
     'Open the billing link from your subscription confirmation email, or contact app@laro.food for help.',
   webBillingKeyNeededHint:
-    'Web checkout is not configured on this site yet (missing RevenueCat Web Billing key). Your Pro status still syncs from your account.',
+    'Billing is not available right now. Your Pro status still syncs from your account.',
   webBillingPackagesMissingHint:
-    'Web checkout is temporarily unavailable. Try again in a few minutes or email app@laro.food if it persists.',
+    'Plans are temporarily unavailable. Try again in a few minutes or email app@laro.food if it persists.',
   takeAppTour: 'Take the app tour',
   oneHousehold: 'One household. One source of truth.',
   oneNumber: 'One number',
