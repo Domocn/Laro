@@ -6,11 +6,10 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
-  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
-import { subscriptionsApi, aiApi, rewardsApi } from '../lib/api';
+import { subscriptionsApi, rewardsApi } from '../lib/api';
 import { Link } from 'react-router-dom';
 import {
   fetchRevenueCatProStatus,
@@ -26,12 +25,12 @@ const PLAY_STORE_URL =
 
 /** Shared Laro Pro benefit lines (food-first; mirrors Android paywall). */
 export const LARO_PRO_OFFERING_BENEFITS = [
-  'Unlimited AI meal plans & recipe imports',
-  'Scan recipes from photos and video',
+  'Unlimited recipe imports from links, photos & video',
+  'Scan cookbook pages and save clean step-by-step recipes',
   'Unlimited cookbook — no recipe caps',
   'Barcode product lookup while shopping',
   'Household kitchen sharing with friends',
-  'AI cooking assistant while you cook',
+  'Cook mode with timers and step-by-step guidance',
 ];
 
 /**
@@ -47,7 +46,6 @@ export function SubscriptionSection({ userId, userEmail, user }) {
   const [refreshing, setRefreshing] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [status, setStatus] = useState(null);
-  const [quota, setQuota] = useState(null);
   const [rcStatus, setRcStatus] = useState(null);
   const [webPackagesReady, setWebPackagesReady] = useState(null);
   const [statusFailed, setStatusFailed] = useState(false);
@@ -56,9 +54,8 @@ export function SubscriptionSection({ userId, userEmail, user }) {
 
   const load = useCallback(async () => {
     try {
-      const [subRes, quotaRes, catalogRes] = await Promise.all([
+      const [subRes, catalogRes] = await Promise.all([
         subscriptionsApi.getStatus().catch(() => null),
-        aiApi.quota().catch(() => null),
         rewardsApi.catalog().catch(() => null),
       ]);
       if (subRes?.data) {
@@ -67,7 +64,6 @@ export function SubscriptionSection({ userId, userEmail, user }) {
       } else {
         setStatusFailed(true);
       }
-      if (quotaRes?.data) setQuota(quotaRes.data);
       if (catalogRes?.data?.limits) setFreeLimits(catalogRes.data.limits);
       if (catalogRes?.data?.bonuses) {
         /* keep for future; limits already include bonuses */
@@ -213,7 +209,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           Laro Pro
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Cook smarter — AI, scans, and an unlimited kitchen
+          Your recipes, meal plans, and shopping — without caps
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
           Powered by RevenueCat · synced with your account
@@ -279,22 +275,6 @@ export function SubscriptionSection({ userId, userEmail, user }) {
               ))}
             </ul>
 
-            {quota && (
-              <p className="text-xs text-muted-foreground" data-testid="ai-quota-line">
-                {quota.unlimited || quota.premium ? (
-                  <span className="text-laro font-medium flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Unlimited AI on this account
-                  </span>
-                ) : (
-                  <>
-                    Free AI: {quota.remaining ?? 0} of {quota.limit ?? 3} uses left
-                    {quota.bonus ? ` (includes +${quota.bonus} bonus)` : ''}
-                  </>
-                )}
-              </p>
-            )}
-
             {!isPro && (
               <div
                 className="rounded-xl bg-cream-subtle border border-border/50 p-3 space-y-1.5"
@@ -308,7 +288,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                       ? ` (base ${freeLimits.free_defaults.recipes} + bonuses)`
                       : ''}
                   </li>
-                  <li>{freeLimits?.ai_base ?? 3} AI uses (lifetime)</li>
+                  <li>{freeLimits?.ai_base ?? 3} recipe import assists (lifetime)</li>
                   <li>{freeLimits?.friends ?? 3} friends</li>
                   <li>{freeLimits?.shares_weekly ?? 5} recipe shares / week</li>
                   <li>{freeLimits?.cookbooks ?? 3} cookbooks</li>

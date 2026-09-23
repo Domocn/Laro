@@ -5,7 +5,7 @@
 Laro is a kitchen OS for real weeknights: import recipes, build meal plans, generate shopping lists, and share a household cookbook. Available on the web and Android.
 
 Key things to know:
-- Free tier with optional Laro Pro (AI meal plans, imports, unlimited cookbook)
+- Free tier with optional Laro Pro (imports, meal planning, unlimited cookbook)
 - Self-hostable; production site is https://laro.food/
 - Privacy-first household sharing (invite / consent flows)
 

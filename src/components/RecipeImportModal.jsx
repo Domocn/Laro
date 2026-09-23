@@ -343,7 +343,7 @@ Mix dry ingredients. Add eggs and vanilla. Bake at 350°F for 25 minutes."
 
               <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-xl p-3 text-sm">
                 <p className="text-blue-800 dark:text-blue-200">
-                  <strong>AI Parsing:</strong> Our AI will extract ingredients, instructions, and timing from your text.
+                  <strong>Smart parsing:</strong> We extract ingredients, instructions, and timing from your pasted text.
                 </p>
               </div>
 

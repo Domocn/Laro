@@ -27,7 +27,7 @@
 
 ## What is Laro?
 
-Laro is a **self-hosted recipe manager** for home cooks. Import recipes from any website with AI, track your pantry, plan weekly meals, generate shopping lists, and cook with step-by-step guidance.
+Laro is a **self-hosted recipe manager** for home cooks. Import recipes from websites and photos, track your pantry, plan weekly meals, generate shopping lists, and cook with step-by-step guidance.
 
 **Your data stays on your server.** No cloud required.
 
@@ -109,8 +109,8 @@ docker run -d --name laro-db \
 ## Features
 
 ### Recipe Management
-- AI-powered import from any URL
-- Quick paste - AI parses raw text
+- Import from any URL
+- Quick paste — parse raw text into structured recipes
 - Categories, tags, and favorites
 - Scale servings up/down
 - Version history
@@ -119,12 +119,12 @@ docker run -d --name laro-db \
 - Track ingredients with expiry dates
 - Swipe to mark used or delete
 - Find recipes matching your ingredients
-- AI recipe suggestions
+- Recipe suggestions from your pantry
 
 ### Meal Planning
 - Weekly calendar view
 - Drag-and-drop planning
-- Auto-generate meal plans with AI
+- Auto-fill meal plans from your cookbook
 
 ### Shopping Lists
 - Auto-generate from meal plans
@@ -136,7 +136,7 @@ docker run -d --name laro-db \
 
 ### Cooking Mode
 - Full-screen step-by-step
-- AI cooking assistant
+- In-cook chat assistant (optional)
 - Timer integration
 
 ### Kitchen & Nutrition
