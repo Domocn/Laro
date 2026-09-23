@@ -21,9 +21,6 @@ import {
 import { useLanguage } from '../context/LanguageContext';
 import { RewardStore } from './RewardStore';
 
-const PLAY_STORE_URL =
-  'https://play.google.com/store/apps/details?id=com.laro.app';
-
 /** Shared Laro Pro benefit lines (food-first; mirrors Android paywall). */
 export const LARO_PRO_OFFERING_BENEFITS = [
   'Unlimited AI meal plans & recipe imports',
@@ -144,8 +141,12 @@ export function SubscriptionSection({ userId, userEmail, user }) {
   };
 
   const handleUpgradeWeb = async () => {
-    if (!webBilling || webPackagesReady === false) {
-      window.open(PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+    if (!webBilling) {
+      toast.error(t('webBillingKeyNeededHint'));
+      return;
+    }
+    if (webPackagesReady === false) {
+      toast.error(t('webBillingPackagesMissingHint'));
       return;
     }
     if (!userId) {
@@ -156,15 +157,11 @@ export function SubscriptionSection({ userId, userEmail, user }) {
     try {
       const result = await presentRevenueCatPaywall(userId, userEmail);
       if (result == null) {
-        toast.message('Web checkout is not available yet — open Laro on Android to subscribe.');
-        window.open(PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+        toast.error(t('webCheckoutUnavailableHint'));
         return;
       }
       if (result.noPackages) {
-        toast.message(
-          'Web plans are not in RevenueCat yet — subscribe on Android for now.'
-        );
-        window.open(PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+        toast.error(t('webBillingPackagesMissingHint'));
         return;
       }
       if (result.cancelled) {
@@ -195,8 +192,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
       window.open(rcStatus.managementURL, '_blank', 'noopener,noreferrer');
       return;
     }
-    // Prefer Play only when this Pro was not purchased on web
-    window.open(PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+    toast.message(t('manageBillingNoPortalHint'));
   };
 
   return (
@@ -216,7 +212,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           Cook smarter — AI, scans, and an unlimited kitchen
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Powered by RevenueCat · synced with your account
+          {t('laroProWebBillingOnlyHint')}
         </p>
       </div>
 
@@ -338,9 +334,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                   ) : (
                     <Crown className="w-4 h-4 mr-2" />
                   )}
-                  {webBilling && webPackagesReady !== false
-                    ? t('unlockLaroPro')
-                    : t('getProOnAndroid')}
+                  {t('unlockLaroPro')}
                 </Button>
               )}
               {isPro && (
@@ -351,17 +345,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                   data-testid="manage-sub-btn"
                 >
                   <ExternalLink className="w-4 h-4 mr-2" />
-                  {rcStatus?.managementURL ? t('manageBilling') : t('manageSubscription')}
-                </Button>
-              )}
-              {(!webBilling || webPackagesReady === false) && (
-                <Button
-                  variant="outline"
-                  className="rounded-full"
-                  onClick={() => window.open(PLAY_STORE_URL, '_blank', 'noopener,noreferrer')}
-                >
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  {t('openPlayStore')}
+                  {t('manageBilling')}
                 </Button>
               )}
             </div>

@@ -441,8 +441,16 @@ yourImports: 'Your imports',
   manageBilling: '管理帳單',
   manageSubscription: '管理訂閱',
   openPlayStore: '打開 Play 商店',
-  webBillingKeyNeededHint: '每週 Pro 經 Google Play（RevenueCat）開始。網頁結帳需要 Web Billing 公鑰（rcb_…）——之前請喺 Android 訂閱；呢頁顯示已同步嘅 Pro 狀態。',
-  webBillingPackagesMissingHint: 'Web Billing 已連接，但而家優惠未有每週／每月網頁產品。暫時請喺 Android 訂閱——喺 RevenueCat 掛上之後，呢度亦可以「解鎖 Laro Pro」。',
+  laroProWebBillingOnlyHint:
+    '喺網頁經 RevenueCat 訂閱 · 同帳戶同步（新訂閱已停用 Google Play 應用內付款）。',
+  webCheckoutUnavailableHint:
+    '開唔到網頁結帳。請重新整理頁面再試。',
+  manageBillingNoPortalHint:
+    '用訂閱確認電郵入面嘅付款連結，或者聯絡 app@laro.food。',
+  webBillingKeyNeededHint:
+    '呢個網站未設定網頁結帳（缺少 RevenueCat Web Billing 公鑰）。Pro 狀態仍然會同步。',
+  webBillingPackagesMissingHint:
+    '網頁結帳暫時用唔到。過幾分鐘再試，或者電郵 app@laro.food。',
   pwdFieldLabel: '密碼',
   pwdRequirements: '密碼要求：',
   pwdResetSuccessBody: '你的密碼已成功重設，正在轉往登入頁面...',

@@ -141,17 +141,16 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…` (not the Play `goog_` key); injected at
   container start via `frontend/docker-entrypoint.sh`. `rcb_` / `goog_` are
   **publishable** SDK keys (expected in the client); do not confuse with `sk_…`
-  or webhook auth. Also create Web Billing
-  products in the RC dashboard (API cannot) and attach them to `$rc_weekly` /
-  `$rc_monthly` + entitlement `Laro Pro` — see `android/REVENUECAT_SETUP_GUIDE.md`
-  §3.6. Without key/products, UI links to Play Store.
+  or webhook auth. Web Billing products attach to `$rc_weekly` / `$rc_monthly` +
+  entitlement `Laro Pro`. **New subscriptions are web-only** — Play products are
+  not on the default offering packages (existing Play subs still sync via webhooks).
+  Without key/products, Settings shows an error instead of Play checkout.
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
   `role=super_admin` are always Pro on the backend; Android Pro is RevenueCat
   **or** `GET /subscriptions/status` / auth `is_pro` (not RC entitlement alone).
-  **Pro offering UI:** custom Android paywall (`PaywallScreen` + `PaywallBenefits`)
-  uses food-first benefits and period-aware CTAs; prefer Annual → Monthly → Weekly
-  when those packages exist on offering `default`. Web Settings mirrors the same
-  benefit list. Dashboard native paywalls should stay in sync (see setup guide §2.10).
+  **Pro offering UI:** Web Settings is the checkout surface (`SubscriptionSection` +
+  RevenueCat Web Billing paywall). Android should deep-link to `laro.food` Settings
+  for new Pro subs until in-app Play billing is re-enabled.
   **Account seamlessness:** login + `/auth/me` (+ OAuth callbacks) always attach
   `is_pro` / `is_owner` / `is_lifetime` via `user_subscription_fields`. Web Settings
   Laro Pro falls back to those auth flags if `/subscriptions/status` fails, so owner

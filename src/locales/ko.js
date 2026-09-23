@@ -441,8 +441,16 @@ yourImports: 'Your imports',
   manageBilling: '결제 관리',
   manageSubscription: '구독 관리',
   openPlayStore: 'Play 스토어 열기',
-  webBillingKeyNeededHint: '주간 Pro는 Google Play(RevenueCat)에서 시작합니다. 웹 결제는 Web Billing 키(rcb_…)가 필요합니다. 그전까지는 Android에서 구독하세요. 이 페이지는 동기화된 Pro 상태를 보여줍니다.',
-  webBillingPackagesMissingHint: 'Web Billing은 연결됐지만 주간/월간 웹 상품이 아직 현재 오퍼링에 없습니다. 지금은 Android에서 구독하세요. RevenueCat에 연결되면 여기에서도 Laro Pro 잠금 해제가 작동합니다.',
+  laroProWebBillingOnlyHint:
+    '웹에서 RevenueCat으로 구독 · 계정과 동기화(신규 Google Play 인앱 결제는 비활성화됨).',
+  webCheckoutUnavailableHint:
+    '웹 결제를 열 수 없습니다. 페이지를 새로고침한 뒤 다시 시도하세요.',
+  manageBillingNoPortalHint:
+    '구독 확인 이메일의 결제 링크를 사용하거나 app@laro.food 로 문의하세요.',
+  webBillingKeyNeededHint:
+    '이 사이트에 웹 결제가 아직 설정되지 않았습니다(RevenueCat Web Billing 키 없음). Pro 상태는 계속 동기화됩니다.',
+  webBillingPackagesMissingHint:
+    '웹 결제를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도하거나 app@laro.food 로 연락하세요.',
   pwdFieldLabel: '비밀번호',
   pwdRequirements: '비밀번호 요구 사항:',
   pwdResetSuccessBody: '비밀번호가 성공적으로 재설정되었습니다. 로그인 페이지로 이동합니다...',
