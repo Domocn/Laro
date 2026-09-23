@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useLanguage } from '../context/LanguageContext';
 import { aiApi, recipeApi } from '../lib/api';
-import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { toastAiQuotaError } from '../lib/aiQuota';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -137,12 +137,11 @@ export const RecreateStoreMeal = () => {
       setStep(4);
       toast.success(t('storeMealReadyToReview'));
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          error.response?.data?.detail || t('storeMealGenerateFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: error.response?.data?.detail || t('storeMealGenerateFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setLoading(false);
     }

@@ -322,6 +322,19 @@ async def redeem_sku(user: dict, sku: str) -> dict:
     kind = item["kind"]
     amount = int(item["amount"])
     if kind == "pro_days":
+        from config import settings
+
+        if not getattr(settings, "allow_reward_pro_days", False):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "reward_pro_days_disabled",
+                    "message": (
+                        "Pro time from the reward store is disabled. "
+                        "Start a Pro trial or subscription in Settings (payment required)."
+                    ),
+                },
+            )
         grant = await grant_pro_days(user_id, amount, source="rewards")
     elif kind in _BONUS_COLUMNS:
         col = _BONUS_COLUMNS[kind]

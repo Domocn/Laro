@@ -85,6 +85,11 @@ class Settings:
         self.groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         # Free AI LLM calls before upgrade is required (JSON-LD scrape is unlimited)
         self.free_ai_uses: int = int(os.getenv("FREE_AI_USES", "3"))
+        self.referral_trial_days: int = int(os.getenv("REFERRAL_TRIAL_DAYS", "0") or 0)
+        # Reward-store "Pro days" grants backend Pro without payment (off by default)
+        self.allow_reward_pro_days: bool = (
+            os.getenv("ALLOW_REWARD_PRO_DAYS", "false").lower() == "true"
+        )
         # Scanned (image-only) PDF OCR — max pages rendered into one vision call
         self.scanned_pdf_max_pages: int = int(os.getenv("SCANNED_PDF_MAX_PAGES", "5"))
 

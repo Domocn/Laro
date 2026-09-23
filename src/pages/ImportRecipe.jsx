@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { aiApi, recipeApi } from '../lib/api';
-import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { toastAiQuotaError } from '../lib/aiQuota';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -178,12 +178,11 @@ export const ImportRecipe = () => {
           setShowDmGateDialog(true);
         }
       }
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          t('toastExtractPageFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: t('toastExtractPageFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setLoading(false);
     }
@@ -216,12 +215,11 @@ export const ImportRecipe = () => {
     } catch (error) {
       console.error('Shared text extract error:', error);
       setUrlFailed(true);
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          t('toastExtractPageFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: t('toastExtractPageFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setLoading(false);
     }
@@ -285,12 +283,11 @@ export const ImportRecipe = () => {
       }
       refreshQuota();
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          error.response?.data?.detail || t('toastExtractPdfFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: error.response?.data?.detail || t('toastExtractPdfFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setLoading(false);
     }

@@ -25,6 +25,9 @@ import {
 import { ChatMarkdown } from './ChatMarkdown';
 import { useChat } from '../context/ChatContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { userHasPro } from '../lib/userPro';
+import { useLanguage } from '../context/LanguageContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,6 +81,9 @@ export const ChatModal = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
   const { recipeContext } = useChat();
   const { reducedMotion } = useTheme();
+  const { user } = useAuth();
+  const { t } = useLanguage();
+  const chatPro = userHasPro(user);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -244,6 +250,20 @@ export const ChatModal = ({ isOpen, onClose }) => {
 
   const handleSend = async (question = input) => {
     if (!question.trim() || loading) return;
+    if (!chatPro) {
+      toastAiQuotaError(
+        {
+          response: {
+            status: 402,
+            data: {
+              detail: { error: 'laro_chat_pro_required', upgrade_required: true },
+            },
+          },
+        },
+        { navigate, upgradeLabel: t('unlockLaroPro') }
+      );
+      return;
+    }
 
     const userMessage = { role: 'user', content: question, timestamp: new Date() };
     setMessages((prev) => [...prev, userMessage]);
@@ -651,7 +671,25 @@ export const ChatModal = ({ isOpen, onClose }) => {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {showWelcomePrompts && (
+                {!chatPro && (
+                  <div className="mx-3 mb-2 rounded-xl border border-laro/25 bg-laro/10 px-3 py-2.5 text-xs text-foreground">
+                    <p className="font-medium text-laro">{t('laroChatProTitle')}</p>
+                    <p className="text-muted-foreground mt-1 leading-relaxed">{t('laroChatProBody')}</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="mt-2 rounded-full bg-laro hover:bg-laro-dark h-8"
+                      onClick={() => {
+                        onClose?.();
+                        navigate('/settings');
+                      }}
+                    >
+                      {t('unlockLaroPro')}
+                    </Button>
+                  </div>
+                )}
+
+                {showWelcomePrompts && chatPro && (
                   <div className="px-3 pb-2 border-t border-border/40 bg-white dark:bg-card">
                     <p className="text-[11px] text-muted-foreground mb-1.5 mt-2 flex items-center gap-1">
                       <Lightbulb className="w-3 h-3" />
@@ -688,13 +726,15 @@ export const ChatModal = ({ isOpen, onClose }) => {
                         resizeComposer();
                       }}
                       onKeyDown={handleKeyDown}
-                      placeholder="Ask about food or cooking…"
+                      placeholder={
+                        chatPro ? 'Ask about food or cooking…' : t('laroChatProPlaceholder')
+                      }
                       className="flex-1 resize-none rounded-2xl bg-cream-subtle dark:bg-muted border border-border/60 min-h-11 max-h-32 px-3.5 py-2.5 text-sm leading-5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-                      disabled={loading}
+                      disabled={loading || !chatPro}
                     />
                     <Button
                       onClick={() => handleSend()}
-                      disabled={!input.trim() || loading}
+                      disabled={!input.trim() || loading || !chatPro}
                       className="rounded-full bg-laro hover:bg-laro-dark w-11 h-11 p-0 shrink-0"
                       type="button"
                       aria-label="Send message"

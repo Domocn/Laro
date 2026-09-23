@@ -3,7 +3,8 @@ Shared subscription / Pro-access helpers.
 
 Pro access sources:
 - Active subscription_status premium/trial (including lifetime when expires is null)
-- Active referral trial (referral_trial_end in the future)
+- RevenueCat / Play / web billing (trial period starts after payment method is on file)
+- Optional legacy referral trial when REFERRAL_TRIAL_DAYS > 0 (default 0 — payment-first)
 - App owner: role == super_admin, or email listed in LARO_OWNER_EMAILS
 """
 from __future__ import annotations
@@ -15,8 +16,8 @@ from typing import Optional
 # Keep in sync with Android SubscriptionRepository.FREE_RECIPE_LIMIT
 FREE_RECIPE_LIMIT = 15
 
-# Friend referral signup trial (and referrer reward when referee subscribes)
-REFERRAL_TRIAL_DAYS = 14
+# Friend referral signup Pro days (0 = disabled; Pro trials via RevenueCat only)
+REFERRAL_TRIAL_DAYS = int(os.getenv("REFERRAL_TRIAL_DAYS", "0") or 0)
 
 
 async def assert_can_create_recipes(user: dict, recipe_repository, count_to_add: int = 1) -> None:

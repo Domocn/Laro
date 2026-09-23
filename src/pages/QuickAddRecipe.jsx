@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { aiApi, recipeApi, importApi, cookbooksApi } from '../lib/api';
-import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { toastAiQuotaError } from '../lib/aiQuota';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -120,12 +120,11 @@ export const QuickAddRecipe = () => {
       setExtractedRecipe(res.data?.recipe || res.data);
       toast.success(t('toastRecipeParsed'));
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          t('toastParseRecipeFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: t('toastParseRecipeFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setPasteLoading(false);
     }
@@ -145,12 +144,11 @@ export const QuickAddRecipe = () => {
       toast.success(t('toastRecipeExtractedSuccess'));
     } catch (error) {
       setUrlFailed(true);
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          t('toastExtractUrlFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: t('toastExtractUrlFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setUrlLoading(false);
     }
@@ -266,12 +264,11 @@ export const QuickAddRecipe = () => {
         );
       }
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          t('toastReadPhotoFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: t('toastReadPhotoFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setImageLoading(false);
     }
@@ -325,12 +322,11 @@ export const QuickAddRecipe = () => {
         );
       }
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          error.response?.data?.detail || t('toastReadPdfFailed2')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: error.response?.data?.detail || t('toastReadPdfFailed2'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setPdfLoading(false);
     }
@@ -407,12 +403,11 @@ export const QuickAddRecipe = () => {
       );
       navigate('/recipes?review=1');
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          error.response?.data?.detail || t('toastSaveRecipesFailed')
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: error.response?.data?.detail || t('toastSaveRecipesFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setSaving(false);
     }

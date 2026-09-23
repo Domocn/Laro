@@ -153,8 +153,16 @@ async def revenuecat_webhook(
         price_in_purchased_currency = event.get("price_in_purchased_currency")
         currency = event.get("currency")
         store = event.get("store")  # APP_STORE, PLAY_STORE, etc.
+        period_type = (event.get("period_type") or "").upper()
 
-        logger.info(f"RevenueCat webhook: {event_type} for user {app_user_id} (product: {product_id})")
+        logger.info(
+            f"RevenueCat webhook: {event_type} for user {app_user_id} "
+            f"(product: {product_id}, period_type: {period_type or 'n/a'})"
+        )
+
+        def _rc_subscription_status() -> str:
+            """Trial periods from RC (after checkout / payment on file) → trial; else premium."""
+            return "trial" if period_type == "TRIAL" else "premium"
 
         if not app_user_id:
             return {"status": "ok", "message": "No user ID"}
@@ -184,12 +192,12 @@ async def revenuecat_webhook(
             # Only write columns that exist on users (product_id/store historically
             # caused webhook 500s and left purchases undetected).
             await user_repository.update_user(user_id, {
-                "subscription_status": "premium",
+                "subscription_status": _rc_subscription_status(),
                 "subscription_expires": expires_at.isoformat() if expires_at else None,
                 "subscription_source": "revenuecat",
             })
             logger.info(
-                f"Granted premium to user {user_id} until {expires_at} "
+                f"Granted {_rc_subscription_status()} to user {user_id} until {expires_at} "
                 f"(product={product_id}, store={store})"
             )
 
@@ -236,11 +244,13 @@ async def revenuecat_webhook(
                 expires_at = datetime.fromtimestamp(expiration / 1000, tz=timezone.utc)
 
             await user_repository.update_user(user_id, {
-                "subscription_status": "premium",
+                "subscription_status": _rc_subscription_status(),
                 "subscription_expires": expires_at.isoformat() if expires_at else None,
                 "subscription_source": "revenuecat"
             })
-            logger.info(f"Renewed premium for user {user_id} until {expires_at}")
+            logger.info(
+                f"Renewed {_rc_subscription_status()} for user {user_id} until {expires_at}"
+            )
 
         elif event_type == "PRODUCT_CHANGE":
             # User changed subscription tier (upgrade/downgrade)
@@ -250,7 +260,7 @@ async def revenuecat_webhook(
                 expires_at = datetime.fromtimestamp(expiration / 1000, tz=timezone.utc)
 
             await user_repository.update_user(user_id, {
-                "subscription_status": "premium",
+                "subscription_status": _rc_subscription_status(),
                 "subscription_expires": expires_at.isoformat() if expires_at else None,
                 "subscription_source": "revenuecat",
             })

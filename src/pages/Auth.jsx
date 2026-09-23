@@ -705,7 +705,7 @@ export const Register = () => {
               )}
             </div>
 
-            {/* Friend referral code → 2-week Pro trial */}
+            {/* Friend referral code (reward points; Pro via RevenueCat in Settings) */}
             <div className="space-y-2">
               <Label htmlFor="referralCode" className="flex items-center gap-1.5">
                 <Gift className="w-3.5 h-3.5 text-laro" aria-hidden="true" />
