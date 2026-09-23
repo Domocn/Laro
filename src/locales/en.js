@@ -573,10 +573,17 @@ yourImports: 'Your imports',
   manageBilling: 'Manage billing',
   manageSubscription: 'Manage subscription',
   openPlayStore: 'Open Play Store',
+  laroProSectionSubtitle: 'Advanced imports, Laro Chat, and no free-tier caps.',
+  laroProSyncedHint: 'Secure checkout via Lemon Squeezy · synced with your account',
+  signInToSubscribe: 'Sign in to unlock Laro Pro',
+  webCheckoutUnavailableHint:
+    'Checkout could not be opened. Refresh this page and try again.',
+  manageBillingNoPortalHint:
+    'Open the billing link from your subscription confirmation email, or contact app@laro.food for help.',
   webBillingKeyNeededHint:
-    'Weekly Pro starts on Google Play via RevenueCat. Web checkout needs a RevenueCat Web Billing key (rcb_…) — until then, subscribe in the Android app; this page shows your synced Pro status.',
+    'Billing is not available right now. Your Pro status still syncs from your account.',
   webBillingPackagesMissingHint:
-    'Web Billing is connected, but weekly/monthly web products are not on the current offering yet. Subscribe on Android for now — once those products are attached in RevenueCat, Unlock Laro Pro works here too.',
+    'Plans are temporarily unavailable. Try again in a few minutes or email app@laro.food if it persists.',
   takeAppTour: 'Take the app tour',
   oneHousehold: 'One household. One source of truth.',
   oneNumber: 'One number',

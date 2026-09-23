@@ -1234,6 +1234,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='subscription_source') THEN
         ALTER TABLE users ADD COLUMN subscription_source VARCHAR(50);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='billing_subscription_id') THEN
+        ALTER TABLE users ADD COLUMN billing_subscription_id VARCHAR(64);
+    END IF;
 
     -- Free-tier AI LLM usage counter (schema/JSON-LD imports do not increment this)
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='ai_uses_count') THEN
