@@ -1,8 +1,6 @@
 # Laro Pro — Lemon Squeezy (primary billing)
 
-All **new** Laro Pro subscriptions on the web use **Lemon Squeezy** (merchant of record). Laro’s backend is the source of truth for Pro access (`subscription_status`, webhooks).
-
-**RevenueCat webhooks** remain enabled only for **grandfathered** subscribers who paid via Play / old RC Web Billing.
+All Laro Pro subscriptions on the web use **Lemon Squeezy** (merchant of record). Laro’s backend is the source of truth for Pro access (`subscription_status`, webhooks).
 
 ## Lemon Squeezy setup
 
@@ -40,12 +38,8 @@ Checkout URLs are created server-side with `custom[user_id]` so Pro binds to the
 3. After payment, LS webhook updates the user row; UI refresh shows **Pro**.
 4. **Manage billing** → `GET /api/v1/subscriptions/customer-portal` (Paddle-style portal hosted by Lemon Squeezy).
 
-## Android
+## Android (no Google Play billing)
 
-Do not sell new subs in-app. Deep-link or instruct users to **laro.food → Settings → Laro Pro**. Pro syncs via the same Laro account.
+**Do not** enable Google Play subscriptions or RevenueCat in-app purchases. Pro is **web-only**: users open **laro.food → Settings → Laro Pro** (same login as the app). Pro entitlements sync from the Laro backend after Lemon Squeezy webhooks.
 
-## Legacy RevenueCat
-
-Keep `REVENUECAT_WEBHOOK_AUTH` and `/subscriptions/webhook/revenuecat` until all legacy RC/Play subs have migrated or expired. Do not set `REACT_APP_REVENUECAT_WEB_API_KEY` for new deployments.
-
-**Migration runbook:** [`MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md`](./MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md)
+Retiring old Play/RC integrations: [`MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md`](./MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md)

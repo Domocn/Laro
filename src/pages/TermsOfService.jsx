@@ -107,14 +107,11 @@ export const TermsOfService = () => {
               <li><strong>Price changes:</strong> We may change plan prices for new purchases. Changes for existing subscriptions follow Lemon Squeezy and any notice required by law.</li>
             </ul>
 
-            <h3 className="text-lg font-medium text-foreground">Android and app stores</h3>
-            <p className="text-muted-foreground">
-              If you subscribed through Google Play or another app store, that store&apos;s terms and refund rules apply. Manage those subscriptions in the store account you used to purchase. Some Android builds may direct you to the web for new Pro purchases instead of in-app billing.
-            </p>
-
-            <h3 className="text-lg font-medium text-foreground">Legacy billing</h3>
+            <h3 className="text-lg font-medium text-foreground">Android and other devices</h3>
             <p className="text-muted-foreground mb-0">
-              Some older subscriptions were processed via RevenueCat, Paddle, Stripe, or similar partners. Those remain subject to the billing channel you used until they expire or you cancel there. Laro continues to honor active Pro access recorded on your account while those subscriptions remain valid.
+              Laro Pro is not sold via Google Play billing or other in-app purchase systems. On Android, open{' '}
+              <a href="https://laro.food/settings" className="text-laro hover:underline">laro.food → Settings</a>{' '}
+              while signed into the same account to subscribe or manage billing through Lemon Squeezy.
             </p>
           </section>
 

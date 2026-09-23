@@ -33,7 +33,7 @@ export const LARO_PRO_OFFERING_BENEFITS = [
 
 /**
  * Laro Pro panel (Settings). Checkout via Lemon Squeezy; status from Laro backend
- * (LS webhooks + owner forever). Legacy RevenueCat/Play subs still sync via RC webhook.
+ * (LS webhooks + owner forever).
  */
 export function SubscriptionSection({ userId, userEmail, user }) {
   const { t } = useLanguage();
@@ -140,10 +140,6 @@ export function SubscriptionSection({ userId, userEmail, user }) {
         toast.message(t('manageBillingNoPortalHint'));
         return;
       }
-    }
-    if (source === 'revenuecat') {
-      toast.message(t('manageBillingLegacyRevenueCatHint'));
-      return;
     }
     toast.message(t('manageBillingNoPortalHint'));
   };

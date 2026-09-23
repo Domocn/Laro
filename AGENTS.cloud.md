@@ -113,33 +113,22 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   honors `timerNotifications` + haptics. Android `applyNeuroPreset()` applies
   full bundles (not single toggles) and best-effort syncs to `/preferences`.
   Focus/simplified calm the Android home (hide stats / getting-started).
-- **Billing migration (RC → Lemon Squeezy):** follow
-  `docs/MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md`. Admin:
-  `GET /admin/subscriptions/billing-overview` for counts by `subscription_source`.
-  **Legacy RevenueCat (Play / old web):** keep `REVENUECAT_WEBHOOK_AUTH` and
-  `POST /subscriptions/webhook/revenuecat` until no active `source=revenuecat` subs.
-  Optional `REVENUECAT_SECRET_API_KEY` for admin RC sync only — not used for web checkout.
-  Android should stop new RC purchases; Pro via laro.food Settings + LS.
+- **Billing (Lemon Squeezy only — no Google Play pay):** `docs/LEMON_SQUEEZY_BILLING.md`.
+  Web checkout `POST /api/v1/subscriptions/checkout`, webhook
+  `POST /api/v1/subscriptions/webhook/lemonsqueezy`, `LEMONSQUEEZY_*` env.
+  No `purchases-js`, no Play billing, no in-app RC paywall. Android: Pro only via
+  `laro.food/settings` (same account). Admin: `GET /admin/subscriptions/billing-overview`.
+  Retire legacy RC/Play: `docs/MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md`.
   Full local `assembleDebug` still needs `android/app/google-services.json` (Firebase).
-  **Web Settings → Laro Pro:** backend `/subscriptions/status` (owner forever +
-  webhook sync). **Checkout: Lemon Squeezy** (`docs/LEMON_SQUEEZY_BILLING.md`) —
-  `LEMONSQUEEZY_*` env, webhook `POST /api/v1/subscriptions/webhook/lemonsqueezy`,
-  checkout `POST /api/v1/subscriptions/checkout`. No `purchases-js` / `rcb_` on web.
-  **Legacy:** keep `REVENUECAT_WEBHOOK_AUTH` + `/subscriptions/webhook/revenuecat` for
-  old Play/RC subs until they expire (`docs/REVENUECAT_PADDLE_WEB.md`).
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
   `role=super_admin` are always Pro on the backend.
-  **Pro offering UI:** Settings → Laro Pro only (`SubscriptionSection` + LS checkout).
-  Android: no in-app purchase; same account on laro.food Settings.
-  **Account seamlessness:** login + `/auth/me` (+ OAuth callbacks) always attach
-  `is_pro` / `is_owner` / `is_lifetime` via `user_subscription_fields`. Web Settings
-  Laro Pro falls back to those auth flags if `/subscriptions/status` fails, so owner
-  never flashes Free. Android ORs RC entitlement with backend Pro from auth/status.
+  **Pro UI:** Settings → Laro Pro (`SubscriptionSection` + LS checkout only).
+  **Account seamlessness:** login + `/auth/me` attach `is_pro` / `is_owner` /
+  `is_lifetime` via `user_subscription_fields`. Android uses backend Pro from auth/status.
   **Security (private data):** JWTs require a live `sessions` row (logout/password
   reset revoke access). Recipe reads enforce author/household/admin via
   `utils/authorization.py`. Password-reset/deletion tokens are never returned in API
-  JSON unless `ALLOW_INSECURE_TOKEN_RESPONSE=true` (local only). RevenueCat webhooks
-  fail closed without `REVENUECAT_WEBHOOK_AUTH`. `JWT_SECRET` is required in compose;
+  JSON unless `ALLOW_INSECURE_TOKEN_RESPONSE=true` (local only). `JWT_SECRET` is required in compose;
   `DEBUG_MODE` defaults false. After deploy, users may need to **log in again** once.
   Client i18n keys avoid `*Password:"…"` shapes that secret scanners flag as hardcoded
   credentials (labels use `pwd*` / `*Pwd*` keys). SPA edge headers (Caddy): enforcing

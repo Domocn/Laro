@@ -161,14 +161,8 @@ export const PrivacyPolicy = () => {
               We do not store full payment card numbers on Laro servers. Manage or cancel web subscriptions through the Lemon Squeezy customer portal (linked from Settings when available) or the link in your purchase confirmation email. Billing questions may also go to{' '}
               <a href={`mailto:${supportEmail}`} className="text-laro hover:underline">{supportEmail}</a>.
             </p>
-            <p className="text-muted-foreground">
-              <strong>Google Play and other app stores:</strong> If you subscribed in an app store, that store processes payment under its own privacy terms. We receive entitlement or subscription status from the store or legacy billing partners so Pro access stays in sync.
-            </p>
-            <p className="text-muted-foreground">
-              <strong>Legacy RevenueCat / older web billing:</strong> Some accounts still billed through RevenueCat, Paddle, or Stripe (via older integrations) remain on those channels until they expire or you cancel there. We keep the RevenueCat webhook only to sync those grandfathered subscriptions.
-            </p>
             <p className="text-muted-foreground mb-0">
-              Referral trials and reward redemptions are recorded on your account so we can apply benefits accurately. See our{' '}
+              Laro Pro is not sold through Google Play or other app stores — use the web checkout above on any device (including the Android app, signed into the same account). Referral trials and reward redemptions are recorded on your account so we can apply benefits accurately. See our{' '}
               <Link to="/terms-of-service" className="text-laro hover:underline">Terms of Service</Link>{' '}
               for subscription rules, trials, and refunds.
             </p>
@@ -215,9 +209,7 @@ export const PrivacyPolicy = () => {
               <li><strong>Firebase (Google):</strong> Push notifications (FCM), Crashlytics, and Android Analytics</li>
               <li><strong>Google / GitHub:</strong> Optional OAuth sign-in</li>
               <li><strong>Google Health API:</strong> Optional nutrition write when you link the integration</li>
-              <li><strong>Lemon Squeezy:</strong> Web subscription checkout, billing, tax, and customer portal</li>
-              <li><strong>Google Play (and other app stores as applicable):</strong> In-app purchases where offered</li>
-              <li><strong>RevenueCat (legacy):</strong> Webhook sync for grandfathered Play / older web subscriptions only</li>
+              <li><strong>Lemon Squeezy:</strong> Subscription checkout, billing, tax, and customer portal (web; same on Android)</li>
               <li><strong>Email delivery (e.g. Resend or SMTP):</strong> Transactional messages such as verification and password reset</li>
               <li><strong>AI providers (e.g. Groq / OpenAI-compatible APIs, or Ollama when configured):</strong> Processing AI feature requests</li>
               <li><strong>Open Food Facts — Open Prices:</strong> Public price catalog sync used for cost estimates (where enabled)</li>
@@ -261,7 +253,7 @@ export const PrivacyPolicy = () => {
           <section className="bg-card rounded-2xl p-6 border border-border">
             <h2 className="text-xl font-semibold text-foreground mt-0">International Processing</h2>
             <p className="text-muted-foreground mb-0">
-              Primary hosted application data is stored in the United Kingdom. Some processors (for example Lemon Squeezy, Google Firebase, OAuth providers, legacy RevenueCat sync, email, or cloud AI) may process data in other countries. Where required, we rely on appropriate safeguards offered by those providers and applicable law.
+              Primary hosted application data is stored in the United Kingdom. Some processors (for example Lemon Squeezy, Google Firebase, OAuth providers, email, or cloud AI) may process data in other countries. Where required, we rely on appropriate safeguards offered by those providers and applicable law.
             </p>
           </section>
 
