@@ -13,23 +13,15 @@ import { Button } from './ui/button';
 import { subscriptionsApi, aiApi, rewardsApi } from '../lib/api';
 import { Link } from 'react-router-dom';
 import {
-  fetchRevenueCatProStatus,
-  hasWebBillingPackages,
-  isRevenueCatWebConfigured,
-  presentRevenueCatPaywall,
-} from '../lib/revenueCat';
-import {
   isLemonSqueezyBilling,
-  isRevenueCatBilling,
   loadBillingConfig,
   openLemonSqueezyCustomerPortal,
-  revenueCatBillingEngine,
   startLemonSqueezyCheckout,
 } from '../lib/billing';
 import { useLanguage } from '../context/LanguageContext';
 import { RewardStore } from './RewardStore';
 
-/** Shared Laro Pro benefit lines (food-first; mirrors Android paywall). */
+/** Shared Laro Pro benefit lines (food-first). */
 export const LARO_PRO_OFFERING_BENEFITS = [
   'Unlimited AI meal plans & recipe imports',
   'Scan recipes from photos and video',
@@ -40,11 +32,8 @@ export const LARO_PRO_OFFERING_BENEFITS = [
 ];
 
 /**
- * Laro Pro / RevenueCat subscription panel for the web Settings page.
- * Status comes from the Laro backend (synced via RC webhooks + owner forever).
- * Falls back to auth user Pro flags when /subscriptions/status is briefly unavailable
- * so owner/Pro accounts never flash as Free after login.
- * Checkout via RevenueCat Web (Paddle or RC Billing in dashboard) or optional Lemon Squeezy.
+ * Laro Pro panel (Settings). Checkout via Lemon Squeezy; status from Laro backend
+ * (LS webhooks + owner forever). Legacy RevenueCat/Play subs still sync via RC webhook.
  */
 export function SubscriptionSection({ userId, userEmail, user }) {
   const { t } = useLanguage();
@@ -53,16 +42,12 @@ export function SubscriptionSection({ userId, userEmail, user }) {
   const [purchasing, setPurchasing] = useState(false);
   const [status, setStatus] = useState(null);
   const [quota, setQuota] = useState(null);
-  const [rcStatus, setRcStatus] = useState(null);
-  const [webPackagesReady, setWebPackagesReady] = useState(null);
   const [statusFailed, setStatusFailed] = useState(false);
   const [freeLimits, setFreeLimits] = useState(null);
   const [billingConfig, setBillingConfig] = useState(null);
   const [checkoutPlan, setCheckoutPlan] = useState('monthly');
-  const webBilling = isRevenueCatWebConfigured();
   const lemonBilling = isLemonSqueezyBilling(billingConfig);
-  const rcBillingPreferred = isRevenueCatBilling(billingConfig) || !billingConfig?.provider;
-  const rcEngine = revenueCatBillingEngine(billingConfig);
+  const billingConfigured = Boolean(billingConfig?.configured !== false && lemonBilling);
 
   const load = useCallback(async () => {
     try {
@@ -84,38 +69,16 @@ export function SubscriptionSection({ userId, userEmail, user }) {
       }
       if (quotaRes?.data) setQuota(quotaRes.data);
       if (catalogRes?.data?.limits) setFreeLimits(catalogRes.data.limits);
-      if (catalogRes?.data?.bonuses) {
-        /* keep for future; limits already include bonuses */
-      }
-
-      if (!isLemonSqueezyBilling(billCfg) && webBilling && userId) {
-        try {
-          const [rc, pkgs] = await Promise.all([
-            fetchRevenueCatProStatus(userId),
-            hasWebBillingPackages(userId).catch(() => false),
-          ]);
-          setRcStatus(rc);
-          setWebPackagesReady(Boolean(pkgs));
-        } catch (e) {
-          console.warn('RevenueCat web status failed:', e);
-          setRcStatus(null);
-          setWebPackagesReady(false);
-        }
-      } else {
-        setRcStatus(null);
-        setWebPackagesReady(null);
-      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId, webBilling]);
+  }, []);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Auth payload Pro flags (login /auth/me) — seamless fallback when status endpoint fails
   const authIsOwner = Boolean(user?.is_owner);
   const authIsPro = Boolean(
     user?.is_pro || user?.is_owner || user?.subscription_active
@@ -125,7 +88,6 @@ export function SubscriptionSection({ userId, userEmail, user }) {
   const isPro =
     Boolean(status?.is_active) ||
     Boolean(status?.is_owner) ||
-    Boolean(rcStatus?.isPro) ||
     (statusFailed && authIsPro);
   const isLifetime =
     Boolean(status?.is_lifetime || status?.is_owner) ||
@@ -148,87 +110,39 @@ export function SubscriptionSection({ userId, userEmail, user }) {
     toast.success('Subscription status refreshed');
   };
 
-  const pollBackendPro = async () => {
-    for (let i = 0; i < 6; i += 1) {
-      try {
-        const res = await subscriptionsApi.getStatus();
-        if (res?.data?.is_active || res?.data?.is_owner) return res.data;
-      } catch (_) { /* retry */ }
-      await new Promise((r) => setTimeout(r, 800));
-    }
-    return null;
-  };
-
   const handleUpgradeWeb = async () => {
     if (!userId) {
       toast.error(t('signInToSubscribe'));
       return;
     }
-    if (lemonBilling) {
-      setPurchasing(true);
-      try {
-        await startLemonSqueezyCheckout(checkoutPlan);
-      } catch (e) {
-        console.error(e);
-        toast.error(e?.response?.data?.detail || e?.message || t('webCheckoutUnavailableHint'));
-      } finally {
-        setPurchasing(false);
-      }
-      return;
-    }
-    if (!webBilling) {
+    if (!billingConfigured) {
       toast.error(t('webBillingKeyNeededHint'));
-      return;
-    }
-    if (webPackagesReady === false) {
-      toast.error(t('webBillingPackagesMissingHint'));
       return;
     }
     setPurchasing(true);
     try {
-      const result = await presentRevenueCatPaywall(userId, userEmail);
-      if (result == null) {
-        toast.error(t('webCheckoutUnavailableHint'));
-        return;
-      }
-      if (result.noPackages) {
-        toast.error(t('webBillingPackagesMissingHint'));
-        return;
-      }
-      if (result.cancelled) {
-        return;
-      }
-      if (result.purchased) {
-        try {
-          await subscriptionsApi.sync({
-            revenuecat_user_id: userId,
-            is_active: true,
-            product_id: 'web',
-          });
-        } catch (_) { /* non-fatal; webhook usually wins */ }
-        await pollBackendPro();
-        toast.success('Welcome to Laro Pro!');
-        await load();
-      }
+      await startLemonSqueezyCheckout(checkoutPlan);
     } catch (e) {
       console.error(e);
-      toast.error(e?.message || 'Could not open checkout');
+      toast.error(e?.response?.data?.detail || e?.message || t('webCheckoutUnavailableHint'));
     } finally {
       setPurchasing(false);
     }
   };
 
   const handleManage = async () => {
-    if (lemonBilling || (status?.source || '').toLowerCase() === 'lemonsqueezy') {
+    const source = (status?.source || user?.subscription_source || '').toLowerCase();
+    if (source === 'lemonsqueezy' || lemonBilling) {
       try {
         await openLemonSqueezyCustomerPortal();
-      } catch (e) {
+        return;
+      } catch {
         toast.message(t('manageBillingNoPortalHint'));
+        return;
       }
-      return;
     }
-    if (rcStatus?.managementURL) {
-      window.open(rcStatus.managementURL, '_blank', 'noopener,noreferrer');
+    if (source === 'revenuecat') {
+      toast.message(t('manageBillingLegacyRevenueCatHint'));
       return;
     }
     toast.message(t('manageBillingNoPortalHint'));
@@ -251,9 +165,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           {t('laroProSectionSubtitle')}
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {rcEngine === 'paddle' && rcBillingPreferred && !lemonBilling
-            ? t('laroProRcPaddleHint')
-            : t('laroProSyncedHint')}
+          {t('laroProSyncedHint')}
         </p>
       </div>
 
@@ -383,10 +295,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
               {!isPro && (
                 <Button
                   onClick={handleUpgradeWeb}
-                  disabled={
-                    purchasing
-                    || (!lemonBilling && (!webBilling || webPackagesReady === false))
-                  }
+                  disabled={purchasing || !billingConfigured}
                   className="rounded-full bg-laro hover:bg-laro-dark"
                   data-testid="upgrade-pro-btn"
                 >
@@ -410,7 +319,6 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                 </Button>
               )}
             </div>
-
           </>
         )}
       </div>

@@ -42,37 +42,31 @@ class SubscriptionStatus(BaseModel):
 
 
 def _billing_provider_preference() -> str:
-    return (os.getenv("LARO_BILLING_PROVIDER") or "revenuecat").strip().lower()
+    return (os.getenv("LARO_BILLING_PROVIDER") or "lemonsqueezy").strip().lower()
 
 
 @router.get("/billing-config")
 async def get_billing_config(user: dict = Depends(get_current_user)):
-    """
-    Checkout provider for the web app.
-    Default: RevenueCat Web (configure Paddle or RC Billing in the RC dashboard).
-    Optional: LARO_BILLING_PROVIDER=lemonsqueezy for direct Lemon Squeezy checkout.
-    """
+    """Web Pro checkout uses Lemon Squeezy when server env is configured."""
     from services import lemonsqueezy as ls
     from services.lemonsqueezy import is_lemon_squeezy_enabled
 
     pref = _billing_provider_preference()
-    if pref == "lemonsqueezy" and is_lemon_squeezy_enabled():
+    if pref != "lemonsqueezy":
+        return {"provider": None, "plans": [], "configured": False}
+
+    if is_lemon_squeezy_enabled():
+        plans = ls.billing_plans_public()
         return {
             "provider": "lemonsqueezy",
-            "plans": ls.billing_plans_public(),
+            "plans": plans,
+            "configured": len(plans) > 0,
         }
 
-    engine = (os.getenv("LARO_RC_WEB_BILLING_ENGINE") or "paddle").strip().lower()
-    if engine not in ("paddle", "rc_billing", "stripe"):
-        engine = "paddle"
-
     return {
-        "provider": "revenuecat",
-        "engine": engine,
-        "plans": [
-            {"id": "weekly", "label": "Weekly"},
-            {"id": "monthly", "label": "Monthly"},
-        ],
+        "provider": "lemonsqueezy",
+        "plans": [],
+        "configured": False,
     }
 
 

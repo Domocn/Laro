@@ -149,7 +149,7 @@ export const PrivacyPolicy = () => {
           <section className="bg-card rounded-2xl p-6 border border-border">
             <h2 className="text-xl font-semibold text-foreground mt-0">Subscriptions and payments</h2>
             <p className="text-muted-foreground">
-              Paid plans on the web are sold through RevenueCat, typically with Paddle or Stripe as the payment provider (merchant of record may be Paddle or Laro depending on configuration). We receive subscription status and related identifiers so we can unlock Pro features. We do not store your full payment card numbers on Laro servers—payment processors handle payment details.
+              Paid plans on the web are processed by Lemon Squeezy (merchant of record). Some older subscriptions may still be managed via RevenueCat or app stores. We receive subscription status and related identifiers so we can unlock Pro features. We do not store your full payment card numbers on Laro servers—payment processors handle payment details.
             </p>
             <p className="text-muted-foreground mb-0">
               Referral trials and reward redemptions are recorded on your account so we can apply benefits accurately.
@@ -197,7 +197,8 @@ export const PrivacyPolicy = () => {
               <li><strong>Firebase (Google):</strong> Push notifications (FCM), Crashlytics, and Android Analytics</li>
               <li><strong>Google / GitHub:</strong> Optional OAuth sign-in</li>
               <li><strong>Google Health API:</strong> Optional nutrition write when you link the integration</li>
-              <li><strong>RevenueCat + Google Play (and other stores as applicable):</strong> Subscription management and billing</li>
+              <li><strong>Lemon Squeezy:</strong> Web subscription checkout and billing</li>
+              <li><strong>RevenueCat (legacy) + app stores as applicable:</strong> Older subscription records</li>
               <li><strong>Email delivery (e.g. Resend or SMTP):</strong> Transactional messages such as verification and password reset</li>
               <li><strong>AI providers (e.g. Groq / OpenAI-compatible APIs, or Ollama when configured):</strong> Processing AI feature requests</li>
               <li><strong>Open Food Facts — Open Prices:</strong> Public price catalog sync used for cost estimates (where enabled)</li>

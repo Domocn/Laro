@@ -6,24 +6,18 @@ import { subscriptionsApi } from './api';
 export async function loadBillingConfig() {
   try {
     const res = await subscriptionsApi.getBillingConfig();
-    return res?.data || { provider: null, plans: [] };
+    return res?.data || { provider: 'lemonsqueezy', plans: [], configured: false };
   } catch {
-    return { provider: null, plans: [] };
+    return { provider: 'lemonsqueezy', plans: [], configured: false };
   }
 }
 
 export function isLemonSqueezyBilling(config) {
-  return config?.provider === 'lemonsqueezy' && Array.isArray(config.plans) && config.plans.length > 0;
-}
-
-export function isRevenueCatBilling(config) {
-  return config?.provider === 'revenuecat';
-}
-
-export function revenueCatBillingEngine(config) {
-  if (!isRevenueCatBilling(config)) return null;
-  const engine = (config?.engine || 'paddle').toLowerCase();
-  return engine;
+  return (
+    config?.provider === 'lemonsqueezy'
+    && Array.isArray(config.plans)
+    && config.plans.length > 0
+  );
 }
 
 export async function startLemonSqueezyCheckout(plan = 'monthly') {

@@ -574,16 +574,16 @@ yourImports: 'Your imports',
   manageSubscription: 'Manage subscription',
   openPlayStore: 'Open Play Store',
   laroProSectionSubtitle: 'Advanced imports, Laro Chat, and no free-tier caps.',
-  laroProSyncedHint: 'Powered by RevenueCat · synced with your account',
-  laroProRcPaddleHint:
-    'Checkout via RevenueCat · Paddle handles billing & tax · synced with your account',
+  laroProSyncedHint: 'Secure checkout via Lemon Squeezy · synced with your account',
+  manageBillingLegacyRevenueCatHint:
+    'This subscription was billed via RevenueCat or Google Play — use the store or billing email you used at purchase, or contact app@laro.food.',
   signInToSubscribe: 'Sign in to unlock Laro Pro',
   webCheckoutUnavailableHint:
     'Checkout could not be opened. Refresh this page and try again.',
   manageBillingNoPortalHint:
     'Open the billing link from your subscription confirmation email, or contact app@laro.food for help.',
   webBillingKeyNeededHint:
-    'Billing is not available right now. Your Pro status still syncs from your account.',
+    'Laro Pro checkout is not configured on the server yet (Lemon Squeezy API keys and variant IDs). Your existing Pro status still syncs from your account.',
   webBillingPackagesMissingHint:
     'Plans are temporarily unavailable. Try again in a few minutes or email app@laro.food if it persists.',
   takeAppTour: 'Take the app tour',

@@ -137,19 +137,15 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   Full local `assembleDebug` also needs
   `android/app/google-services.json` (Firebase).
   **Web Settings → Laro Pro:** backend `/subscriptions/status` (owner forever +
-  webhook sync). **Default checkout: RevenueCat Web** with **Paddle Billing** as MoR
-  (configure Paddle in RC → Web, import products, attach to offering `default`; see
-  `docs/REVENUECAT_PADDLE_WEB.md`). Frontend: `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…`
-  + `purchases-js` paywall; backend webhook unchanged:
-  `POST /api/v1/subscriptions/webhook/revenuecat`. Optional direct Lemon Squeezy only
-  when `LARO_BILLING_PROVIDER=lemonsqueezy` and LS env vars are set.
+  webhook sync). **Checkout: Lemon Squeezy** (`docs/LEMON_SQUEEZY_BILLING.md`) —
+  `LEMONSQUEEZY_*` env, webhook `POST /api/v1/subscriptions/webhook/lemonsqueezy`,
+  checkout `POST /api/v1/subscriptions/checkout`. No `purchases-js` / `rcb_` on web.
+  **Legacy:** keep `REVENUECAT_WEBHOOK_AUTH` + `/subscriptions/webhook/revenuecat` for
+  old Play/RC subs until they expire (`docs/REVENUECAT_PADDLE_WEB.md`).
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
-  `role=super_admin` are always Pro on the backend; Android Pro is RevenueCat
-  **or** `GET /subscriptions/status` / auth `is_pro` (not RC entitlement alone).
-  **Pro offering UI:** Settings → Laro Pro (`SubscriptionSection` + RevenueCat paywall)
-  is the only subscribe CTA in the web app. Do not add secondary “pay on the website”
-  banners or Play fallbacks. Android should hide in-app purchase and rely on the same
-  account sync (optional: open Settings in the web app for checkout).
+  `role=super_admin` are always Pro on the backend.
+  **Pro offering UI:** Settings → Laro Pro only (`SubscriptionSection` + LS checkout).
+  Android: no in-app purchase; same account on laro.food Settings.
   **Account seamlessness:** login + `/auth/me` (+ OAuth callbacks) always attach
   `is_pro` / `is_owner` / `is_lifetime` via `user_subscription_fields`. Web Settings
   Laro Pro falls back to those auth flags if `/subscriptions/status` fails, so owner

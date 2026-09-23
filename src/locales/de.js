@@ -443,6 +443,8 @@ yourImports: 'Deine Imports',
   openPlayStore: 'Play Store öffnen',
   laroProSectionSubtitle: 'Erweiterte Importe, Laro Chat und keine Free-Limits.',
   laroProSyncedHint: 'Powered by RevenueCat · mit deinem Konto synchronisiert',
+  laroProRcPaddleHint:
+    'Checkout über RevenueCat · Paddle übernimmt Abrechnung & Steuern · mit deinem Konto synchronisiert',
   signInToSubscribe: 'Melde dich an, um Laro Pro freizuschalten',
   webCheckoutUnavailableHint:
     'Checkout konnte nicht geöffnet werden. Seite aktualisieren und erneut versuchen.',
