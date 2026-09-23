@@ -2,8 +2,8 @@
  * Free-tier AI quota helpers (3 free LLM uses, then Premium).
  * JSON-LD / schema.org scrapes do not consume quota.
  *
- * All LLM-backed features must surface 402 via these helpers so users
- * are directed to Settings (RevenueCat / Pro paywall).
+ * All LLM-backed features must surface 402 via these helpers (message only;
+ * subscribe in Settings → Laro Pro).
  */
 import { toast } from 'sonner';
 

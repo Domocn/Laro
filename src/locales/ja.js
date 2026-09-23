@@ -441,8 +441,17 @@ yourImports: 'Your imports',
   manageBilling: '請求を管理',
   manageSubscription: 'サブスクを管理',
   openPlayStore: 'Play ストアを開く',
-  webBillingKeyNeededHint: '週次 Pro は Google Play（RevenueCat）から始まります。Web 決済には Web Billing キー（rcb_…）が必要です。それまでは Android で登録してください。このページは同期された Pro 状態を表示します。',
-  webBillingPackagesMissingHint: 'Web Billing は接続済みですが、週次／月次の Web 商品がまだオファリングにありません。当面は Android で登録してください。RevenueCat に紐づくと、ここでも「Laro Pro を解除」が使えます。',
+  laroProSectionSubtitle: '高度なインポート、Laro Chat、無料枠の上限なし。',
+  laroProSyncedHint: 'Powered by RevenueCat · アカウントと同期',
+  signInToSubscribe: 'サインインして Laro Pro を解除',
+  webCheckoutUnavailableHint:
+    'チェックアウトを開けませんでした。ページを更新して再度お試しください。',
+  manageBillingNoPortalHint:
+    '確認メールの請求リンクを使うか、app@laro.food までご連絡ください。',
+  webBillingKeyNeededHint:
+    '現在請求を利用できません。Pro 状態は引き続き同期されます。',
+  webBillingPackagesMissingHint:
+    'プランは一時的に利用できません。数分後に再試行するか app@laro.food までご連絡ください。',
   pwdFieldLabel: 'パスワード',
   pwdRequirements: 'パスワードの要件：',
   pwdResetSuccessBody: 'パスワードのリセットが完了しました。ログイン画面へ移動します...',

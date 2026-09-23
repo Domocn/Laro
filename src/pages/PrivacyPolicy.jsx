@@ -149,7 +149,7 @@ export const PrivacyPolicy = () => {
           <section className="bg-card rounded-2xl p-6 border border-border">
             <h2 className="text-xl font-semibold text-foreground mt-0">Subscriptions and payments</h2>
             <p className="text-muted-foreground">
-              Paid plans are managed through RevenueCat. Purchases on Android are processed by Google Play; other store or web billing partners may apply where offered. We receive subscription status, entitlements, and related identifiers so we can unlock Pro features. We do not store your full payment card numbers on Laro servers—payment processors and app stores handle payment details.
+              Paid plans on the web are sold through RevenueCat, typically with Paddle or Stripe as the payment provider (merchant of record may be Paddle or Laro depending on configuration). We receive subscription status and related identifiers so we can unlock Pro features. We do not store your full payment card numbers on Laro servers—payment processors handle payment details.
             </p>
             <p className="text-muted-foreground mb-0">
               Referral trials and reward redemptions are recorded on your account so we can apply benefits accurately.

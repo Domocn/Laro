@@ -136,22 +136,20 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   RC is the billing + client entitlement mirror.
   Full local `assembleDebug` also needs
   `android/app/google-services.json` (Firebase).
-  **Web Settings → Laro Pro:** shows backend `/subscriptions/status` (owner forever /
-  webhook sync). Web Billing checkout needs
-  `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…` (not the Play `goog_` key); injected at
-  container start via `frontend/docker-entrypoint.sh`. `rcb_` / `goog_` are
-  **publishable** SDK keys (expected in the client); do not confuse with `sk_…`
-  or webhook auth. Also create Web Billing
-  products in the RC dashboard (API cannot) and attach them to `$rc_weekly` /
-  `$rc_monthly` + entitlement `Laro Pro` — see `android/REVENUECAT_SETUP_GUIDE.md`
-  §3.6. Without key/products, UI links to Play Store.
+  **Web Settings → Laro Pro:** backend `/subscriptions/status` (owner forever +
+  webhook sync). **Default checkout: RevenueCat Web** with **Paddle Billing** as MoR
+  (configure Paddle in RC → Web, import products, attach to offering `default`; see
+  `docs/REVENUECAT_PADDLE_WEB.md`). Frontend: `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…`
+  + `purchases-js` paywall; backend webhook unchanged:
+  `POST /api/v1/subscriptions/webhook/revenuecat`. Optional direct Lemon Squeezy only
+  when `LARO_BILLING_PROVIDER=lemonsqueezy` and LS env vars are set.
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
   `role=super_admin` are always Pro on the backend; Android Pro is RevenueCat
   **or** `GET /subscriptions/status` / auth `is_pro` (not RC entitlement alone).
-  **Pro offering UI:** custom Android paywall (`PaywallScreen` + `PaywallBenefits`)
-  uses food-first benefits and period-aware CTAs; prefer Annual → Monthly → Weekly
-  when those packages exist on offering `default`. Web Settings mirrors the same
-  benefit list. Dashboard native paywalls should stay in sync (see setup guide §2.10).
+  **Pro offering UI:** Settings → Laro Pro (`SubscriptionSection` + RevenueCat paywall)
+  is the only subscribe CTA in the web app. Do not add secondary “pay on the website”
+  banners or Play fallbacks. Android should hide in-app purchase and rely on the same
+  account sync (optional: open Settings in the web app for checkout).
   **Account seamlessness:** login + `/auth/me` (+ OAuth callbacks) always attach
   `is_pro` / `is_owner` / `is_lifetime` via `user_subscription_fields`. Web Settings
   Laro Pro falls back to those auth flags if `/subscriptions/status` fails, so owner

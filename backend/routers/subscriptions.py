@@ -1,15 +1,16 @@
 """
-Subscriptions Router - Handle subscription status and RevenueCat webhooks
+Subscriptions Router - status, Lemon Squeezy checkout/webhooks, RevenueCat legacy webhooks
 """
 from fastapi import APIRouter, HTTPException, Depends, Request, Header, BackgroundTasks
 from dependencies import get_current_user, user_repository
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
 from datetime import datetime, timezone, timedelta
 import logging
 import hmac
 import hashlib
 import os
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,86 @@ class SubscriptionStatus(BaseModel):
     is_active: bool = False
     is_lifetime: bool = False
     is_owner: bool = False
+
+
+def _billing_provider_preference() -> str:
+    return (os.getenv("LARO_BILLING_PROVIDER") or "revenuecat").strip().lower()
+
+
+@router.get("/billing-config")
+async def get_billing_config(user: dict = Depends(get_current_user)):
+    """
+    Checkout provider for the web app.
+    Default: RevenueCat Web (configure Paddle or RC Billing in the RC dashboard).
+    Optional: LARO_BILLING_PROVIDER=lemonsqueezy for direct Lemon Squeezy checkout.
+    """
+    from services import lemonsqueezy as ls
+    from services.lemonsqueezy import is_lemon_squeezy_enabled
+
+    pref = _billing_provider_preference()
+    if pref == "lemonsqueezy" and is_lemon_squeezy_enabled():
+        return {
+            "provider": "lemonsqueezy",
+            "plans": ls.billing_plans_public(),
+        }
+
+    engine = (os.getenv("LARO_RC_WEB_BILLING_ENGINE") or "paddle").strip().lower()
+    if engine not in ("paddle", "rc_billing", "stripe"):
+        engine = "paddle"
+
+    return {
+        "provider": "revenuecat",
+        "engine": engine,
+        "plans": [
+            {"id": "weekly", "label": "Weekly"},
+            {"id": "monthly", "label": "Monthly"},
+        ],
+    }
+
+
+class CheckoutRequest(BaseModel):
+    plan: Literal["weekly", "monthly"] = Field(..., description="Laro Pro plan id")
+
+
+@router.post("/checkout")
+async def create_billing_checkout(
+    body: CheckoutRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Create a Lemon Squeezy checkout URL bound to the logged-in Laro user."""
+    from services.lemonsqueezy import create_checkout_url, is_lemon_squeezy_enabled
+
+    if not is_lemon_squeezy_enabled():
+        raise HTTPException(status_code=503, detail="Lemon Squeezy billing is not configured")
+    try:
+        url = await create_checkout_url(
+            plan=body.plan,
+            user_id=str(user["id"]),
+            email=user.get("email"),
+            name=user.get("name"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("Lemon Squeezy checkout failed")
+        raise HTTPException(status_code=502, detail="Could not create checkout") from e
+    return {"url": url, "provider": "lemonsqueezy"}
+
+
+@router.get("/customer-portal")
+async def get_customer_portal(user: dict = Depends(get_current_user)):
+    """Lemon Squeezy customer portal for manage/cancel (when subscribed via LS)."""
+    from services.lemonsqueezy import customer_portal_url, is_lemon_squeezy_enabled
+
+    if not is_lemon_squeezy_enabled():
+        raise HTTPException(status_code=503, detail="Billing portal is not configured")
+    sub_id = user.get("billing_subscription_id")
+    if not sub_id:
+        raise HTTPException(status_code=404, detail="No Lemon Squeezy subscription on this account")
+    url = await customer_portal_url(str(sub_id))
+    if not url:
+        raise HTTPException(status_code=502, detail="Could not load billing portal")
+    return {"url": url}
 
 
 @router.get("/status")
@@ -357,7 +438,7 @@ async def sync_subscription(
     else:
         # Only downgrade RevenueCat-sourced subs — preserve admin/owner lifetime
         source = (user.get("subscription_source") or "").lower()
-        if source == "revenuecat":
+        if source in ("revenuecat", "lemonsqueezy"):
             await user_repository.update_user(user["id"], {
                 "subscription_status": "free",
                 "subscription_expires": None
@@ -365,3 +446,161 @@ async def sync_subscription(
             return {"status": "free", "synced": True}
         snap = subscription_snapshot(user)
         return {"status": snap["status"], "synced": True, "preserved": True}
+
+
+async def _resolve_user_for_lemon_webhook(payload: dict) -> Optional[dict]:
+    user_id = None
+    try:
+        from services.lemonsqueezy import extract_user_id_from_webhook
+
+        user_id = extract_user_id_from_webhook(payload)
+    except Exception:
+        user_id = None
+    if user_id:
+        user = await user_repository.find_by_id(user_id)
+        if user:
+            return user
+    attrs = (payload.get("data") or {}).get("attributes") or {}
+    email = (attrs.get("user_email") or attrs.get("customer_email") or "").strip().lower()
+    if email:
+        user = await user_repository.find_by_email(email)
+        if user:
+            return user
+    return None
+
+
+async def _apply_lemon_subscription(user_id: str, payload: dict, *, grant_referral: bool) -> None:
+    from services.lemonsqueezy import (
+        is_active_subscription_status,
+        subscription_expires_from_attributes,
+    )
+
+    data = payload.get("data") or {}
+    sub_id = str(data.get("id") or "")
+    attrs = data.get("attributes") or {}
+    status = (attrs.get("status") or "").lower()
+    expires_dt = subscription_expires_from_attributes(attrs)
+    expires_iso = expires_dt.isoformat() if expires_dt else None
+
+    if is_active_subscription_status(status):
+        await user_repository.update_user(
+            user_id,
+            {
+                "subscription_status": "premium",
+                "subscription_expires": expires_iso,
+                "subscription_source": "lemonsqueezy",
+                "billing_subscription_id": sub_id or None,
+            },
+        )
+        if grant_referral:
+            try:
+                from routers.friends import grant_referrer_reward_for_subscriber
+
+                refreshed = await user_repository.find_by_id(user_id)
+                if refreshed:
+                    await grant_referrer_reward_for_subscriber(refreshed)
+            except Exception as reward_err:
+                logger.warning("Referral reward failed for %s: %s", user_id, reward_err)
+        return
+
+    if status == "cancelled" and expires_dt and expires_dt > datetime.now(timezone.utc):
+        await user_repository.update_user(
+            user_id,
+            {
+                "subscription_expires": expires_iso,
+                "billing_subscription_id": sub_id or None,
+                "subscription_source": "lemonsqueezy",
+            },
+        )
+        return
+
+    await user_repository.update_user(
+        user_id,
+        {
+            "subscription_status": "expired" if status == "expired" else "free",
+            "subscription_expires": expires_iso,
+            "subscription_source": "lemonsqueezy",
+            "billing_subscription_id": sub_id or None,
+        },
+    )
+
+
+@router.get("/webhook/lemonsqueezy")
+@router.head("/webhook/lemonsqueezy")
+async def lemonsqueezy_webhook_health():
+    return {
+        "status": "ok",
+        "service": "lemonsqueezy-webhook",
+        "method": "POST required for events",
+    }
+
+
+@router.post("/webhook/lemonsqueezy")
+async def lemonsqueezy_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_signature: Optional[str] = Header(None, alias="X-Signature"),
+):
+    from services.lemonsqueezy import verify_webhook_signature
+
+    raw = await request.body()
+    if not verify_webhook_signature(raw, x_signature):
+        logger.warning("Lemon Squeezy webhook signature verification failed")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from e
+
+    event_name = (payload.get("meta") or {}).get("event_name") or ""
+    logger.info("Lemon Squeezy webhook: %s", event_name)
+
+    user = await _resolve_user_for_lemon_webhook(payload)
+    if not user:
+        logger.warning("Lemon Squeezy webhook: user not found for event %s", event_name)
+        return {"status": "ok", "message": "User not found"}
+
+    user_id = user["id"]
+    grant_events = {
+        "subscription_created",
+        "subscription_resumed",
+        "subscription_unpaused",
+        "subscription_payment_success",
+        "subscription_payment_recovered",
+    }
+    update_events = grant_events | {
+        "subscription_updated",
+        "subscription_cancelled",
+        "subscription_expired",
+        "subscription_paused",
+        "subscription_payment_failed",
+    }
+
+    if event_name in update_events:
+        await _apply_lemon_subscription(
+            user_id,
+            payload,
+            grant_referral=event_name in grant_events,
+        )
+
+        if event_name == "subscription_payment_failed" and NOTIFICATIONS_ENABLED:
+            background_tasks.add_task(
+                notify_user,
+                user_id=user_id,
+                notification_type=NotificationType.BILLING_ISSUE,
+            )
+        if event_name == "subscription_created" and NOTIFICATIONS_ENABLED:
+            background_tasks.add_task(
+                notify_user,
+                user_id=user_id,
+                notification_type=NotificationType.SUBSCRIPTION_WELCOME,
+            )
+        if event_name == "subscription_expired" and NOTIFICATIONS_ENABLED:
+            background_tasks.add_task(
+                notify_user,
+                user_id=user_id,
+                notification_type=NotificationType.SUBSCRIPTION_EXPIRED,
+            )
+
+    return {"status": "ok", "event": event_name}
