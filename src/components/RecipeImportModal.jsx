@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { importApi, aiApi, recipeApi } from '../lib/api';
-import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { toastAiQuotaError } from '../lib/aiQuota';
 
 const SUPPORTED_SITES = [
   { domain: 'allrecipes.com', name: 'AllRecipes', logo: '🍳' },
@@ -155,9 +155,11 @@ export const RecipeImportModal = ({ isOpen, onClose, onSuccess }) => {
           error.response?.data?.detail ||
           'Failed to import recipe PDF',
       });
-      toast.error(
-        getAiQuotaErrorMessage(error, 'PDF import failed (E-RI003)')
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: 'PDF import failed (E-RI003)',
+        upgradeLabel: 'Unlock Laro Pro',
+      });
     } finally {
       setLoading(false);
     }

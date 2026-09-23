@@ -56,8 +56,8 @@ async def require_ai_quota(user: dict) -> dict:
             detail={
                 "error": "ai_quota_exceeded",
                 "message": (
-                    f"You've used your {status['limit']} free AI uses. "
-                    "Upgrade to Premium for unlimited AI import and assistants."
+                    f"You've used your {status['limit']} free import assists. "
+                    "Upgrade to Laro Pro for unlimited imports, meal planning, and Laro Chat."
                 ),
                 "used": status["used"],
                 "limit": status["limit"],

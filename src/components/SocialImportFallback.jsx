@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -6,7 +7,7 @@ import { Textarea } from './ui/textarea';
 import { Loader2, Sparkles, Video, ClipboardPaste, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { aiApi } from '../lib/api';
-import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { toastAiQuotaError } from '../lib/aiQuota';
 import { useLanguage } from '../context/LanguageContext';
 
 /**
@@ -19,6 +20,7 @@ export function SocialImportFallback({
   onSwitchToPhoto,
 }) {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [caption, setCaption] = useState('');
   const [videoFile, setVideoFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -46,9 +48,11 @@ export function SocialImportFallback({
       toast.success(t('toastRecipeExtractedSuccess'));
       onSuccess?.(recipe, res.data);
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(error, error.response?.data?.detail || t('toastVideoImportFailed'))
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: error.response?.data?.detail || t('toastVideoImportFailed'),
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setLoading(false);
     }

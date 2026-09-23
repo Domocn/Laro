@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useNavigate } from 'react-router-dom';
 import { recipeApi, mealPlanApi, aiApi, calendarApi, shoppingListApi } from '../lib/api';
-import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { toastAiQuotaError } from '../lib/aiQuota';
 import { useLanguage } from '../context/LanguageContext';
 import { useUserPreferences, weekStartsOnNumber } from '../hooks/useUserPreferences';
 import {
@@ -490,12 +490,11 @@ export const MealPlanner = () => {
         loadData();
       }
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          "Couldn't generate your meal plan. Please try again. (E-MP004)"
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: "Couldn't generate your meal plan. Please try again. (E-MP004)",
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setAutoGenerating(false);
     }
@@ -573,13 +572,13 @@ export const MealPlanner = () => {
         toast.success('Macros found online — review and import');
       }
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
+      toastAiQuotaError(error, {
+        navigate,
+        fallback:
           error.response?.data?.detail ||
-            "Couldn't fetch that page. Add the pack manually with macros instead."
-        )
-      );
+          "Couldn't fetch that page. Add the pack manually with macros instead.",
+        upgradeLabel: t('unlockLaroPro'),
+      });
       setImportMode('manual');
       setPackDrafts([
         { title: '', calories: '', protein: '', carbs: '', fat: '', kind: 'shake' },
@@ -655,12 +654,11 @@ export const MealPlanner = () => {
       resetImportDialog();
       loadData();
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          error.response?.data?.detail || "Couldn't save meal packs. (E-MP006)"
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: error.response?.data?.detail || "Couldn't save meal packs. (E-MP006)",
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setImporting(false);
     }
@@ -751,13 +749,13 @@ export const MealPlanner = () => {
       // loadData runs via useEffect when currentDate changes; call anyway if week unchanged
       loadData();
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
+      toastAiQuotaError(error, {
+        navigate,
+        fallback:
           error.response?.data?.detail ||
-            "Couldn't import that meal plan. Try a text-based PDF or paste the meal breakdown. (E-MP006)"
-        )
-      );
+          "Couldn't import that meal plan. Try a text-based PDF or paste the meal breakdown. (E-MP006)",
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setImporting(false);
     }

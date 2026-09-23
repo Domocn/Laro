@@ -149,7 +149,7 @@ export const CookingAIAssistant = ({ recipe, currentStep, isOpen, onClose }) => 
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="font-medium text-white text-sm">AI Assistant</h3>
+              <h3 className="font-medium text-white text-sm">Laro Chat</h3>
               <p className="text-xs text-gray-400">Step {currentStep + 1}</p>
             </div>
           </div>
@@ -212,7 +212,13 @@ export const CookingAIAssistant = ({ recipe, currentStep, isOpen, onClose }) => 
         </div>
 
         {/* Suggestions */}
-        {messages.length <= 2 && (
+        {!chatPro && (
+          <div className="px-4 pb-2 text-xs text-gray-300">
+            Laro Chat is unlimited with Laro Pro. Open Settings to upgrade.
+          </div>
+        )}
+
+        {messages.length <= 2 && chatPro && (
           <div className="px-4 pb-2">
             <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
               <Lightbulb className="w-3 h-3" />
@@ -241,13 +247,13 @@ export const CookingAIAssistant = ({ recipe, currentStep, isOpen, onClose }) => 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask me anything..."
+              placeholder={chatPro ? 'Ask me anything...' : 'Unlock Laro Pro to chat'}
               className="flex-1 bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 rounded-full"
-              disabled={loading}
+              disabled={loading || !chatPro}
             />
             <Button
               onClick={() => handleSend()}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || loading || !chatPro}
               className="rounded-full bg-laro hover:bg-laro-dark w-10 h-10 p-0"
             >
               {loading ? (

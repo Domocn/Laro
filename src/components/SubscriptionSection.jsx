@@ -214,7 +214,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           Laro Pro
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Cook smarter — AI, scans, and an unlimited kitchen
+          {t('laroProAdvancedSubtitle')}
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
           Powered by RevenueCat · synced with your account
@@ -285,11 +285,14 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                 {quota.unlimited || quota.premium ? (
                   <span className="text-laro font-medium flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5" />
-                    Unlimited AI on this account
+                    {t('laroProActiveQuota')}
                   </span>
                 ) : (
                   <>
-                    Free AI: {quota.remaining ?? 0} of {quota.limit ?? 3} uses left
+                    {t('freeImportAssistsLeft', {
+                      remaining: quota.remaining ?? 0,
+                      limit: quota.limit ?? 3,
+                    })}
                     {quota.bonus ? ` (includes +${quota.bonus} bonus)` : ''}
                   </>
                 )}
@@ -309,7 +312,9 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                       ? ` (base ${freeLimits.free_defaults.recipes} + bonuses)`
                       : ''}
                   </li>
-                  <li>{freeLimits?.ai_base ?? 3} AI uses (lifetime)</li>
+                  <li>
+                    {t('freeImportAssistsLifetime', { count: freeLimits?.ai_base ?? 3 })}
+                  </li>
                   <li>{freeLimits?.friends ?? 3} friends</li>
                   <li>{freeLimits?.shares_weekly ?? 5} recipe shares / week</li>
                   <li>{freeLimits?.cookbooks ?? 3} cookbooks</li>

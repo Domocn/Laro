@@ -25,7 +25,7 @@ export function getAiQuotaErrorMessage(
     }
     return (
       detail?.message ||
-      "You've used your 3 free AI uses. Upgrade to Premium for unlimited AI."
+      "You've used your free import assists. Upgrade to Laro Pro for unlimited imports."
     );
   }
   if (typeof detail === 'string' && detail.trim()) return detail.trim();
@@ -49,15 +49,22 @@ export function getAiQuotaErrorMessage(
   return fallback;
 }
 
+export function isImportQuotaExceeded(error) {
+  return error?.response?.data?.detail?.error === 'ai_quota_exceeded';
+}
+
+export function isLaroChatProRequired(error) {
+  return error?.response?.data?.detail?.error === 'laro_chat_pro_required';
+}
+
+/** True when the UI should offer Settings → Pro (imports, chat, or explicit upgrade flag). */
 export function isAiQuotaExceeded(error) {
   const detail = error?.response?.data?.detail;
   const code = detail?.error;
-  return (
-    error?.response?.status === 402 ||
-    code === 'ai_quota_exceeded' ||
-    code === 'laro_chat_pro_required' ||
-    detail?.upgrade_required === true
-  );
+  if (isImportQuotaExceeded(error) || isLaroChatProRequired(error)) {
+    return true;
+  }
+  return error?.response?.status === 402 && detail?.upgrade_required === true;
 }
 
 /**
@@ -71,7 +78,7 @@ export function toastAiQuotaError(error, opts = {}) {
   const {
     navigate,
     fallback = 'AI request failed. Please try again.',
-    upgradeLabel = 'Upgrade',
+    upgradeLabel = 'Laro Pro',
   } = opts;
   const message = getAiQuotaErrorMessage(error, fallback);
   if (isAiQuotaExceeded(error) && typeof navigate === 'function') {
