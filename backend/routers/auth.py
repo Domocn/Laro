@@ -280,8 +280,8 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         None, hash_password, user.password
     )
 
-    # Handle referral code — new user gets a 2-week Pro trial immediately.
-    # Referrer is rewarded (another 2 weeks) only when the referred user subscribes.
+    # Referral code: link referrer + points. Pro trial days only if REFERRAL_TRIAL_DAYS > 0
+    # (default 0 — paid/trial Pro via RevenueCat after payment setup).
     from utils.subscription import REFERRAL_TRIAL_DAYS
 
     referred_by = None
@@ -292,7 +292,8 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
             referred_by = referrer["id"]
             now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
-            referral_trial_end = now_utc + timedelta(days=REFERRAL_TRIAL_DAYS)
+            if REFERRAL_TRIAL_DAYS > 0:
+                referral_trial_end = now_utc + timedelta(days=REFERRAL_TRIAL_DAYS)
 
             pending_rewards = referrer.get("pending_referral_rewards", [])
             if isinstance(pending_rewards, str):
