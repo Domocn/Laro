@@ -89,11 +89,13 @@ services:
       # laro.food production must set IS_CLOUD=true alongside Ollama Cloud.
       - IS_CLOUD=${IS_CLOUD:-false}
       - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-cowandom79@gmail.com}
-      - REVENUECAT_WEBHOOK_AUTH=${REVENUECAT_WEBHOOK_AUTH:-}
-      - REVENUECAT_WEBHOOK_SECRET=${REVENUECAT_WEBHOOK_SECRET:-}
-      # Secret API key (sk_…) — admin grant/revoke ↔ RC promotional entitlements
-      - REVENUECAT_SECRET_API_KEY=${REVENUECAT_SECRET_API_KEY:-}
-      - REVENUECAT_ENTITLEMENT_ID=${REVENUECAT_ENTITLEMENT_ID:-Laro Pro}
+      - LARO_BILLING_PROVIDER=${LARO_BILLING_PROVIDER:-lemonsqueezy}
+      - LEMONSQUEEZY_API_KEY=${LEMONSQUEEZY_API_KEY:-}
+      - LEMONSQUEEZY_STORE_ID=${LEMONSQUEEZY_STORE_ID:-}
+      - LEMONSQUEEZY_VARIANT_ID_WEEKLY=${LEMONSQUEEZY_VARIANT_ID_WEEKLY:-}
+      - LEMONSQUEEZY_VARIANT_ID_MONTHLY=${LEMONSQUEEZY_VARIANT_ID_MONTHLY:-}
+      - LEMONSQUEEZY_WEBHOOK_SECRET=${LEMONSQUEEZY_WEBHOOK_SECRET:-}
+      - LEMONSQUEEZY_CHECKOUT_REDIRECT_URL=${LEMONSQUEEZY_CHECKOUT_REDIRECT_URL:-https://laro.food/settings?pro=success}
       # Email (Resend preferred; SMTP works too). Links in mail use OAUTH_REDIRECT_BASE_URL.
       - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
       - RESEND_API_KEY=${RESEND_API_KEY:-}
@@ -226,7 +228,7 @@ services:
       # http://localhost:8001 here — browsers on laro.food cannot reach the
       # visitor's localhost, so login/register will fail with CORS errors.
       - REACT_APP_BACKEND_URL=
-      - REACT_APP_REVENUECAT_WEB_API_KEY=${REACT_APP_REVENUECAT_WEB_API_KEY:-}
+      # Web Pro checkout uses Lemon Squeezy (backend); do not set RC web key on new deploys
       - REACT_APP_CAST_APP_ID=${REACT_APP_CAST_APP_ID:-}
     depends_on:
       - backend

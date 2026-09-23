@@ -12,4 +12,6 @@ Key things to know:
 ## Links
 - [Home](https://laro.food/): App entry
 - [Sign in](https://laro.food/#/auth): Login / register
+- [Terms of Service](https://laro.food/#/terms-of-service): Subscription and use terms (Lemon Squeezy billing on web)
+- [Privacy Policy](https://laro.food/#/privacy-policy): Privacy and processors
 - [Play Store](https://play.google.com/store/apps/details?id=com.laro.app): Android app

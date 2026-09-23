@@ -113,54 +113,22 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   honors `timerNotifications` + haptics. Android `applyNeuroPreset()` applies
   full bundles (not single toggles) and best-effort syncs to `/preferences`.
   Focus/simplified calm the Android home (hide stats / getting-started).
-- **RevenueCat (Play):** public SDK key via `android/local.properties`
-  `REVENUECAT_API_KEY=goog_…` or env/Cursor secret `REVENUECAT_API_KEY`
-  (Gradle `localOrGradleProperty`). Release CI is wired:
-  `auto-release-on-merge.yml` and `bump-version.yml` pass
-  `REVENUECAT_API_KEY: ${{ secrets.REVENUECAT_API_KEY }}` into
-  `./gradlew bundleRelease` (keep the GitHub Actions secret in sync).
-  Backend webhook needs `REVENUECAT_WEBHOOK_AUTH` in `/opt/laro/.env`
-  (exact Authorization header; already set on the VPS — not required as a
-  Cursor secret). Webhook URL:
-  `https://laro.food/api/v1/subscriptions/webhook/revenuecat`.
-  GET returns a health JSON; events must POST with that Authorization.
-  Cloudflare Bot Fight previously challenged POSTs (“Just a moment…” HTML).
-  Path must be allowed through (Bot Fight off or a skip/config rule). Verified
-  public POST returns `{"status":"ok",...}` JSON when CF allows it. See
-  `android/REVENUECAT_SETUP_GUIDE.md` Step 3.
-  **Admin ↔ RevenueCat:** set `REVENUECAT_SECRET_API_KEY=sk_…` (project Secret
-  API key — not `goog_`) so Admin → Subscriptions grant/revoke also grant/revoke
-  promotional entitlement `Laro Pro` (`REVENUECAT_ENTITLEMENT_ID`). UI can Check /
-  Sync RC per user. Paid Play subs (`source=revenuecat`) are not revoked in RC
-  when admin clears Laro DB. Laro Postgres remains the gating source of truth;
-  RC is the billing + client entitlement mirror.
-  Full local `assembleDebug` also needs
-  `android/app/google-services.json` (Firebase).
-  **Web Settings → Laro Pro:** shows backend `/subscriptions/status` (owner forever /
-  webhook sync). Web Billing checkout needs
-  `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…` (not the Play `goog_` key); injected at
-  container start via `frontend/docker-entrypoint.sh`. `rcb_` / `goog_` are
-  **publishable** SDK keys (expected in the client); do not confuse with `sk_…`
-  or webhook auth. Also create Web Billing
-  products in the RC dashboard (API cannot) and attach them to `$rc_weekly` /
-  `$rc_monthly` + entitlement `Laro Pro` — see `android/REVENUECAT_SETUP_GUIDE.md`
-  §3.6. Without key/products, UI links to Play Store.
+- **Billing (Lemon Squeezy only — no Google Play pay):** `docs/LEMON_SQUEEZY_BILLING.md`.
+  Web checkout `POST /api/v1/subscriptions/checkout`, webhook
+  `POST /api/v1/subscriptions/webhook/lemonsqueezy`, `LEMONSQUEEZY_*` env.
+  No `purchases-js`, no Play billing, no in-app RC paywall. Android: Pro only via
+  `laro.food/settings` (same account). Admin: `GET /admin/subscriptions/billing-overview`.
+  Retire legacy RC/Play: `docs/MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md`.
+  Full local `assembleDebug` still needs `android/app/google-services.json` (Firebase).
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
-  `role=super_admin` are always Pro on the backend; Android Pro is RevenueCat
-  **or** `GET /subscriptions/status` / auth `is_pro` (not RC entitlement alone).
-  **Pro offering UI:** custom Android paywall (`PaywallScreen` + `PaywallBenefits`)
-  uses food-first benefits and period-aware CTAs; prefer Annual → Monthly → Weekly
-  when those packages exist on offering `default`. Web Settings mirrors the same
-  benefit list. Dashboard native paywalls should stay in sync (see setup guide §2.10).
-  **Account seamlessness:** login + `/auth/me` (+ OAuth callbacks) always attach
-  `is_pro` / `is_owner` / `is_lifetime` via `user_subscription_fields`. Web Settings
-  Laro Pro falls back to those auth flags if `/subscriptions/status` fails, so owner
-  never flashes Free. Android ORs RC entitlement with backend Pro from auth/status.
+  `role=super_admin` are always Pro on the backend.
+  **Pro UI:** Settings → Laro Pro (`SubscriptionSection` + LS checkout only).
+  **Account seamlessness:** login + `/auth/me` attach `is_pro` / `is_owner` /
+  `is_lifetime` via `user_subscription_fields`. Android uses backend Pro from auth/status.
   **Security (private data):** JWTs require a live `sessions` row (logout/password
   reset revoke access). Recipe reads enforce author/household/admin via
   `utils/authorization.py`. Password-reset/deletion tokens are never returned in API
-  JSON unless `ALLOW_INSECURE_TOKEN_RESPONSE=true` (local only). RevenueCat webhooks
-  fail closed without `REVENUECAT_WEBHOOK_AUTH`. `JWT_SECRET` is required in compose;
+  JSON unless `ALLOW_INSECURE_TOKEN_RESPONSE=true` (local only). `JWT_SECRET` is required in compose;
   `DEBUG_MODE` defaults false. After deploy, users may need to **log in again** once.
   Client i18n keys avoid `*Password:"…"` shapes that secret scanners flag as hardcoded
   credentials (labels use `pwd*` / `*Pwd*` keys). SPA edge headers (Caddy): enforcing

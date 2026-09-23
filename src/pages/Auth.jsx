@@ -420,6 +420,10 @@ export const Login = () => {
             </Link>
           </p>
           <p className="text-center text-xs text-muted-foreground mt-4">
+            <Link to="/terms-of-service" className="hover:text-laro">
+              {t('termsOfService')}
+            </Link>
+            {' · '}
             <Link to="/privacy-policy" className="hover:text-laro">
               {t('privacyPolicy')}
             </Link>
@@ -780,7 +784,11 @@ export const Register = () => {
           </p>
 
           <p className="text-center text-xs text-muted-foreground mt-4">
-            {t('agreePrivacyPrefix')}{' '}
+            {t('accountLegalIntro')}{' '}
+            <Link to="/terms-of-service" className="text-laro hover:underline">
+              {t('termsOfService')}
+            </Link>
+            {' '}{t('legalAndConnector')}{' '}
             <Link to="/privacy-policy" className="text-laro hover:underline">
               {t('privacyPolicy')}
             </Link>

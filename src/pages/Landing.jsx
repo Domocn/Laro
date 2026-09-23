@@ -464,6 +464,9 @@ export const Landing = () => {
               </div>
             </div>
             <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-x-6 gap-y-2 text-sm">
+              <Link to="/terms-of-service" className="hover:text-[#f4f6f4] transition-colors">
+                {t('terms')}
+              </Link>
               <Link to="/privacy-policy" className="hover:text-[#f4f6f4] transition-colors">
                 {t('privacy')}
               </Link>
