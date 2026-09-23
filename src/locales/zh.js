@@ -442,7 +442,9 @@ yourImports: 'Your imports',
   manageSubscription: '管理订阅',
   openPlayStore: '打开 Play 商店',
   laroProSectionSubtitle: '高级导入、Laro Chat，无免费版上限。',
-  laroProSyncedHint: 'Powered by RevenueCat · 与账户同步',
+  laroProSyncedHint: '通过 Lemon Squeezy 安全结账 · 与账户同步',
+  manageBillingLegacyRevenueCatHint:
+    '此订阅通过 RevenueCat 或 Google Play 计费 — 请使用应用商店或购买时的邮箱，或联系 app@laro.food。',
   signInToSubscribe: '登录以解锁 Laro Pro',
   webCheckoutUnavailableHint:
     '无法打开结账。请刷新页面后重试。',

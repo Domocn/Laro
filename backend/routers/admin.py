@@ -976,6 +976,43 @@ async def revoke_subscription(
         "revenuecat": revenuecat,
     }
 
+@router.get("/subscriptions/billing-overview")
+async def billing_migration_overview(admin: dict = Depends(get_admin_user)):
+    """Counts by subscription_source for RC → Lemon Squeezy migration."""
+    from database.connection import get_db
+    from services.lemonsqueezy import is_lemon_squeezy_enabled
+    from services.revenuecat import is_revenuecat_api_configured
+
+    pool = await get_db()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT COALESCE(subscription_source, 'unknown') AS source,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (
+                     WHERE subscription_status IN ('premium', 'trial')
+                       AND (
+                         subscription_expires IS NULL
+                         OR subscription_expires > NOW()
+                       )
+                   ) AS active
+            FROM users
+            GROUP BY COALESCE(subscription_source, 'unknown')
+            ORDER BY total DESC
+            """
+        )
+    return {
+        "billing_provider": "lemonsqueezy",
+        "lemonsqueezy_configured": is_lemon_squeezy_enabled(),
+        "revenuecat_api_configured": is_revenuecat_api_configured(),
+        "by_source": [
+            {"source": r["source"], "total": r["total"], "active": r["active"]}
+            for r in rows
+        ],
+        "migration_doc": "docs/MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md",
+    }
+
+
 @router.get("/subscriptions")
 async def list_subscriptions(
     admin: dict = Depends(get_admin_user),
@@ -984,6 +1021,7 @@ async def list_subscriptions(
     """List all users with their subscription status"""
     from database.connection import get_db
     from services.revenuecat import is_revenuecat_api_configured
+    from services.lemonsqueezy import is_lemon_squeezy_enabled
 
     pool = await get_db()
     async with pool.acquire() as conn:
@@ -1000,6 +1038,8 @@ async def list_subscriptions(
             )
 
     return {
+        "billing_provider": "lemonsqueezy",
+        "lemonsqueezy_configured": is_lemon_squeezy_enabled(),
         "revenuecat_api_configured": is_revenuecat_api_configured(),
         "subscriptions": [
             {

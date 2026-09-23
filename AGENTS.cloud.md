@@ -113,29 +113,14 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   honors `timerNotifications` + haptics. Android `applyNeuroPreset()` applies
   full bundles (not single toggles) and best-effort syncs to `/preferences`.
   Focus/simplified calm the Android home (hide stats / getting-started).
-- **RevenueCat (Play):** public SDK key via `android/local.properties`
-  `REVENUECAT_API_KEY=goog_…` or env/Cursor secret `REVENUECAT_API_KEY`
-  (Gradle `localOrGradleProperty`). Release CI is wired:
-  `auto-release-on-merge.yml` and `bump-version.yml` pass
-  `REVENUECAT_API_KEY: ${{ secrets.REVENUECAT_API_KEY }}` into
-  `./gradlew bundleRelease` (keep the GitHub Actions secret in sync).
-  Backend webhook needs `REVENUECAT_WEBHOOK_AUTH` in `/opt/laro/.env`
-  (exact Authorization header; already set on the VPS — not required as a
-  Cursor secret). Webhook URL:
-  `https://laro.food/api/v1/subscriptions/webhook/revenuecat`.
-  GET returns a health JSON; events must POST with that Authorization.
-  Cloudflare Bot Fight previously challenged POSTs (“Just a moment…” HTML).
-  Path must be allowed through (Bot Fight off or a skip/config rule). Verified
-  public POST returns `{"status":"ok",...}` JSON when CF allows it. See
-  `android/REVENUECAT_SETUP_GUIDE.md` Step 3.
-  **Admin ↔ RevenueCat:** set `REVENUECAT_SECRET_API_KEY=sk_…` (project Secret
-  API key — not `goog_`) so Admin → Subscriptions grant/revoke also grant/revoke
-  promotional entitlement `Laro Pro` (`REVENUECAT_ENTITLEMENT_ID`). UI can Check /
-  Sync RC per user. Paid Play subs (`source=revenuecat`) are not revoked in RC
-  when admin clears Laro DB. Laro Postgres remains the gating source of truth;
-  RC is the billing + client entitlement mirror.
-  Full local `assembleDebug` also needs
-  `android/app/google-services.json` (Firebase).
+- **Billing migration (RC → Lemon Squeezy):** follow
+  `docs/MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md`. Admin:
+  `GET /admin/subscriptions/billing-overview` for counts by `subscription_source`.
+  **Legacy RevenueCat (Play / old web):** keep `REVENUECAT_WEBHOOK_AUTH` and
+  `POST /subscriptions/webhook/revenuecat` until no active `source=revenuecat` subs.
+  Optional `REVENUECAT_SECRET_API_KEY` for admin RC sync only — not used for web checkout.
+  Android should stop new RC purchases; Pro via laro.food Settings + LS.
+  Full local `assembleDebug` still needs `android/app/google-services.json` (Firebase).
   **Web Settings → Laro Pro:** backend `/subscriptions/status` (owner forever +
   webhook sync). **Checkout: Lemon Squeezy** (`docs/LEMON_SQUEEZY_BILLING.md`) —
   `LEMONSQUEEZY_*` env, webhook `POST /api/v1/subscriptions/webhook/lemonsqueezy`,

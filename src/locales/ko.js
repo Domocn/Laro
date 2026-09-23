@@ -442,7 +442,9 @@ yourImports: 'Your imports',
   manageSubscription: '구독 관리',
   openPlayStore: 'Play 스토어 열기',
   laroProSectionSubtitle: '고급 가져오기, Laro Chat, 무료 한도 없음.',
-  laroProSyncedHint: 'Powered by RevenueCat · 계정과 동기화',
+  laroProSyncedHint: 'Lemon Squeezy 보안 결제 · 계정과 동기화',
+  manageBillingLegacyRevenueCatHint:
+    '이 구독은 RevenueCat 또는 Google Play로 결제되었습니다 — 스토어 또는 구매 이메일을 이용하거나 app@laro.food로 문의하세요.',
   signInToSubscribe: '로그인하여 Laro Pro 잠금 해제',
   webCheckoutUnavailableHint:
     '결제를 열 수 없습니다. 페이지를 새로고침한 뒤 다시 시도하세요.',

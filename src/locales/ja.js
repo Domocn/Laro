@@ -442,7 +442,9 @@ yourImports: 'Your imports',
   manageSubscription: 'サブスクを管理',
   openPlayStore: 'Play ストアを開く',
   laroProSectionSubtitle: '高度なインポート、Laro Chat、無料枠の上限なし。',
-  laroProSyncedHint: 'Powered by RevenueCat · アカウントと同期',
+  laroProSyncedHint: 'Lemon Squeezy による安全な決済 · アカウントと同期',
+  manageBillingLegacyRevenueCatHint:
+    'このサブスクリプションは RevenueCat または Google Play 経由です — ストアまたは購入時のメールをご利用ください。app@laro.food もどうぞ。',
   signInToSubscribe: 'サインインして Laro Pro を解除',
   webCheckoutUnavailableHint:
     'チェックアウトを開けませんでした。ページを更新して再度お試しください。',

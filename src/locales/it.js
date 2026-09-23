@@ -442,7 +442,9 @@ yourImports: 'Your imports',
   manageSubscription: 'Gestisci abbonamento',
   openPlayStore: 'Apri Play Store',
   laroProSectionSubtitle: 'Import avanzati, Laro Chat e nessun limite del piano gratuito.',
-  laroProSyncedHint: 'Powered by RevenueCat · sincronizzato con il tuo account',
+  laroProSyncedHint: 'Checkout sicuro con Lemon Squeezy · sincronizzato con il tuo account',
+  manageBillingLegacyRevenueCatHint:
+    'Questo abbonamento è stato fatturato via RevenueCat o Google Play — usa lo store o l’e-mail di acquisto, o scrivi a app@laro.food.',
   signInToSubscribe: 'Accedi per sbloccare Laro Pro',
   webCheckoutUnavailableHint:
     'Impossibile aprire il checkout. Aggiorna la pagina e riprova.',

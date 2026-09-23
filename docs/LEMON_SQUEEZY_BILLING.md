@@ -47,3 +47,5 @@ Do not sell new subs in-app. Deep-link or instruct users to **laro.food → Sett
 ## Legacy RevenueCat
 
 Keep `REVENUECAT_WEBHOOK_AUTH` and `/subscriptions/webhook/revenuecat` until all legacy RC/Play subs have migrated or expired. Do not set `REACT_APP_REVENUECAT_WEB_API_KEY` for new deployments.
+
+**Migration runbook:** [`MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md`](./MIGRATE_REVENUECAT_TO_LEMON_SQUEEZY.md)
