@@ -4,7 +4,7 @@ import { ArrowLeft, Shield, Mail } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
 export const PrivacyPolicy = () => {
-  const lastUpdated = 'August 23, 2026';
+  const lastUpdated = 'September 23, 2026';
   const contactEmail = 'privacy@laro.food';
   const supportEmail = 'app@laro.food';
 
@@ -149,10 +149,28 @@ export const PrivacyPolicy = () => {
           <section className="bg-card rounded-2xl p-6 border border-border">
             <h2 className="text-xl font-semibold text-foreground mt-0">Subscriptions and payments</h2>
             <p className="text-muted-foreground">
-              Paid plans on the web are processed by Lemon Squeezy (merchant of record). Some older subscriptions may still be managed via RevenueCat or app stores. We receive subscription status and related identifiers so we can unlock Pro features. We do not store your full payment card numbers on Laro servers—payment processors handle payment details.
+              <strong>Laro Pro</strong> on the web is purchased through{' '}
+              <a href="https://laro.food/settings" className="text-laro hover:underline">Settings → Unlock Laro Pro</a>.
+              Checkout and recurring billing are handled by{' '}
+              <a href="https://www.lemonsqueezy.com" className="text-laro hover:underline" rel="noopener noreferrer" target="_blank">Lemon Squeezy</a>{' '}
+              as merchant of record (payment, tax, and invoicing per their{' '}
+              <a href="https://www.lemonsqueezy.com/privacy" className="text-laro hover:underline" rel="noopener noreferrer" target="_blank">privacy policy</a>{' '}
+              and buyer terms). We send Lemon Squeezy the minimum needed to complete checkout—typically your Laro user id, account email, and plan choice—and receive webhooks with subscription status, order identifiers, and renewal dates so we can unlock Pro features on your account.
+            </p>
+            <p className="text-muted-foreground">
+              We do not store full payment card numbers on Laro servers. Manage or cancel web subscriptions through the Lemon Squeezy customer portal (linked from Settings when available) or the link in your purchase confirmation email. Billing questions may also go to{' '}
+              <a href={`mailto:${supportEmail}`} className="text-laro hover:underline">{supportEmail}</a>.
+            </p>
+            <p className="text-muted-foreground">
+              <strong>Google Play and other app stores:</strong> If you subscribed in an app store, that store processes payment under its own privacy terms. We receive entitlement or subscription status from the store or legacy billing partners so Pro access stays in sync.
+            </p>
+            <p className="text-muted-foreground">
+              <strong>Legacy RevenueCat / older web billing:</strong> Some accounts still billed through RevenueCat, Paddle, or Stripe (via older integrations) remain on those channels until they expire or you cancel there. We keep the RevenueCat webhook only to sync those grandfathered subscriptions.
             </p>
             <p className="text-muted-foreground mb-0">
-              Referral trials and reward redemptions are recorded on your account so we can apply benefits accurately.
+              Referral trials and reward redemptions are recorded on your account so we can apply benefits accurately. See our{' '}
+              <Link to="/terms-of-service" className="text-laro hover:underline">Terms of Service</Link>{' '}
+              for subscription rules, trials, and refunds.
             </p>
           </section>
 
@@ -197,8 +215,9 @@ export const PrivacyPolicy = () => {
               <li><strong>Firebase (Google):</strong> Push notifications (FCM), Crashlytics, and Android Analytics</li>
               <li><strong>Google / GitHub:</strong> Optional OAuth sign-in</li>
               <li><strong>Google Health API:</strong> Optional nutrition write when you link the integration</li>
-              <li><strong>Lemon Squeezy:</strong> Web subscription checkout and billing</li>
-              <li><strong>RevenueCat (legacy) + app stores as applicable:</strong> Older subscription records</li>
+              <li><strong>Lemon Squeezy:</strong> Web subscription checkout, billing, tax, and customer portal</li>
+              <li><strong>Google Play (and other app stores as applicable):</strong> In-app purchases where offered</li>
+              <li><strong>RevenueCat (legacy):</strong> Webhook sync for grandfathered Play / older web subscriptions only</li>
               <li><strong>Email delivery (e.g. Resend or SMTP):</strong> Transactional messages such as verification and password reset</li>
               <li><strong>AI providers (e.g. Groq / OpenAI-compatible APIs, or Ollama when configured):</strong> Processing AI feature requests</li>
               <li><strong>Open Food Facts — Open Prices:</strong> Public price catalog sync used for cost estimates (where enabled)</li>
@@ -242,7 +261,7 @@ export const PrivacyPolicy = () => {
           <section className="bg-card rounded-2xl p-6 border border-border">
             <h2 className="text-xl font-semibold text-foreground mt-0">International Processing</h2>
             <p className="text-muted-foreground mb-0">
-              Primary hosted application data is stored in the United Kingdom. Some processors (for example Google Firebase, OAuth providers, RevenueCat, email, or cloud AI) may process data in other countries. Where required, we rely on appropriate safeguards offered by those providers and applicable law.
+              Primary hosted application data is stored in the United Kingdom. Some processors (for example Lemon Squeezy, Google Firebase, OAuth providers, legacy RevenueCat sync, email, or cloud AI) may process data in other countries. Where required, we rely on appropriate safeguards offered by those providers and applicable law.
             </p>
           </section>
 
@@ -278,6 +297,7 @@ export const PrivacyPolicy = () => {
           <p>&copy; {new Date().getFullYear()} Laro. All rights reserved.</p>
           <div className="flex justify-center gap-6 mt-4">
             <Link to="/" className="hover:text-foreground transition-colors">Home</Link>
+            <Link to="/terms-of-service" className="hover:text-foreground transition-colors">Terms of Service</Link>
             <Link to="/privacy-policy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
           </div>
         </div>

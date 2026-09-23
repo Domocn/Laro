@@ -2364,9 +2364,15 @@ export const Settings = () => {
         >
           <p>{t('brandName')} v{serverInfo?.version || '1.0.0'}</p>
           <p className="mt-1">Self-hostable recipe app for families</p>
-          <Link to="/privacy-policy" className="mt-2 inline-block hover:text-laro transition-colors">
-            {t('privacyPolicy')}
-          </Link>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            <Link to="/terms-of-service" className="hover:text-laro transition-colors">
+              {t('termsOfService')}
+            </Link>
+            <span aria-hidden="true">·</span>
+            <Link to="/privacy-policy" className="hover:text-laro transition-colors">
+              {t('privacyPolicy')}
+            </Link>
+          </div>
         </motion.section>
       </div>
     </Layout>

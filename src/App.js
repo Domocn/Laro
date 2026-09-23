@@ -46,6 +46,7 @@ const UserPreferences = lazy(() => import('./pages/UserPreferences').then(m => (
 const SetupWizard = lazy(() => import('./pages/SetupWizard').then(m => ({ default: m.SetupWizard })));
 const FeatureWalkthrough = lazy(() => import('./components/FeatureWalkthrough').then(m => ({ default: m.FeatureWalkthrough })));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = lazy(() => import('./pages/TermsOfService').then(m => ({ default: m.TermsOfService })));
 const Cookbooks = lazy(() => import('./pages/Cookbooks').then(m => ({ default: m.Cookbooks })));
 const Pantry = lazy(() => import('./pages/Pantry').then(m => ({ default: m.Pantry })));
 
@@ -143,6 +144,7 @@ function AppRoutes() {
         <Route path="/shared/:shareCode" element={<SharedRecipe />} />
         <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/terms-of-service" element={<TermsOfService />} />
 
         {/* Protected Routes */}
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
