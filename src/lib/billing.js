@@ -16,6 +16,16 @@ export function isLemonSqueezyBilling(config) {
   return config?.provider === 'lemonsqueezy' && Array.isArray(config.plans) && config.plans.length > 0;
 }
 
+export function isRevenueCatBilling(config) {
+  return config?.provider === 'revenuecat';
+}
+
+export function revenueCatBillingEngine(config) {
+  if (!isRevenueCatBilling(config)) return null;
+  const engine = (config?.engine || 'paddle').toLowerCase();
+  return engine;
+}
+
 export async function startLemonSqueezyCheckout(plan = 'monthly') {
   const res = await subscriptionsApi.createCheckout({ plan });
   const url = res?.data?.url;

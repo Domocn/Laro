@@ -137,12 +137,12 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   Full local `assembleDebug` also needs
   `android/app/google-services.json` (Firebase).
   **Web Settings → Laro Pro:** backend `/subscriptions/status` (owner forever +
-  webhook sync). **Preferred checkout: Lemon Squeezy** — set `LEMONSQUEEZY_API_KEY`,
-  `LEMONSQUEEZY_STORE_ID`, variant IDs, and `LEMONSQUEEZY_WEBHOOK_SECRET`; webhook
-  POST `/api/v1/subscriptions/webhook/lemonsqueezy`. Frontend calls
-  `/subscriptions/checkout` (auth) and redirects to the LS checkout URL with
-  `custom[user_id]` for account binding. Legacy RevenueCat Web Billing still works
-  if `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…` and LS is not configured.
+  webhook sync). **Default checkout: RevenueCat Web** with **Paddle Billing** as MoR
+  (configure Paddle in RC → Web, import products, attach to offering `default`; see
+  `docs/REVENUECAT_PADDLE_WEB.md`). Frontend: `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…`
+  + `purchases-js` paywall; backend webhook unchanged:
+  `POST /api/v1/subscriptions/webhook/revenuecat`. Optional direct Lemon Squeezy only
+  when `LARO_BILLING_PROVIDER=lemonsqueezy` and LS env vars are set.
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
   `role=super_admin` are always Pro on the backend; Android Pro is RevenueCat
   **or** `GET /subscriptions/status` / auth `is_pro` (not RC entitlement alone).

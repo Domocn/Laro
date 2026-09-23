@@ -20,8 +20,10 @@ import {
 } from '../lib/revenueCat';
 import {
   isLemonSqueezyBilling,
+  isRevenueCatBilling,
   loadBillingConfig,
   openLemonSqueezyCustomerPortal,
+  revenueCatBillingEngine,
   startLemonSqueezyCheckout,
 } from '../lib/billing';
 import { useLanguage } from '../context/LanguageContext';
@@ -42,7 +44,7 @@ export const LARO_PRO_OFFERING_BENEFITS = [
  * Status comes from the Laro backend (synced via RC webhooks + owner forever).
  * Falls back to auth user Pro flags when /subscriptions/status is briefly unavailable
  * so owner/Pro accounts never flash as Free after login.
- * Checkout via Lemon Squeezy (preferred) or legacy RevenueCat Web Billing (rcb_…).
+ * Checkout via RevenueCat Web (Paddle or RC Billing in dashboard) or optional Lemon Squeezy.
  */
 export function SubscriptionSection({ userId, userEmail, user }) {
   const { t } = useLanguage();
@@ -59,6 +61,8 @@ export function SubscriptionSection({ userId, userEmail, user }) {
   const [checkoutPlan, setCheckoutPlan] = useState('monthly');
   const webBilling = isRevenueCatWebConfigured();
   const lemonBilling = isLemonSqueezyBilling(billingConfig);
+  const rcBillingPreferred = isRevenueCatBilling(billingConfig) || !billingConfig?.provider;
+  const rcEngine = revenueCatBillingEngine(billingConfig);
 
   const load = useCallback(async () => {
     try {
@@ -247,7 +251,9 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           {t('laroProSectionSubtitle')}
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {t('laroProSyncedHint')}
+          {rcEngine === 'paddle' && rcBillingPreferred && !lemonBilling
+            ? t('laroProRcPaddleHint')
+            : t('laroProSyncedHint')}
         </p>
       </div>
 

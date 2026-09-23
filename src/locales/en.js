@@ -574,7 +574,9 @@ yourImports: 'Your imports',
   manageSubscription: 'Manage subscription',
   openPlayStore: 'Open Play Store',
   laroProSectionSubtitle: 'Advanced imports, Laro Chat, and no free-tier caps.',
-  laroProSyncedHint: 'Secure checkout via Lemon Squeezy · synced with your account',
+  laroProSyncedHint: 'Powered by RevenueCat · synced with your account',
+  laroProRcPaddleHint:
+    'Checkout via RevenueCat · Paddle handles billing & tax · synced with your account',
   signInToSubscribe: 'Sign in to unlock Laro Pro',
   webCheckoutUnavailableHint:
     'Checkout could not be opened. Refresh this page and try again.',
