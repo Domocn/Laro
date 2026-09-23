@@ -19,6 +19,7 @@ from workers.jobs import enqueue_job
 from utils.security import is_safe_external_url, sanitize_error_message
 from utils.ai_quota import (
     require_ai_quota,
+    require_laro_chat_pro,
     consume_ai_quota,
     get_quota_status,
     is_premium_user,
@@ -81,6 +82,27 @@ async def call_llm_metered(
     if not is_premium_user(user) and not usage_meta.get("cached"):
         await consume_ai_quota(user["id"])
     return result
+
+
+async def call_llm_laro_chat(
+    client,
+    system_prompt: str,
+    user_prompt: str,
+    user: dict,
+    *,
+    format_json: bool = False,
+    max_tokens: int = 2000,
+) -> str:
+    """Laro Chat + cook-mode assistant — Pro only; does not use free import quota."""
+    await require_laro_chat_pro(user)
+    return await call_llm(
+        client,
+        system_prompt,
+        user_prompt,
+        user["id"],
+        format_json=format_json,
+        max_tokens=max_tokens,
+    )
 
 
 @router.get("/quota")
@@ -4576,7 +4598,7 @@ async def chat(
     data: ChatRequest,
     user: dict = Depends(get_current_user)
 ):
-    """General AI chat assistant for cooking questions (metered; persists to chat memory)."""
+    """Laro Chat — cooking Q&A (Pro only, unlimited; persists to chat memory)."""
     import httpx
 
     system_prompt = _with_food_topic_scope(
@@ -4658,7 +4680,7 @@ Formatting rules (important — replies are shown in a small chat bubble):
 
     try:
         async with httpx.AsyncClient() as client:
-            result = await call_llm_metered(
+            result = await call_llm_laro_chat(
                 client,
                 system_prompt,
                 user_message,
@@ -4690,7 +4712,7 @@ async def cooking_assistant(
     data: CookingAssistantRequest,
     user: dict = Depends(get_current_user)
 ):
-    """AI assistant for cooking questions during cook mode"""
+    """Cook-mode Laro Chat (Pro only, unlimited)."""
 
     # Check if user is asking for a recipe creation
     recipe_keywords = [
@@ -4813,9 +4835,9 @@ User Question: {data.question}"""
         if http_client is None:
             import httpx
             async with httpx.AsyncClient() as client:
-                result = await call_llm_metered(client, system_prompt, context, user)
+                result = await call_llm_laro_chat(client, system_prompt, context, user)
         else:
-            result = await call_llm_metered(http_client, system_prompt, context, user)
+            result = await call_llm_laro_chat(http_client, system_prompt, context, user)
 
         if not result or len(result.strip()) == 0:
             return {"answer": "I'm having trouble thinking right now. Try asking in a different way!"}

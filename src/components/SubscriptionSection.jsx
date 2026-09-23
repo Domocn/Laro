@@ -26,12 +26,13 @@ const PLAY_STORE_URL =
 
 /** Shared Laro Pro benefit lines (food-first; mirrors Android paywall). */
 export const LARO_PRO_OFFERING_BENEFITS = [
-  'Unlimited AI meal plans & recipe imports',
-  'Scan recipes from photos and video',
+  'Unlimited recipe imports from links, photos & video',
+  'Scan cookbook pages and save clean step-by-step recipes',
   'Unlimited cookbook — no recipe caps',
   'Barcode product lookup while shopping',
   'Household kitchen sharing with friends',
-  'AI cooking assistant while you cook',
+  'Unlimited Laro Chat while you cook and plan',
+  'Cook mode with timers and step-by-step guidance',
 ];
 
 /**

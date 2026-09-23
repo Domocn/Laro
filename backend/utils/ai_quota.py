@@ -106,3 +106,23 @@ async def consume_ai_quota_if_free(user: dict, usage_meta: dict | None = None) -
     if usage_meta and usage_meta.get("cached"):
         return
     await consume_ai_quota(user["id"])
+
+
+async def require_laro_chat_pro(user: dict) -> None:
+    """
+    Laro Chat (global chat + cook-mode assistant) is unlimited on Pro only.
+    Does not consume the free import/LLM quota pool.
+    """
+    if is_premium_user(user):
+        return
+    raise HTTPException(
+        status_code=402,
+        detail={
+            "error": "laro_chat_pro_required",
+            "message": (
+                "Laro Chat is unlimited with Laro Pro. Upgrade in Settings to ask "
+                "cooking questions anytime."
+            ),
+            "upgrade_required": True,
+        },
+    )

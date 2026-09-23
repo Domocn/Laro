@@ -17,6 +17,12 @@ export function getAiQuotaErrorMessage(
 ) {
   const detail = error?.response?.data?.detail;
   if (isAiQuotaExceeded(error)) {
+    if (detail?.error === 'laro_chat_pro_required') {
+      return (
+        detail?.message ||
+        'Laro Chat is unlimited with Laro Pro. Upgrade in Settings to keep asking cooking questions.'
+      );
+    }
     return (
       detail?.message ||
       "You've used your 3 free AI uses. Upgrade to Premium for unlimited AI."
@@ -49,7 +55,7 @@ export function isAiQuotaExceeded(error) {
   return (
     error?.response?.status === 402 ||
     code === 'ai_quota_exceeded' ||
-    code === 'ai_quota_exceeded' ||
+    code === 'laro_chat_pro_required' ||
     detail?.upgrade_required === true
   );
 }
