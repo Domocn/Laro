@@ -39,7 +39,7 @@ export function isRevenueCatWebConfigured() {
 function requireAppUserId(appUserId) {
   const id = String(appUserId || '').trim();
   if (!id || id.startsWith('anon_')) {
-    throw new Error('Sign in to subscribe on the web');
+    throw new Error('Sign in to subscribe');
   }
   return id;
 }

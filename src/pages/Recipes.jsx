@@ -390,11 +390,6 @@ export const Recipes = () => {
             </div>
             <div className="flex flex-wrap gap-2">
               <Link to="/settings">
-                <Button size="sm" className="rounded-full bg-laro hover:bg-laro-dark">
-                  {t('upgradeToPro')}
-                </Button>
-              </Link>
-              <Link to="/settings">
                 <Button size="sm" variant="outline" className="rounded-full">
                   {t('openRewards')}
                 </Button>
