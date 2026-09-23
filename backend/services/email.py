@@ -694,7 +694,7 @@ async def send_subscription_welcome_email(to: str, name: str = "there") -> bool:
                 <p style="margin: 0 0 16px 0; font-size: 13px; font-weight: 600; color: #5BB080; text-transform: uppercase; letter-spacing: 1px;">Your Pro kitchen</p>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
-                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">🤖</span> <strong>Unlimited AI meal plans</strong> — "What's for dinner?" solved anytime</td>
+                        <td style="padding: 8px 0;"><span style="margin-right: 10px;">📅</span> <strong>Meal planning without limits</strong> — sketch the week from your own recipes</td>
                     </tr>
                     <tr>
                         <td style="padding: 8px 0;"><span style="margin-right: 10px;">📷</span> <strong>Photo &amp; video imports</strong> — scan cookbooks and pull recipes from TikTok</td>
@@ -741,7 +741,7 @@ async def send_subscription_welcome_email(to: str, name: str = "there") -> bool:
                         </td>
                         <td style="padding-left: 12px;">
                             <strong style="color: #1a1a1a;">Plan your week</strong><br>
-                            <span style="color: #666; font-size: 14px;">Drag recipes to your meal plan or let AI surprise you</span>
+                            <span style="color: #666; font-size: 14px;">Drag recipes onto your calendar or auto-fill from your cookbook</span>
                         </td>
                     </tr>
                 </table>
@@ -846,7 +846,7 @@ async def send_subscription_expired_email(to: str, name: str = "there") -> bool:
     {get_info_card('''
         <p style="margin: 0 0 16px 0; font-weight: 600; color: #2D3B2D;">You'll be missing:</p>
         <div style="color: #8B9B8B;">
-            <p style="margin: 8px 0; text-decoration: line-through;"> Unlimited AI meal plans</p>
+            <p style="margin: 8px 0; text-decoration: line-through;"> Unlimited meal planning &amp; imports</p>
             <p style="margin: 8px 0; text-decoration: line-through;"> Photo &amp; video recipe imports</p>
             <p style="margin: 8px 0; text-decoration: line-through;"> Barcode &amp; store helpers</p>
             <p style="margin: 8px 0; text-decoration: line-through;"> Unlimited cookbook</p>
