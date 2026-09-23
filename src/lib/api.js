@@ -433,7 +433,7 @@ export const aiApi = {
   /** Import a weekly meal plan from a public URL (Huel guides, meal blogs, etc.) */
   importMealPlanUrl: (payload) =>
     api.post('/ai/import-meal-plan-url', payload, { timeout: 120000 }),
-  /** AI chat (metered). Pass session_id to continue a saved conversation.
+  /** Laro Chat (Pro only, unlimited). Pass session_id to continue a saved conversation.
    *  Optional recipeContext scopes answers to the recipe the user is viewing. */
   chat: (message, history = [], sessionId = null, recipeContext = null) =>
     api.post(

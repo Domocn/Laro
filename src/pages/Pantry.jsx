@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { RecipeCard } from '../components/RecipeCard';
 import { pantryApi, recipeApi, aiApi } from '../lib/api';
 import { useLanguage } from '../context/LanguageContext';
 import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
-import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { toastAiQuotaError } from '../lib/aiQuota';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -79,6 +79,7 @@ const commonIngredients = [
 ];
 
 export const Pantry = () => {
+  const navigate = useNavigate();
   const { t } = useLanguage();
   const { confirmActions } = useAccessibility();
   // Pantry state
@@ -322,12 +323,11 @@ export const Pantry = () => {
         toast.info(t('toastNoExactMatches'));
       }
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          `${t('toastLoadRecipesFailed')} (E-PT007)`
-        )
-      );
+      toastAiQuotaError(error, {
+        navigate,
+        fallback: `${t('toastLoadRecipesFailed')} (E-PT007)`,
+        upgradeLabel: t('unlockLaroPro'),
+      });
     } finally {
       setSearchLoading(false);
     }
