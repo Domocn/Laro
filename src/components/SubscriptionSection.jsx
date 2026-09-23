@@ -18,6 +18,12 @@ import {
   isRevenueCatWebConfigured,
   presentRevenueCatPaywall,
 } from '../lib/revenueCat';
+import {
+  isLemonSqueezyBilling,
+  loadBillingConfig,
+  openLemonSqueezyCustomerPortal,
+  startLemonSqueezyCheckout,
+} from '../lib/billing';
 import { useLanguage } from '../context/LanguageContext';
 import { RewardStore } from './RewardStore';
 
@@ -36,7 +42,7 @@ export const LARO_PRO_OFFERING_BENEFITS = [
  * Status comes from the Laro backend (synced via RC webhooks + owner forever).
  * Falls back to auth user Pro flags when /subscriptions/status is briefly unavailable
  * so owner/Pro accounts never flash as Free after login.
- * Optional Web Billing paywall when REACT_APP_REVENUECAT_WEB_API_KEY (rcb_…) is set.
+ * Checkout via Lemon Squeezy (preferred) or legacy RevenueCat Web Billing (rcb_…).
  */
 export function SubscriptionSection({ userId, userEmail, user }) {
   const { t } = useLanguage();
@@ -49,15 +55,23 @@ export function SubscriptionSection({ userId, userEmail, user }) {
   const [webPackagesReady, setWebPackagesReady] = useState(null);
   const [statusFailed, setStatusFailed] = useState(false);
   const [freeLimits, setFreeLimits] = useState(null);
+  const [billingConfig, setBillingConfig] = useState(null);
+  const [checkoutPlan, setCheckoutPlan] = useState('monthly');
   const webBilling = isRevenueCatWebConfigured();
+  const lemonBilling = isLemonSqueezyBilling(billingConfig);
 
   const load = useCallback(async () => {
     try {
-      const [subRes, quotaRes, catalogRes] = await Promise.all([
+      const [subRes, quotaRes, catalogRes, billCfg] = await Promise.all([
         subscriptionsApi.getStatus().catch(() => null),
         aiApi.quota().catch(() => null),
         rewardsApi.catalog().catch(() => null),
+        loadBillingConfig(),
       ]);
+      setBillingConfig(billCfg);
+      if (billCfg?.plans?.length === 1) {
+        setCheckoutPlan(billCfg.plans[0].id);
+      }
       if (subRes?.data) {
         setStatus(subRes.data);
         setStatusFailed(false);
@@ -70,7 +84,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
         /* keep for future; limits already include bonuses */
       }
 
-      if (webBilling && userId) {
+      if (!isLemonSqueezyBilling(billCfg) && webBilling && userId) {
         try {
           const [rc, pkgs] = await Promise.all([
             fetchRevenueCatProStatus(userId),
@@ -84,6 +98,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           setWebPackagesReady(false);
         }
       } else {
+        setRcStatus(null);
         setWebPackagesReady(null);
       }
     } finally {
@@ -141,16 +156,28 @@ export function SubscriptionSection({ userId, userEmail, user }) {
   };
 
   const handleUpgradeWeb = async () => {
+    if (!userId) {
+      toast.error(t('signInToSubscribe'));
+      return;
+    }
+    if (lemonBilling) {
+      setPurchasing(true);
+      try {
+        await startLemonSqueezyCheckout(checkoutPlan);
+      } catch (e) {
+        console.error(e);
+        toast.error(e?.response?.data?.detail || e?.message || t('webCheckoutUnavailableHint'));
+      } finally {
+        setPurchasing(false);
+      }
+      return;
+    }
     if (!webBilling) {
       toast.error(t('webBillingKeyNeededHint'));
       return;
     }
     if (webPackagesReady === false) {
       toast.error(t('webBillingPackagesMissingHint'));
-      return;
-    }
-    if (!userId) {
-      toast.error(t('signInToSubscribe'));
       return;
     }
     setPurchasing(true);
@@ -187,7 +214,15 @@ export function SubscriptionSection({ userId, userEmail, user }) {
     }
   };
 
-  const handleManage = () => {
+  const handleManage = async () => {
+    if (lemonBilling || (status?.source || '').toLowerCase() === 'lemonsqueezy') {
+      try {
+        await openLemonSqueezyCustomerPortal();
+      } catch (e) {
+        toast.message(t('manageBillingNoPortalHint'));
+      }
+      return;
+    }
     if (rcStatus?.managementURL) {
       window.open(rcStatus.managementURL, '_blank', 'noopener,noreferrer');
       return;
@@ -321,11 +356,31 @@ export function SubscriptionSection({ userId, userEmail, user }) {
 
             <RewardStore />
 
+            {!isPro && lemonBilling && billingConfig.plans.length > 1 && (
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Billing period">
+                {billingConfig.plans.map((plan) => (
+                  <Button
+                    key={plan.id}
+                    type="button"
+                    size="sm"
+                    variant={checkoutPlan === plan.id ? 'default' : 'outline'}
+                    className="rounded-full"
+                    onClick={() => setCheckoutPlan(plan.id)}
+                  >
+                    {plan.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2 pt-1">
               {!isPro && (
                 <Button
                   onClick={handleUpgradeWeb}
-                  disabled={purchasing}
+                  disabled={
+                    purchasing
+                    || (!lemonBilling && (!webBilling || webPackagesReady === false))
+                  }
                   className="rounded-full bg-laro hover:bg-laro-dark"
                   data-testid="upgrade-pro-btn"
                 >

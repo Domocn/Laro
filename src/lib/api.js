@@ -897,6 +897,9 @@ export const rewardsApi = {
 // Subscription / RevenueCat (backend mirror + optional web billing)
 export const subscriptionsApi = {
   getStatus: () => api.get('/subscriptions/status'),
+  getBillingConfig: () => api.get('/subscriptions/billing-config'),
+  createCheckout: (data) => api.post('/subscriptions/checkout', data),
+  getCustomerPortal: () => api.get('/subscriptions/customer-portal'),
   sync: (data) => api.post('/subscriptions/sync', data),
 };
 

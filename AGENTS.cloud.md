@@ -136,15 +136,13 @@ private clone at **`~/laro-priv`** (refreshed by the update script via the deplo
   RC is the billing + client entitlement mirror.
   Full local `assembleDebug` also needs
   `android/app/google-services.json` (Firebase).
-  **Web Settings → Laro Pro:** shows backend `/subscriptions/status` (owner forever /
-  webhook sync). Web Billing checkout needs
-  `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…` (not the Play `goog_` key); injected at
-  container start via `frontend/docker-entrypoint.sh`. `rcb_` / `goog_` are
-  **publishable** SDK keys (expected in the client); do not confuse with `sk_…`
-  or webhook auth. Web Billing products attach to `$rc_weekly` / `$rc_monthly` +
-  entitlement `Laro Pro`. **New subscriptions are web-only** — Play products are
-  not on the default offering packages (existing Play subs still sync via webhooks).
-  Without key/products, Settings shows an error instead of Play checkout.
+  **Web Settings → Laro Pro:** backend `/subscriptions/status` (owner forever +
+  webhook sync). **Preferred checkout: Lemon Squeezy** — set `LEMONSQUEEZY_API_KEY`,
+  `LEMONSQUEEZY_STORE_ID`, variant IDs, and `LEMONSQUEEZY_WEBHOOK_SECRET`; webhook
+  POST `/api/v1/subscriptions/webhook/lemonsqueezy`. Frontend calls
+  `/subscriptions/checkout` (auth) and redirects to the LS checkout URL with
+  `custom[user_id]` for account binding. Legacy RevenueCat Web Billing still works
+  if `REACT_APP_REVENUECAT_WEB_API_KEY=rcb_…` and LS is not configured.
   **Owner forever:** `LARO_OWNER_EMAILS` (default `cowandom79@gmail.com`) and
   `role=super_admin` are always Pro on the backend; Android Pro is RevenueCat
   **or** `GET /subscriptions/status` / auth `is_pro` (not RC entitlement alone).
