@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '../context/LanguageContext';
+import { isPdfFileTooLarge, pdfUploadLimitParams } from '../lib/pdfUploadLimits';
 import { SocialImportFallback } from '../components/SocialImportFallback';
 import { VetoReplacementBanner } from '../components/VetoReplacementBanner';
 
@@ -282,8 +283,8 @@ export const QuickAddRecipe = () => {
       toast.error(t('toastChoosePdf'));
       return;
     }
-    if (pdfFile.size > 12_000_000) {
-      toast.error(t('toastPdfTooLarge'));
+    if (isPdfFileTooLarge(pdfFile)) {
+      toast.error(t('toastPdfTooLarge', pdfUploadLimitParams()));
       return;
     }
     setPdfLoading(true);
@@ -621,7 +622,7 @@ export const QuickAddRecipe = () => {
                     <p className="text-xs text-muted-foreground mt-2">{pdfFile.name}</p>
                   )}
                   <p className="text-xs text-muted-foreground mt-2">
-                    {t('pdfUploadHint')}
+                    {t('pdfUploadHint', pdfUploadLimitParams())}
                   </p>
                 </div>
                 {cookbookAttachFields}

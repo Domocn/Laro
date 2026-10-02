@@ -4,6 +4,7 @@ import { Layout } from '../components/Layout';
 import { useNavigate } from 'react-router-dom';
 import { recipeApi, mealPlanApi, aiApi, calendarApi, shoppingListApi } from '../lib/api';
 import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { isPdfFileTooLarge, pdfUploadLimitParams } from '../lib/pdfUploadLimits';
 import { useLanguage } from '../context/LanguageContext';
 import { useUserPreferences, weekStartsOnNumber } from '../hooks/useUserPreferences';
 import {
@@ -677,6 +678,10 @@ export const MealPlanner = () => {
     }
     if (!importFile && !importText.trim()) {
       toast.error('Upload a PDF or paste the plan text');
+      return;
+    }
+    if (importFile && isPdfFileTooLarge(importFile)) {
+      toast.error(t('toastPdfTooLarge', pdfUploadLimitParams()));
       return;
     }
 

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '../context/LanguageContext';
+import { isPdfFileTooLarge, pdfUploadLimitParams } from '../lib/pdfUploadLimits';
 import { SocialImportFallback } from '../components/SocialImportFallback';
 import {
   AlertDialog,
@@ -252,8 +253,8 @@ export const ImportRecipe = () => {
       toast.error(t('toastChoosePdf'));
       return;
     }
-    if (pdfFile.size > 12_000_000) {
-      toast.error(t('toastPdfTooLarge'));
+    if (isPdfFileTooLarge(pdfFile)) {
+      toast.error(t('toastPdfTooLarge', pdfUploadLimitParams()));
       return;
     }
     setLoading(true);
@@ -627,7 +628,7 @@ export const ImportRecipe = () => {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              {t('pdfImportHint')}
+              {t('pdfImportHint', pdfUploadLimitParams())}
             </p>
           </div>
 

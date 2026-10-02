@@ -3186,7 +3186,10 @@ async def import_meal_plan_document(
 
 
 async def _read_uploaded_pdf_bytes(request: Request):
-    """Shared multipart PDF bytes (field name: `file`, max 12MB). Returns (bytes, form)."""
+    """Shared multipart PDF bytes (field name: `file`). Returns (bytes, form)."""
+    from utils.pdf_upload_limits import pdf_too_large_detail, pdf_upload_max_bytes
+
+    max_bytes = pdf_upload_max_bytes()
     form = await request.form()
     upload = form.get("file")
     if upload is None:
@@ -3195,8 +3198,8 @@ async def _read_uploaded_pdf_bytes(request: Request):
     raw = await upload.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty PDF upload")
-    if len(raw) > 12_000_000:
-        raise HTTPException(status_code=400, detail="PDF too large (max 12MB)")
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=400, detail=pdf_too_large_detail())
     return raw, form
 
 

@@ -87,6 +87,9 @@ class Settings:
         self.free_ai_uses: int = int(os.getenv("FREE_AI_USES", "3"))
         # Scanned (image-only) PDF OCR — max pages rendered into one vision call
         self.scanned_pdf_max_pages: int = int(os.getenv("SCANNED_PDF_MAX_PAGES", "5"))
+        from utils.pdf_upload_limits import pdf_upload_max_bytes
+
+        self.pdf_upload_max_bytes: int = pdf_upload_max_bytes()
 
         # CORS_ORIGINS should be set in production (comma-separated list)
         if os.getenv("RAILWAY_ENVIRONMENT"):

@@ -21,6 +21,8 @@ import {
 import { toast } from 'sonner';
 import { importApi, aiApi, recipeApi } from '../lib/api';
 import { getAiQuotaErrorMessage } from '../lib/aiQuota';
+import { useLanguage } from '../context/LanguageContext';
+import { isPdfFileTooLarge, pdfUploadLimitParams } from '../lib/pdfUploadLimits';
 
 const SUPPORTED_SITES = [
   { domain: 'allrecipes.com', name: 'AllRecipes', logo: '🍳' },
@@ -37,6 +39,7 @@ const SUPPORTED_SITES = [
 
 export const RecipeImportModal = ({ isOpen, onClose, onSuccess }) => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [mode, setMode] = useState('url'); // 'url' | 'text' | 'pdf'
   const [url, setUrl] = useState('');
   const [text, setText] = useState('');
@@ -109,8 +112,8 @@ export const RecipeImportModal = ({ isOpen, onClose, onSuccess }) => {
       toast.error('Please choose a PDF');
       return;
     }
-    if (pdfFile.size > 12_000_000) {
-      toast.error('PDF too large (max 12MB)');
+    if (isPdfFileTooLarge(pdfFile)) {
+      toast.error(t('toastPdfTooLarge', pdfUploadLimitParams()));
       return;
     }
 
@@ -384,7 +387,7 @@ Mix dry ingredients. Add eggs and vanilla. Bake at 350°F for 25 minutes."
                   <p className="text-xs text-muted-foreground mt-1">{pdfFile.name}</p>
                 )}
                 <p className="text-xs text-muted-foreground mt-2">
-                  Text-based PDFs (max 12MB). Weekly plans become separate recipes; use Meal Plan → PDF to also schedule the week.
+                  {t('pdfImportHint', pdfUploadLimitParams())}
                 </p>
               </div>
               <Button
