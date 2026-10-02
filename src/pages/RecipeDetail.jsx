@@ -20,6 +20,7 @@ import {
 import { recipeApi, mealPlanApi, shoppingListApi, cookingApi, preferencesApi } from '../lib/api';
 import { convertUnit } from '../lib/unitConversions';
 import { enrichStepWithAmounts } from '../lib/cookModeSteps';
+import { scaleIngredients } from '../lib/scaleIngredients';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { VetoReplacementBanner } from '../components/VetoReplacementBanner';
@@ -332,6 +333,7 @@ export const RecipeDetail = () => {
       setRecipe(res.data);
       setIsFavorite(res.data.is_favorite || false);
       setScaledServings(res.data.servings || 4);
+      setScaledIngredients(null);
       // Set allergen warnings from API response
       setAllergenWarnings(res.data.allergen_warnings || []);
 
@@ -480,17 +482,33 @@ export const RecipeDetail = () => {
     [recipe, id, t]
   );
 
-  const handleScaleServings = useCallback(async (newServings) => {
-    if (newServings < 1) return;
-    setScaledServings(newServings);
+  const handleScaleServings = useCallback(
+    (newServings) => {
+      if (newServings < 1 || !recipe) return;
+      const original = recipe.servings || 4;
+      setScaledServings(newServings);
+      if (newServings === original) {
+        setScaledIngredients(null);
+        return;
+      }
+      setScaledIngredients(scaleIngredients(recipe.ingredients, original, newServings));
+    },
+    [recipe]
+  );
 
-    try {
-      const res = await recipeApi.getScaled(id, newServings);
-      setScaledIngredients(res.data.ingredients);
-    } catch (error) {
-      console.error('Failed to scale:', error);
-    }
-  }, [id]);
+  const displayIngredients = useMemo(
+    () => scaledIngredients ?? recipe?.ingredients ?? [],
+    [scaledIngredients, recipe?.ingredients]
+  );
+
+  const recipeForCooking = useMemo(() => {
+    if (!recipe) return null;
+    return {
+      ...recipe,
+      servings: scaledServings ?? recipe.servings,
+      ingredients: displayIngredients,
+    };
+  }, [recipe, scaledServings, displayIngredients]);
 
   const handlePrint = useCallback(() => {
     window.print();
@@ -992,7 +1010,7 @@ export const RecipeDetail = () => {
                 )}
               </h2>
               <ul className="space-y-2" data-testid="ingredients-list">
-                {(scaledIngredients || recipe.ingredients).map((ing, idx) => {
+                {displayIngredients.map((ing, idx) => {
                   const converted =
                     typeof ing === 'string'
                       ? null
@@ -1058,7 +1076,7 @@ export const RecipeDetail = () => {
                       {idx + 1}
                     </span>
                     <p className="pt-1">
-                      {enrichStepWithAmounts(step, recipe.ingredients, measurementUnit)}
+                      {enrichStepWithAmounts(step, displayIngredients, measurementUnit)}
                     </p>
                   </li>
                 ))}
@@ -1070,7 +1088,9 @@ export const RecipeDetail = () => {
               <section className="mb-6">
                 <NutritionCalculator 
                   recipeId={recipe.id}
-                  ingredients={recipe.ingredients?.map(i => `${i.amount || ''} ${i.unit || ''} ${i.name}`)}
+                  ingredients={displayIngredients?.map((i) =>
+                    typeof i === 'string' ? i : `${i.amount || ''} ${i.unit || ''} ${i.name}`
+                  )}
                   servings={scaledServings || recipe.servings}
                   savedNutrition={recipe.nutrition}
                 />
@@ -1157,7 +1177,7 @@ export const RecipeDetail = () => {
 
       {/* Cook Mode */}
       {showCookMode && (
-        <CookMode recipe={recipe} onClose={() => setShowCookMode(false)} />
+        <CookMode recipe={recipeForCooking} onClose={() => setShowCookMode(false)} />
       )}
     </Layout>
   );

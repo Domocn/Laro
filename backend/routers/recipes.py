@@ -532,34 +532,21 @@ async def get_scaled_recipe(
 
     scale_factor = servings / original_servings
 
+    from utils.ingredient_parse import parse_amount_to_float, format_scaled_amount
+
     scaled_ingredients = []
     for ing in recipe.get("ingredients", []):
-        try:
-            original_amount = ing.get("amount", "")
-            if "/" in str(original_amount):
-                parts = str(original_amount).split("/")
-                if len(parts) == 2:
-                    num = float(parts[0].strip())
-                    denom = float(parts[1].strip())
-                    original_num = num / denom
-                else:
-                    original_num = float(original_amount)
-            else:
-                original_num = float(original_amount)
-
-            scaled_num = original_num * scale_factor
-            if scaled_num == int(scaled_num):
-                scaled_amount = str(int(scaled_num))
-            else:
-                scaled_amount = f"{scaled_num:.2f}".rstrip('0').rstrip('.')
-
-            scaled_ingredients.append({
-                "name": ing["name"],
-                "amount": scaled_amount,
-                "unit": ing.get("unit", "")
-            })
-        except (ValueError, TypeError):
-            scaled_ingredients.append(ing)
+        original_num = parse_amount_to_float(ing.get("amount", ""))
+        if original_num is None:
+            scaled_ingredients.append(dict(ing))
+            continue
+        scaled_num = original_num * scale_factor
+        scaled_ingredients.append({
+            **{k: v for k, v in ing.items() if k not in ("amount",)},
+            "name": ing.get("name", ""),
+            "amount": format_scaled_amount(scaled_num),
+            "unit": ing.get("unit", ""),
+        })
 
     return {
         "id": recipe["id"],
