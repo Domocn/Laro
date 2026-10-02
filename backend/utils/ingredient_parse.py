@@ -45,6 +45,65 @@ _UNIT_ALIASES = {
 }
 
 
+_UNICODE_FRACTIONS = {
+    "½": 0.5,
+    "⅓": 1 / 3,
+    "⅔": 2 / 3,
+    "¼": 0.25,
+    "¾": 0.75,
+    "⅕": 0.2,
+    "⅖": 0.4,
+    "⅗": 0.6,
+    "⅘": 0.8,
+    "⅙": 1 / 6,
+    "⅚": 5 / 6,
+    "⅛": 0.125,
+    "⅜": 0.375,
+    "⅝": 0.625,
+    "⅞": 0.875,
+}
+
+
+def parse_amount_to_float(amount: Any) -> Optional[float]:
+    """Parse ingredient amount strings (1 1/2, ½, 0.5) to a float."""
+    if amount is None:
+        return None
+    raw = str(amount).strip()
+    if not raw:
+        return None
+    if raw in _UNICODE_FRACTIONS:
+        return _UNICODE_FRACTIONS[raw]
+    text = raw.replace(",", ".")
+    for char, val in _UNICODE_FRACTIONS.items():
+        if char in text:
+            text = text.replace(char, f" {val} ")
+    text = re.sub(r"\s+", " ", text).strip()
+
+    mixed = re.match(r"^(\d+)\s+(\d+)\s*/\s*(\d+)$", text)
+    if mixed:
+        return float(mixed.group(1)) + float(mixed.group(2)) / float(mixed.group(3))
+
+    frac = re.match(r"^(\d+)\s*/\s*(\d+)$", text)
+    if frac:
+        return float(frac.group(1)) / float(frac.group(2))
+
+    parsed = _fraction_to_float(text)
+    if parsed is not None:
+        return parsed
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def format_scaled_amount(value: float) -> str:
+    rounded = round(float(value) * 1000) / 1000
+    if abs(rounded - round(rounded)) < 1e-9:
+        return str(int(round(rounded)))
+    text = f"{rounded:.3f}".rstrip("0").rstrip(".")
+    return text
+
+
 def _fraction_to_float(value: Any) -> Optional[float]:
     if value is None:
         return None
