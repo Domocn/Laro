@@ -89,6 +89,7 @@ services:
       # laro.food production must set IS_CLOUD=true alongside Ollama Cloud.
       - IS_CLOUD=${IS_CLOUD:-false}
       - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-cowandom79@gmail.com}
+      - LARO_PDF_UPLOAD_MAX_MB=${LARO_PDF_UPLOAD_MAX_MB:-50}
       - REVENUECAT_WEBHOOK_AUTH=${REVENUECAT_WEBHOOK_AUTH:-}
       - REVENUECAT_WEBHOOK_SECRET=${REVENUECAT_WEBHOOK_SECRET:-}
       # Secret API key (sk_…) — admin grant/revoke ↔ RC promotional entitlements
@@ -225,6 +226,7 @@ services:
       # Empty = same-origin /api (Caddy proxies to backend). Do NOT set
       # http://localhost:8001 here — browsers on laro.food cannot reach the
       # visitor's localhost, so login/register will fail with CORS errors.
+      - REACT_APP_PDF_UPLOAD_MAX_MB=${LARO_PDF_UPLOAD_MAX_MB:-50}
       - REACT_APP_BACKEND_URL=
       - REACT_APP_REVENUECAT_WEB_API_KEY=${REACT_APP_REVENUECAT_WEB_API_KEY:-}
       - REACT_APP_CAST_APP_ID=${REACT_APP_CAST_APP_ID:-}
