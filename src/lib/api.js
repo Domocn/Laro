@@ -406,6 +406,8 @@ export const aiApi = {
       start_date: options.start_date,
       apply: options.apply !== false,
       replace_week: options.replace_week !== false,
+      dinner_nights: options.dinner_nights,
+      default_servings: options.default_servings,
     }, {
       timeout: 180000,
     }),
@@ -470,6 +472,7 @@ export const mealPlanApi = {
   update: (id, data) => api.put(`/meal-plans/${id}`, data),
   delete: (id) => api.delete(`/meal-plans/${id}`),
   repeatWeek: (data) => api.post('/meal-plans/repeat-week', data),
+  getWeekEstimate: (params) => api.get('/meal-plans/week-estimate', { params }),
 };
 
 // Shopping Lists

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { RecipeCard } from '../components/RecipeCard';
@@ -25,16 +25,21 @@ import {
   Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, endOfWeek } from 'date-fns';
+import { format, endOfWeek, startOfWeek } from 'date-fns';
+import { useUserPreferences, weekStartsOnNumber } from '../hooks/useUserPreferences';
+import { shoppingListApi } from '../lib/api';
 
 export const Dashboard = () => {
   const { user, household } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
+  const { preferences } = useUserPreferences();
   const liveRefresh = useLiveRefreshContext();
   const [recipes, setRecipes] = useState([]);
   const [mealPlans, setMealPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [liveImports, setLiveImports] = useState([]);
+  const [planShopBusy, setPlanShopBusy] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -96,6 +101,54 @@ export const Dashboard = () => {
     liveRefresh
   );
 
+  const handlePlanAndShop = async () => {
+    setPlanShopBusy(true);
+    try {
+      const weekStartsOn = weekStartsOnNumber(preferences.weekStartsOn, 1);
+      const weekStart = startOfWeek(new Date(), { weekStartsOn });
+      const weekEnd = endOfWeek(new Date(), { weekStartsOn });
+      const start = format(weekStart, 'yyyy-MM-dd');
+      const end = format(weekEnd, 'yyyy-MM-dd');
+      const plansRes = await mealPlanApi.getAll({ start_date: start, end_date: end });
+      const plans = plansRes.data || [];
+      const hasRecipes = plans.some(
+        (p) => (p.entry_type || 'recipe') === 'recipe' && p.recipe_id
+      );
+      if (!hasRecipes) {
+        navigate('/meal-planner', { state: { planAndShop: true } });
+        return;
+      }
+      const preview = await shoppingListApi.fromMealPlan({
+        start_date: start,
+        end_date: end,
+        exclude_pantry: true,
+        combine_quantities: true,
+        assign_aisles: true,
+        keep_pantry_items: true,
+        save: false,
+        list_name: `Week of ${format(weekStart, 'MMM d')}`,
+        attach_retailer_hints: true,
+      });
+      const items = (preview.data?.items || []).filter((item) => !item.in_pantry);
+      if (!items.length) {
+        toast.error(t('toastNothingToShop'));
+        navigate('/meal-planner');
+        return;
+      }
+      await shoppingListApi.create({
+        name: preview.data.list_name || `Week of ${format(weekStart, 'MMM d')}`,
+        items: items.map((item) => ({ ...item, checked: false })),
+      });
+      toast.success(t('toastShoppingListReady', { count: items.length }));
+      navigate('/shopping');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || t('toastCreateListFailed'));
+      navigate('/meal-planner', { state: { planAndShop: true } });
+    } finally {
+      setPlanShopBusy(false);
+    }
+  };
+
   const quickActions = [
     { icon: Plus, label: t('addRecipe'), path: '/recipes/new', color: 'bg-laro-dark', shadowColor: 'shadow-soft' },
     { icon: CalendarDays, label: t('mealPlan'), path: '/meal-planner', color: 'bg-laro', shadowColor: 'shadow-soft' },
@@ -151,6 +204,32 @@ export const Dashboard = () => {
             </Link>
           </motion.div>
         )}
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.08 }}
+          className="rounded-[12px] bg-gradient-to-br from-laro-light/80 to-white border border-laro/20 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+          data-testid="plan-and-shop-cta"
+        >
+          <div>
+            <h2 className="font-heading text-lg font-semibold">{t('planAndShopWeek')}</h2>
+            <p className="text-sm text-muted-foreground mt-1">{t('planAndShopDesc')}</p>
+          </div>
+          <Button
+            className="rounded-full bg-laro hover:bg-laro-dark shrink-0"
+            disabled={planShopBusy}
+            onClick={handlePlanAndShop}
+            data-testid="plan-and-shop-btn"
+          >
+            {planShopBusy ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <ShoppingCart className="w-4 h-4 mr-2" />
+            )}
+            {t('planAndShopWeek')}
+          </Button>
+        </motion.div>
 
         {/* Quick Actions */}
         <motion.div

@@ -58,6 +58,7 @@ import { Label } from '../components/ui/label';
 import { ReceiptScanner } from '../components/ReceiptScanner';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/utils';
+import { shareShoppingListWhatsApp } from '../lib/shareShoppingList';
 
 /** Group shopping items by aisle while keeping original indices for mutations. */
 function groupItemsByAisle(items = [], autoSort = true) {
@@ -876,6 +877,18 @@ export const ShoppingLists = () => {
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {totalCount > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full"
+                        data-testid="share-list-whatsapp"
+                        onClick={() => shareShoppingListWhatsApp(selectedList)}
+                      >
+                        {t('shareListWhatsApp')}
+                      </Button>
+                    )}
                     {recipeFilters.length > 0 && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
