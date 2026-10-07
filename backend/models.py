@@ -364,6 +364,7 @@ class ShoppingItem(BaseModel):
     store_hint: Optional[str] = None
     product_hint: Optional[str] = None
     retailer_links: Optional[Dict[str, str]] = None
+    preferred_retailer_id: Optional[str] = None
     estimated_line_cost: Optional[float] = None
 
 class ShoppingItemCreate(BaseModel):

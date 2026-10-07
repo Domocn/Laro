@@ -79,6 +79,7 @@ import {
   PoundSterling,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { RetailerSearchLinks } from '../components/RetailerSearchLinks';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, eachDayOfInterval, isSameDay, addDays, parseISO, differenceInCalendarWeeks } from 'date-fns';
 
 function groupPreviewByAisle(items = []) {
@@ -1833,22 +1834,11 @@ export const MealPlanner = () => {
                               </span>
                             )}
                           </div>
-                          {item.retailer_links && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {Object.entries(item.retailer_links).map(([store, url]) => (
-                                <a
-                                  key={store}
-                                  href={url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-white border border-border/60 hover:border-laro/50"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {store}
-                                </a>
-                              ))}
-                            </div>
-                          )}
+                          <RetailerSearchLinks
+                            retailerLinks={item.retailer_links}
+                            preferredRetailerId={item.preferred_retailer_id}
+                            productHint={item.product_hint}
+                          />
                         </div>
                       </label>
                     ))}

@@ -59,6 +59,7 @@ import { ReceiptScanner } from '../components/ReceiptScanner';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/utils';
 import { shareShoppingListWhatsApp } from '../lib/shareShoppingList';
+import { RetailerSearchLinks } from '../components/RetailerSearchLinks';
 
 /** Group shopping items by aisle while keeping original indices for mutations. */
 function groupItemsByAisle(items = [], autoSort = true) {
@@ -1012,6 +1013,16 @@ export const ShoppingLists = () => {
                                   <p className="text-xs text-muted-foreground truncate mt-0.5 no-underline">
                                     {(item.recipe_names || [item.recipe_name]).filter(Boolean).join(' · ')}
                                   </p>
+                                )}
+                                {!item.checked && item.retailer_links && (
+                                  <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                    <RetailerSearchLinks
+                                      retailerLinks={item.retailer_links}
+                                      preferredRetailerId={item.preferred_retailer_id}
+                                      productHint={item.product_hint}
+                                      compact
+                                    />
+                                  </div>
                                 )}
                               </div>
                               <DropdownMenu>

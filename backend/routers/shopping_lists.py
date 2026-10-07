@@ -131,6 +131,17 @@ async def get_shopping_lists(
     return [ShoppingListResponse(**l) for l in lists]
 
 
+@router.get("/uk-retailers")
+async def list_uk_online_retailers(user: dict = Depends(get_current_user)):
+    """Supported UK online supermarkets for ingredient search deep links."""
+    from utils.retailer_links import retailer_catalog
+
+    return {
+        "retailers": retailer_catalog(),
+        "disclaimer": "Prices and availability are always confirmed on the retailer's site at checkout.",
+    }
+
+
 @router.get("/aisles")
 async def list_grocery_aisles(user: dict = Depends(get_current_user)):
     """Available grocery aisle names for teach-aisle UI."""
@@ -1222,7 +1233,6 @@ async def generate_grocery_list(
     scope_id = None
     if attach_hints:
         from routers.cost_tracking import cost_scope_id, get_ingredient_price
-        from utils.retailer_links import retailer_search_query, uk_retailer_search_urls
 
         scope_id = cost_scope_id(user)
 
@@ -1257,20 +1267,21 @@ async def generate_grocery_list(
             "in_pantry": in_pantry,
             "category": categorize_grocery_item(item["name"], aisle_overrides),
         }
-        if attach_hints and scope_id and not in_pantry:
-            price_info = await get_ingredient_price(
-                scope_id,
-                item["name"],
-                amount=amount_str,
-                unit=item.get("unit") or None,
-            )
-            if price_info:
-                matched = price_info.get("matched_product")
-                row["store_hint"] = price_info.get("store")
-                row["product_hint"] = matched
-                row["estimated_line_cost"] = price_info.get("estimated_cost")
-                search_q = retailer_search_query(item["name"], matched)
-                row["retailer_links"] = uk_retailer_search_urls(search_q)
+        if attach_hints and not in_pantry:
+            from utils.retailer_links import enrich_item_retailer_fields
+
+            if scope_id:
+                price_info = await get_ingredient_price(
+                    scope_id,
+                    item["name"],
+                    amount=amount_str,
+                    unit=item.get("unit") or None,
+                )
+                if price_info:
+                    row["store_hint"] = price_info.get("store")
+                    row["product_hint"] = price_info.get("matched_product")
+                    row["estimated_line_cost"] = price_info.get("estimated_cost")
+            enrich_item_retailer_fields(row)
         shopping_dicts.append(row)
 
     if data.assign_aisles:

@@ -487,6 +487,7 @@ export const shoppingListApi = {
   fromMealPlan: (data) => api.post('/shopping-lists/from-meal-plan', data),
   generate: (data) => api.post('/shopping-lists/generate', data),
   getAisles: () => api.get('/shopping-lists/aisles'),
+  getUkRetailers: () => api.get('/shopping-lists/uk-retailers'),
   getAisleOverrides: () => api.get('/shopping-lists/aisle-overrides'),
   setAisleOverride: (ingredientName, aisle) =>
     api.put('/shopping-lists/aisle-overrides', { aisle }, { params: { ingredient_name: ingredientName } }),
