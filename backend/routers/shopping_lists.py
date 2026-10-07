@@ -131,6 +131,17 @@ async def get_shopping_lists(
     return [ShoppingListResponse(**l) for l in lists]
 
 
+@router.get("/uk-retailers")
+async def list_uk_online_retailers(user: dict = Depends(get_current_user)):
+    """Supported UK online supermarkets for ingredient search deep links."""
+    from utils.retailer_links import retailer_catalog
+
+    return {
+        "retailers": retailer_catalog(),
+        "disclaimer": "Prices and availability are always confirmed on the retailer's site at checkout.",
+    }
+
+
 @router.get("/aisles")
 async def list_grocery_aisles(user: dict = Depends(get_current_user)):
     """Available grocery aisle names for teach-aisle UI."""
@@ -456,19 +467,24 @@ async def shopping_list_from_meal_plan(
         wanted = {m.lower() for m in data.meal_types}
         plans = [p for p in plans if (p.get("meal_type") or "").lower() in wanted]
 
-    recipe_ids = []
-    seen = set()
+    from models import RecipeSlotInput
+
+    recipe_slots: list[RecipeSlotInput] = []
     for plan in plans:
-        # Skip note/leftover placeholders — they have nothing to shop
         entry_type = (plan.get("entry_type") or "recipe").lower()
         if entry_type != "recipe":
             continue
         rid = plan.get("recipe_id")
-        if rid and rid not in seen:
-            seen.add(rid)
-            recipe_ids.append(rid)
+        if not rid:
+            continue
+        servings = plan.get("servings")
+        try:
+            servings_int = int(servings) if servings is not None else None
+        except (TypeError, ValueError):
+            servings_int = None
+        recipe_slots.append(RecipeSlotInput(recipe_id=rid, servings=servings_int))
 
-    if not recipe_ids:
+    if not recipe_slots:
         raise HTTPException(
             status_code=400,
             detail="No recipes on the meal plan for that date range. Add meals first.",
@@ -477,11 +493,12 @@ async def shopping_list_from_meal_plan(
     list_name = data.list_name or f"Week of {data.start_date}"
     generated = await generate_grocery_list(
         GroceryGenerateRequest(
-            recipe_ids=recipe_ids,
+            recipe_slots=recipe_slots,
             exclude_pantry=data.exclude_pantry,
             combine_quantities=data.combine_quantities,
             assign_aisles=data.assign_aisles,
             keep_pantry_items=data.keep_pantry_items,
+            attach_retailer_hints=data.attach_retailer_hints,
         ),
         user,
     )
@@ -514,9 +531,15 @@ async def shopping_list_from_meal_plan(
             user, "shopping_list_from_meal_plan", None,
             target_type="shopping_list",
             target_id=list_id,
-            details={"meal_count": len(plans), "recipe_count": len(recipe_ids)},
+            details={"meal_count": len(plans), "recipe_count": len(recipe_slots)},
         )
         saved_list = ShoppingListResponse(**list_doc)
+
+    line_total = sum(
+        float(i.estimated_line_cost or 0)
+        for i in generated.items
+        if not i.in_pantry
+    )
 
     return FromMealPlanResponse(
         list=saved_list,
@@ -526,6 +549,8 @@ async def shopping_list_from_meal_plan(
         recipes_used=generated.recipes_used or [],
         meal_count=len(plans),
         list_name=list_name,
+        estimated_total=round(line_total, 2) if line_total else None,
+        currency="GBP",
     )
 
 
@@ -1122,13 +1147,23 @@ async def generate_grocery_list(
     - Assigns store aisles
     - Marks pantry matches (keep for review, or drop)
     """
-    if not data.recipe_ids:
-        raise HTTPException(status_code=400, detail="At least one recipe ID is required")
+    from models import RecipeSlotInput
+    from utils.grocery_scale import ingredients_for_slot
 
-    recipes = await recipe_repository.find_by_ids(data.recipe_ids)
+    slots: list[RecipeSlotInput] = []
+    if data.recipe_slots:
+        slots = list(data.recipe_slots)
+    elif data.recipe_ids:
+        slots = [RecipeSlotInput(recipe_id=r) for r in data.recipe_ids]
+    else:
+        raise HTTPException(status_code=400, detail="recipe_ids or recipe_slots required")
+
+    recipe_ids = [s.recipe_id for s in slots]
+    recipes = await recipe_repository.find_by_ids(recipe_ids)
     if not recipes:
         raise HTTPException(status_code=404, detail="No recipes found")
 
+    recipe_by_id = {r["id"]: r for r in recipes}
     recipe_titles = {r["id"]: r.get("title") or "Recipe" for r in recipes}
 
     # Apply Tandoor-style ingredient aliases so renamed foods merge on the list
@@ -1147,8 +1182,11 @@ async def generate_grocery_list(
         return alias_map.get(key) or name
 
     all_items = []
-    for recipe in recipes:
-        for ing in recipe.get("ingredients", []):
+    for slot in slots:
+        recipe = recipe_by_id.get(slot.recipe_id)
+        if not recipe:
+            continue
+        for ing in ingredients_for_slot(recipe, slot.servings):
             if isinstance(ing, dict):
                 name = (ing.get("name") or "").strip()
                 if not name:
@@ -1191,6 +1229,13 @@ async def generate_grocery_list(
                 item["recipe_id"] = rids[0]
                 item["recipe_name"] = recipe_titles.get(rids[0])
 
+    attach_hints = bool(data.attach_retailer_hints)
+    scope_id = None
+    if attach_hints:
+        from routers.cost_tracking import cost_scope_id, get_ingredient_price
+
+        scope_id = cost_scope_id(user)
+
     excluded_items = []
     shopping_dicts = []
     for item in all_items:
@@ -1208,7 +1253,7 @@ async def generate_grocery_list(
             if not data.keep_pantry_items:
                 continue
 
-        shopping_dicts.append({
+        row = {
             "id": item.get("id") or str(uuid.uuid4()),
             "name": item["name"],
             "quantity": quantity,
@@ -1221,7 +1266,23 @@ async def generate_grocery_list(
             "recipe_names": item.get("recipe_names") or [],
             "in_pantry": in_pantry,
             "category": categorize_grocery_item(item["name"], aisle_overrides),
-        })
+        }
+        if attach_hints and not in_pantry:
+            from utils.retailer_links import enrich_item_retailer_fields
+
+            if scope_id:
+                price_info = await get_ingredient_price(
+                    scope_id,
+                    item["name"],
+                    amount=amount_str,
+                    unit=item.get("unit") or None,
+                )
+                if price_info:
+                    row["store_hint"] = price_info.get("store")
+                    row["product_hint"] = price_info.get("matched_product")
+                    row["estimated_line_cost"] = price_info.get("estimated_cost")
+            enrich_item_retailer_fields(row)
+        shopping_dicts.append(row)
 
     if data.assign_aisles:
         shopping_dicts = assign_aisles(shopping_dicts, aisle_overrides)

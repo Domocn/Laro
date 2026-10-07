@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from datetime import date as date_cls
 from datetime import datetime
 import re
@@ -212,6 +212,7 @@ class MealPlanCreate(BaseModel):
     notes: Optional[str] = ""
     adult_boost: Optional[str] = ""  # short “For adults: …” upgrade tip
     entry_type: Optional[str] = "recipe"  # recipe | note | leftover
+    servings: Optional[int] = None  # planned yield; defaults to recipe servings when null
 
 class MealPlanUpdate(BaseModel):
     date: Optional[str] = None
@@ -221,6 +222,7 @@ class MealPlanUpdate(BaseModel):
     notes: Optional[str] = None
     adult_boost: Optional[str] = None
     entry_type: Optional[str] = None  # recipe | note | leftover
+    servings: Optional[int] = None
 
 class MealPlanResponse(BaseModel):
     id: str
@@ -231,6 +233,7 @@ class MealPlanResponse(BaseModel):
     notes: str = ""
     adult_boost: Optional[str] = ""
     entry_type: Optional[str] = "recipe"
+    servings: Optional[int] = None
     household_id: str
     created_at: str
 
@@ -270,6 +273,18 @@ class AutoMealPlanRequest(BaseModel):
     apply: bool = False
     # Clear existing meal-plan rows in the window before applying
     replace_week: bool = True
+    # Quickle-style: plan only N dinners (spread across the week), skip other meal types
+    dinner_nights: Optional[int] = None
+    default_servings: Optional[int] = None
+
+class MealPlanWeekCostResponse(BaseModel):
+    total_estimated: float
+    currency: str = "GBP"
+    meal_count: int
+    indicative: bool = True
+    attribution: Optional[str] = None
+    attribution_url: Optional[str] = None
+    meals: Optional[List[dict]] = None
 
 class ImportMealPlanRequest(BaseModel):
     """Import a printable weekly meal plan (PDF text or pasted plan)."""
@@ -346,6 +361,11 @@ class ShoppingItem(BaseModel):
     in_pantry: Optional[bool] = False  # Already on hand — review before buying
     price: Optional[float] = None  # Price per unit
     sort_order: Optional[int] = 0  # For aisle / manual reordering
+    store_hint: Optional[str] = None
+    product_hint: Optional[str] = None
+    retailer_links: Optional[Dict[str, str]] = None
+    preferred_retailer_id: Optional[str] = None
+    estimated_line_cost: Optional[float] = None
 
 class ShoppingItemCreate(BaseModel):
     name: str
@@ -689,14 +709,21 @@ class RecreateStoreMealRequest(BaseModel):
 
 
 # Enhanced Grocery List Models
+class RecipeSlotInput(BaseModel):
+    recipe_id: str
+    servings: Optional[int] = None
+
+
 class GroceryGenerateRequest(BaseModel):
-    recipe_ids: List[str]
+    recipe_ids: Optional[List[str]] = None
+    recipe_slots: Optional[List[RecipeSlotInput]] = None
     exclude_pantry: Optional[bool] = True  # Mark / skip items user already has
     combine_quantities: Optional[bool] = True  # Combine same ingredients
     assign_aisles: Optional[bool] = True
     # When True with exclude_pantry: keep pantry hits on the list (in_pantry=True)
     # for SideChef-style review instead of dropping them.
     keep_pantry_items: Optional[bool] = True
+    attach_retailer_hints: Optional[bool] = False
 
 
 class GroceryGenerateResponse(BaseModel):
@@ -716,6 +743,7 @@ class FromMealPlanRequest(BaseModel):
     keep_pantry_items: Optional[bool] = True
     list_name: Optional[str] = None
     save: Optional[bool] = True
+    attach_retailer_hints: Optional[bool] = True
 
 
 class FromMealPlanResponse(BaseModel):
@@ -726,6 +754,8 @@ class FromMealPlanResponse(BaseModel):
     recipes_used: List[dict]
     meal_count: int
     list_name: str
+    estimated_total: Optional[float] = None
+    currency: Optional[str] = "GBP"
 
 
 # Mobile Notification Settings

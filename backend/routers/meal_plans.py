@@ -4,7 +4,7 @@ Supports recipe entries plus Mealie-style note/leftover placeholders.
 """
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
-from models import MealPlanCreate, MealPlanUpdate, MealPlanResponse
+from models import MealPlanCreate, MealPlanUpdate, MealPlanResponse, MealPlanWeekCostResponse
 from dependencies import get_current_user, meal_plan_repository, recipe_repository
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
@@ -40,8 +40,20 @@ def _shape_plan(plan: dict) -> dict:
         shaped["notes"] = ""
     if shaped.get("recipe_title") is None:
         shaped["recipe_title"] = ""
+    if "servings" not in shaped:
+        shaped["servings"] = None
     shaped["date"] = _plan_date(shaped.get("date"))
     return shaped
+
+
+def _normalize_plan_servings(raw) -> Optional[int]:
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return n if 1 <= n <= 100 else None
 
 
 def _normalize_adult_boost(raw) -> str:
@@ -69,6 +81,7 @@ async def create_meal_plan(plan: MealPlanCreate, request: Request, user: dict = 
     recipe_id = plan.recipe_id
     recipe_title = (plan.recipe_title or "").strip()
 
+    plan_servings = None
     if entry_type == "recipe":
         if not recipe_id:
             raise HTTPException(status_code=400, detail="recipe_id is required for recipe entries")
@@ -76,6 +89,7 @@ async def create_meal_plan(plan: MealPlanCreate, request: Request, user: dict = 
         if not recipe:
             raise HTTPException(status_code=404, detail="Recipe not found")
         recipe_title = recipe["title"]
+        plan_servings = _normalize_plan_servings(plan.servings)
     else:
         # Note / leftover — no recipe required
         recipe_id = None
@@ -97,6 +111,7 @@ async def create_meal_plan(plan: MealPlanCreate, request: Request, user: dict = 
         "notes": plan.notes or "",
         "adult_boost": _normalize_adult_boost(plan.adult_boost),
         "entry_type": entry_type,
+        "servings": plan_servings,
         "household_id": household_id,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -160,6 +175,67 @@ async def get_meal_plans(
     return [MealPlanResponse(**_shape_plan(p)) for p in cleaned]
 
 
+@router.get("/week-estimate", response_model=MealPlanWeekCostResponse)
+async def meal_plan_week_cost_estimate(
+    start_date: str,
+    end_date: str,
+    user: dict = Depends(get_current_user),
+):
+    """Indicative grocery cost for recipe slots on the meal plan (Open Prices UK)."""
+    from routers.cost_tracking import calculate_recipe_cost, cost_scope_id
+    from utils.grocery_scale import ingredients_for_slot
+
+    household_id = user.get("household_id") or user["id"]
+    plans = await meal_plan_repository.find_by_household(
+        household_id=household_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    scope = cost_scope_id(user)
+    total = 0.0
+    meal_rows = []
+    for plan in plans or []:
+        if (plan.get("entry_type") or "recipe").lower() != "recipe":
+            continue
+        rid = plan.get("recipe_id")
+        if not rid:
+            continue
+        recipe = await recipe_repository.find_by_id(rid)
+        if not recipe:
+            continue
+        target = _normalize_plan_servings(plan.get("servings"))
+        ings = ingredients_for_slot(recipe, target)
+        cost_data = await calculate_recipe_cost(scope, ings)
+        meal_cost = float(cost_data.get("total") or 0)
+        total += meal_cost
+        meal_rows.append(
+            {
+                "plan_id": plan.get("id"),
+                "recipe_id": rid,
+                "title": plan.get("recipe_title") or recipe.get("title"),
+                "date": _plan_date(plan.get("date")),
+                "servings": target or recipe.get("servings") or 4,
+                "estimated_cost": meal_cost,
+            }
+        )
+
+    attribution = None
+    attribution_url = None
+    if meal_rows:
+        attribution = "Data © Open Food Facts Open Prices contributors (ODbL)"
+        attribution_url = "https://prices.openfoodfacts.org"
+
+    return MealPlanWeekCostResponse(
+        total_estimated=round(total, 2),
+        currency="GBP",
+        meal_count=len(meal_rows),
+        indicative=True,
+        attribution=attribution,
+        attribution_url=attribution_url,
+        meals=meal_rows,
+    )
+
+
 @router.put("/{plan_id}", response_model=MealPlanResponse)
 async def update_meal_plan(
     plan_id: str,
@@ -204,6 +280,10 @@ async def update_meal_plan(
                 detail="recipe_title is required for note and leftover entries",
             )
 
+    servings = plan.get("servings")
+    if "servings" in payload:
+        servings = _normalize_plan_servings(payload.get("servings"))
+
     update_doc = {
         "date": payload.get("date", plan.get("date")),
         "meal_type": payload.get("meal_type", plan.get("meal_type")),
@@ -214,6 +294,7 @@ async def update_meal_plan(
             payload["adult_boost"] if "adult_boost" in payload else plan.get("adult_boost") or ""
         ),
         "entry_type": entry_type,
+        "servings": servings,
     }
     await meal_plan_repository.update_plan(plan_id, update_doc)
 
@@ -331,6 +412,7 @@ async def repeat_week(
             "notes": plan.get("notes") or "",
             "adult_boost": plan.get("adult_boost") or "",
             "entry_type": entry_type,
+            "servings": _normalize_plan_servings(plan.get("servings")),
             "household_id": household_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
