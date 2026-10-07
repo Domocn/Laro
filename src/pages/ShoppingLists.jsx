@@ -58,7 +58,7 @@ import { Label } from '../components/ui/label';
 import { ReceiptScanner } from '../components/ReceiptScanner';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/utils';
-import { shareShoppingListWhatsApp } from '../lib/shareShoppingList';
+import { shareShoppingListWhatsApp, copyShoppingListToClipboard } from '../lib/shareShoppingList';
 import { RetailerSearchLinks } from '../components/RetailerSearchLinks';
 
 /** Group shopping items by aisle while keeping original indices for mutations. */
@@ -879,16 +879,35 @@ export const ShoppingLists = () => {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {totalCount > 0 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="rounded-full"
-                        data-testid="share-list-whatsapp"
-                        onClick={() => shareShoppingListWhatsApp(selectedList)}
-                      >
-                        {t('shareListWhatsApp')}
-                      </Button>
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full"
+                          data-testid="copy-shopping-list"
+                          onClick={async () => {
+                            try {
+                              const ok = await copyShoppingListToClipboard(selectedList);
+                              if (ok) toast.success(t('toastListCopied'));
+                            } catch {
+                              toast.error(t('toastCreateListFailed'));
+                            }
+                          }}
+                        >
+                          {t('copyShoppingList')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-full"
+                          data-testid="share-list-whatsapp"
+                          onClick={() => shareShoppingListWhatsApp(selectedList)}
+                        >
+                          {t('shareListWhatsApp')}
+                        </Button>
+                      </>
                     )}
                     {recipeFilters.length > 0 && (
                       <DropdownMenu>

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { RecipeCard } from '../components/RecipeCard';
 import { TonightSuggestions } from '../components/TonightSuggestions';
+import { TodayCommandCenter } from '../components/TodayCommandCenter';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { recipeApi, mealPlanApi, aiApi } from '../lib/api';
@@ -252,6 +253,14 @@ export const Dashboard = () => {
             );
           })}
         </motion.div>
+
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.12 }}
+        >
+          <TodayCommandCenter />
+        </motion.section>
 
         {/* Tonight's Suggestions - The Core MVP Experience */}
         <motion.section
