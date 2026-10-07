@@ -2,8 +2,15 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { format, parseISO, isSameDay } from 'date-fns';
-import { mealPlanApi, pantryApi } from '../lib/api';
+import { mealPlanApi, pantryApi, recipeApi } from '../lib/api';
 import { useLanguage } from '../context/LanguageContext';
+import { useUserPreferences } from '../hooks/useUserPreferences';
+import {
+  resolveCalorieTarget,
+  resolveProteinTarget,
+  rollupDayNutrition,
+} from '../lib/mealPlanNutrition';
+import { TodayMacrosStrip } from './TodayMacrosStrip';
 import { Button } from './ui/button';
 import {
   CalendarDays,
@@ -19,24 +26,30 @@ import {
  */
 export function TodayCommandCenter() {
   const { t } = useLanguage();
+  const { preferences } = useUserPreferences();
+  const proteinTarget = resolveProteinTarget(preferences);
+  const calorieTarget = resolveCalorieTarget(preferences);
   const [loading, setLoading] = useState(true);
   const [todayMeals, setTodayMeals] = useState([]);
   const [expiring, setExpiring] = useState([]);
+  const [recipes, setRecipes] = useState([]);
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [plansRes, expRes] = await Promise.all([
+      const [plansRes, expRes, recipesRes] = await Promise.all([
         mealPlanApi.getAll({ start_date: todayStr, end_date: todayStr }),
         pantryApi.getExpiring(5).catch(() => ({ data: { items: [] } })),
+        recipeApi.getAll().catch(() => ({ data: [] })),
       ]);
       const meals = (plansRes.data || []).filter(
         (p) => String(p?.date || '').slice(0, 10) === todayStr
       );
       setTodayMeals(meals);
       setExpiring((expRes.data?.items || []).slice(0, 5));
+      setRecipes(Array.isArray(recipesRes.data) ? recipesRes.data : []);
     } catch {
       setTodayMeals([]);
       setExpiring([]);
@@ -57,7 +70,12 @@ export function TodayCommandCenter() {
     );
   }
 
-  if (!todayMeals.length && !expiring.length) {
+  const dayTotals = rollupDayNutrition(todayMeals, recipes);
+  const showMacros =
+    dayTotals.hasAnyNutrition ||
+    (dayTotals.recipeMeals > 0 && (proteinTarget != null || calorieTarget != null));
+
+  if (!todayMeals.length && !expiring.length && !showMacros) {
     return null;
   }
 
@@ -84,7 +102,15 @@ export function TodayCommandCenter() {
         </Link>
       </div>
 
-      <div className="p-4 grid gap-4 sm:grid-cols-2">
+      <div className="px-4 pt-3 pb-1">
+        <TodayMacrosStrip
+          totals={dayTotals}
+          proteinTarget={proteinTarget}
+          calorieTarget={calorieTarget}
+        />
+      </div>
+
+      <div className="p-4 pt-2 grid gap-4 sm:grid-cols-2">
         <div data-testid="today-meals-block">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
             {t('todaysMeals')}

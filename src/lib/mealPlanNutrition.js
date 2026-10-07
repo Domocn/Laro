@@ -39,14 +39,37 @@ export function recipeCalories(recipe) {
   return Number.isFinite(v) ? v : null;
 }
 
+function recipeMacroPerServing(recipe, key) {
+  if (!recipe) return null;
+  const n = recipe.nutrition || {};
+  const flatKey = key === 'calories' ? 'nutrition_calories' : `nutrition_${key}`;
+  const raw = n[key] ?? recipe[flatKey] ?? (key === 'calories' ? recipe.calories : null);
+  if (raw == null || raw === '') return null;
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : null;
+}
+
+/** Scale per-serving recipe macros by planned slot servings vs recipe yield. */
+export function mealServingFactor(meal, recipe) {
+  const base = Number(recipe?.servings) > 0 ? Number(recipe.servings) : 4;
+  const planned =
+    meal?.servings != null && Number(meal.servings) > 0
+      ? Number(meal.servings)
+      : base;
+  return planned / base;
+}
+
 /**
  * Sum nutrition for meals on a day by joining meal plans → recipes.
  * Notes/leftovers without nutrition contribute 0 (counted in mealsWithNutrition only when known).
+ * Macros are per-serving on the recipe, scaled by meal-plan servings when set.
  */
 export function rollupDayNutrition(meals = [], recipes = []) {
   const byId = new Map((recipes || []).map((r) => [r.id, r]));
   let protein = 0;
   let calories = 0;
+  let carbs = 0;
+  let fat = 0;
   let mealsWithNutrition = 0;
   let recipeMeals = 0;
 
@@ -55,18 +78,25 @@ export function rollupDayNutrition(meals = [], recipes = []) {
     if (kind !== 'recipe' || !meal.recipe_id) continue;
     recipeMeals += 1;
     const recipe = byId.get(meal.recipe_id);
+    const factor = mealServingFactor(meal, recipe);
     const p = recipeProteinGrams(recipe);
     const c = recipeCalories(recipe);
-    if (p != null || c != null) {
+    const cb = recipeMacroPerServing(recipe, 'carbs');
+    const f = recipeMacroPerServing(recipe, 'fat');
+    if (p != null || c != null || cb != null || f != null) {
       mealsWithNutrition += 1;
-      if (p != null) protein += p;
-      if (c != null) calories += c;
+      if (p != null) protein += p * factor;
+      if (c != null) calories += c * factor;
+      if (cb != null) carbs += cb * factor;
+      if (f != null) fat += f * factor;
     }
   }
 
   return {
     protein: Math.round(protein),
     calories: Math.round(calories),
+    carbs: Math.round(carbs),
+    fat: Math.round(fat),
     mealsWithNutrition,
     recipeMeals,
     hasAnyNutrition: mealsWithNutrition > 0,

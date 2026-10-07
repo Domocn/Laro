@@ -46,6 +46,24 @@ describe('rollupDayNutrition', () => {
     expect(totals.protein).toBe(0);
     expect(totals.hasAnyNutrition).toBe(false);
   });
+
+  it('scales macros when meal-plan servings differ from recipe yield', () => {
+    const scaledRecipes = [
+      {
+        id: 'a',
+        servings: 4,
+        nutrition: { protein: 40, calories: 400, carbs: 30, fat: 10 },
+      },
+    ];
+    const meals = [
+      { id: '1', recipe_id: 'a', entry_type: 'recipe', servings: 8 },
+    ];
+    const totals = rollupDayNutrition(meals, scaledRecipes);
+    expect(totals.protein).toBe(80);
+    expect(totals.calories).toBe(800);
+    expect(totals.carbs).toBe(60);
+    expect(totals.fat).toBe(20);
+  });
 });
 
 describe('nutritionStatus', () => {
