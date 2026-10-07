@@ -14,7 +14,7 @@ import {
   Loader2
 } from 'lucide-react';
 
-export const TonightSuggestions = () => {
+export const TonightSuggestions = ({ embedded = false, maxItems = 3 }) => {
   const navigate = useNavigate();
   const [suggestions, setSuggestions] = useState([]);
   const [plannedRecipe, setPlannedRecipe] = useState(null);
@@ -112,6 +112,13 @@ export const TonightSuggestions = () => {
   );
 
   if (loading) {
+    if (embedded) {
+      return (
+        <div className="flex justify-center py-6">
+          <Loader2 className="w-6 h-6 animate-spin text-laro" />
+        </div>
+      );
+    }
     return (
       <div className="bg-cream-subtle rounded-[12px] shadow-card p-4 sm:p-8 w-full max-w-full overflow-hidden">
         <div className="flex items-center justify-center py-10 sm:py-12">
@@ -122,6 +129,9 @@ export const TonightSuggestions = () => {
   }
 
   if (plannedRecipe) {
+    if (embedded) {
+      return <RecipeRow recipe={plannedRecipe} highlight />;
+    }
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -148,6 +158,13 @@ export const TonightSuggestions = () => {
   }
 
   if (suggestions.length === 0) {
+    if (embedded) {
+      return (
+        <p className="text-sm text-muted-foreground px-1">
+          Add recipes to get tonight ideas.
+        </p>
+      );
+    }
     return (
       <div className="bg-cream-subtle rounded-[12px] shadow-card p-4 sm:p-8 w-full max-w-full overflow-hidden">
         <div className="text-center py-6 sm:py-8 px-1">
@@ -160,6 +177,18 @@ export const TonightSuggestions = () => {
             Add Your First Recipe
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  const visible = suggestions.slice(0, embedded ? maxItems : suggestions.length);
+
+  if (embedded) {
+    return (
+      <div className="space-y-2 min-w-0" data-testid="tonight-suggestions-embedded">
+        {visible.map((recipe) => (
+          <RecipeRow key={recipe.id} recipe={recipe} />
+        ))}
       </div>
     );
   }
@@ -194,7 +223,7 @@ export const TonightSuggestions = () => {
       </div>
 
       <div className="grid gap-3 sm:gap-4 min-w-0">
-        {suggestions.map((recipe, index) => (
+        {visible.map((recipe, index) => (
           <motion.div
             key={recipe.id}
             initial={{ opacity: 0, y: 8 }}
