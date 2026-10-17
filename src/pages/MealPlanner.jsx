@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { recipeApi, mealPlanApi, aiApi, calendarApi, shoppingListApi } from '../lib/api';
 import { getAiQuotaErrorMessage } from '../lib/aiQuota';
 import { useLanguage } from '../context/LanguageContext';
@@ -75,8 +75,11 @@ import {
   Copy,
   Users,
   Zap,
+  Minus,
+  PoundSterling,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { RetailerSearchLinks } from '../components/RetailerSearchLinks';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, eachDayOfInterval, isSameDay, addDays, parseISO, differenceInCalendarWeeks } from 'date-fns';
 
 function groupPreviewByAisle(items = []) {
@@ -103,6 +106,7 @@ const MEAL_TYPE_KEYS = {
 
 export const MealPlanner = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useLanguage();
   const { preferences } = useUserPreferences();
   const familyMode = wantsFamilyOneMeal(preferences);
@@ -154,6 +158,10 @@ export const MealPlanner = () => {
   const [planHorizon, setPlanHorizon] = useState(() => loadPlanHorizon());
   const [proteinBoostDay, setProteinBoostDay] = useState(null); // Date | null
   const [tonightHeadcount, setTonightHeadcount] = useState(null);
+  const [addPlanServings, setAddPlanServings] = useState(4);
+  const [autoDinnerNights, setAutoDinnerNights] = useState(5);
+  const [weekCost, setWeekCost] = useState(null);
+  const [weekCostLoading, setWeekCostLoading] = useState(false);
 
   // Honor Preferences → weekStartsOn (default Monday)
   const weekStartsOn = weekStartsOnNumber(preferences.weekStartsOn, 1);
@@ -226,6 +234,26 @@ export const MealPlanner = () => {
     loadBusyness();
   }, [loadBusyness]);
 
+  const loadWeekCost = useCallback(async () => {
+    setWeekCostLoading(true);
+    try {
+      const res = await mealPlanApi.getWeekEstimate({
+        start_date: weekStartKey,
+        end_date: weekEndKey,
+      });
+      setWeekCost(res.data);
+    } catch {
+      setWeekCost(null);
+    } finally {
+      setWeekCostLoading(false);
+    }
+  }, [weekStartKey, weekEndKey]);
+
+  useEffect(() => {
+    if (mealPlans.length) loadWeekCost();
+    else setWeekCost(null);
+  }, [mealPlans, loadWeekCost]);
+
   useLiveRefreshEvent(
     EventType.RECIPE_DELETED,
     useCallback((data) => {
@@ -266,6 +294,7 @@ export const MealPlanner = () => {
       };
       if (entryType === 'recipe') {
         payload.recipe_id = selectedRecipe;
+        if (addPlanServings > 0) payload.servings = addPlanServings;
       } else {
         payload.recipe_title = entryTitle.trim();
       }
@@ -389,7 +418,48 @@ export const MealPlanner = () => {
   const openAutoDialog = () => {
     setAutoPlanWeekStart(weekStart);
     setAutoPlanDays(7);
+    const nights =
+      dinnerHeadcount != null && Number.isFinite(Number(dinnerHeadcount))
+        ? Math.min(7, Math.max(1, Number(dinnerHeadcount)))
+        : 5;
+    setAutoDinnerNights(nights);
     setShowAutoDialog(true);
+  };
+
+  useEffect(() => {
+    if (location.state?.planAndShop) {
+      openAutoDialog();
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state?.planAndShop]);
+
+  const resolveMealServings = useCallback(
+    (meal) => {
+      if (meal?.servings != null && Number(meal.servings) > 0) return Number(meal.servings);
+      const recipe = recipes.find((r) => r.id === meal.recipe_id);
+      if (recipe?.servings) return Number(recipe.servings);
+      if (dinnerHeadcount != null && Number.isFinite(Number(dinnerHeadcount))) {
+        return Number(dinnerHeadcount);
+      }
+      return 4;
+    },
+    [recipes, dinnerHeadcount]
+  );
+
+  const handleUpdateMealServings = async (meal, delta) => {
+    const current = resolveMealServings(meal);
+    const next = Math.min(100, Math.max(1, current + delta));
+    if (next === current && meal.servings == null && delta < 0) return;
+    setMealPlans((prev) =>
+      prev.map((p) => (p.id === meal.id ? { ...p, servings: next } : p))
+    );
+    try {
+      await mealPlanApi.update(meal.id, { servings: next });
+    } catch {
+      toast.error(t('toastUpdateRecipeFailed') || 'Could not update servings');
+      loadData();
+    }
   };
 
   const openSwapDialog = (meal) => {
@@ -443,6 +513,11 @@ export const MealPlanner = () => {
         start_date: startDate,
         apply: true,
         replace_week: true,
+        dinner_nights: autoDinnerNights,
+        default_servings:
+          dinnerHeadcount != null && Number.isFinite(Number(dinnerHeadcount))
+            ? Number(dinnerHeadcount)
+            : undefined,
       });
       const plan = res.data || {};
       const created = plan.created ?? 0;
@@ -895,6 +970,11 @@ export const MealPlanner = () => {
     setEntryNotes('');
     setSelectedRecipe('');
     setRecipeSearch('');
+    const defaultServ =
+      dinnerHeadcount != null && Number.isFinite(Number(dinnerHeadcount))
+        ? Number(dinnerHeadcount)
+        : 4;
+    setAddPlanServings(defaultServ);
     setShowAddDialog(true);
   };
 
@@ -1062,6 +1142,25 @@ export const MealPlanner = () => {
               {t('export')}
             </Button>
           </div>
+
+          {(weekCostLoading || weekCost?.total_estimated != null) && mealPlans.length > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-white px-4 py-3 text-sm"
+              data-testid="week-cost-estimate"
+            >
+              <PoundSterling className="w-4 h-4 text-laro shrink-0" />
+              {weekCostLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <span className="font-semibold">
+                    {t('weekCostEstimate')}: £{Number(weekCost.total_estimated).toFixed(2)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{t('weekCostIndicative')}</span>
+                </>
+              )}
+            </div>
+          )}
 
           {multiWeekTabs.length > 0 && (
             <div
@@ -1387,8 +1486,40 @@ export const MealPlanner = () => {
                                     {adultBoost}
                                   </p>
                                 ) : null}
+                                {canOpenRecipe ? (
+                                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                    <Users className="w-3 h-3" />
+                                    {t('servings')}: {resolveMealServings(meal)}
+                                  </p>
+                                ) : null}
                               </div>
                               <div className="flex items-center gap-0.5 shrink-0">
+                                {canOpenRecipe && (
+                                  <div
+                                    className="flex items-center gap-0.5 mr-1"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      disabled={resolveMealServings(meal) <= 1}
+                                      onClick={() => handleUpdateMealServings(meal, -1)}
+                                      aria-label={t('servings')}
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      onClick={() => handleUpdateMealServings(meal, 1)}
+                                      aria-label={t('servings')}
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                )}
                                 {canOpenRecipe && (
                                   <Button
                                     variant="ghost"
@@ -1519,7 +1650,13 @@ export const MealPlanner = () => {
                               <button
                                 key={recipe.id}
                                 type="button"
-                                onClick={() => setSelectedRecipe(recipe.id)}
+                                onClick={() => {
+                                  setSelectedRecipe(recipe.id);
+                                  setAddPlanServings(
+                                    recipe.servings ||
+                                      (dinnerHeadcount != null ? Number(dinnerHeadcount) : 4)
+                                  );
+                                }}
                                 className={`w-full text-left px-3 py-2.5 text-sm transition-colors ${
                                   selected
                                     ? 'bg-laro-light text-laro font-medium'
@@ -1540,6 +1677,35 @@ export const MealPlanner = () => {
                           })
                         )}
                       </div>
+                      {selectedRecipe ? (
+                        <div className="flex items-center justify-between rounded-xl border border-border/60 px-3 py-2">
+                          <span className="text-sm font-medium">{t('planServings')}</span>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 rounded-full"
+                              disabled={addPlanServings <= 1}
+                              onClick={() => setAddPlanServings((n) => Math.max(1, n - 1))}
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <span className="w-8 text-center font-semibold tabular-nums">
+                              {addPlanServings}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 rounded-full"
+                              onClick={() => setAddPlanServings((n) => Math.min(100, n + 1))}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -1597,6 +1763,14 @@ export const MealPlanner = () => {
               </DialogTitle>
               <DialogDescription>
                 {t('reviewGroceryDesc')}
+                {shopPreview?.estimated_total != null ? (
+                  <span className="block mt-2 font-medium text-foreground">
+                    {t('weekCostEstimate')}: £{Number(shopPreview.estimated_total).toFixed(2)}{' '}
+                    <span className="font-normal text-muted-foreground text-xs">
+                      ({t('weekCostIndicative')})
+                    </span>
+                  </span>
+                ) : null}
               </DialogDescription>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
@@ -1654,7 +1828,17 @@ export const MealPlanner = () => {
                                 {name}
                               </span>
                             ))}
+                            {item.estimated_line_cost != null && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {t('estimatedLineCost')} £{Number(item.estimated_line_cost).toFixed(2)}
+                              </span>
+                            )}
                           </div>
+                          <RetailerSearchLinks
+                            retailerLinks={item.retailer_links}
+                            preferredRetailerId={item.preferred_retailer_id}
+                            productHint={item.product_hint}
+                          />
                         </div>
                       </label>
                     ))}
@@ -1967,6 +2151,29 @@ export const MealPlanner = () => {
                 const dialogPlanEnd = addDays(dialogWeekStart, planDays - 1);
                 return (
                   <>
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">
+                        {t('cookNightsQuestion')}
+                      </label>
+                      <p className="text-xs text-muted-foreground mb-2">{t('cookNightsHint')}</p>
+                      <div className="flex flex-wrap gap-2" data-testid="auto-dinner-nights">
+                        {[3, 4, 5, 6, 7].map((n) => (
+                          <Button
+                            key={n}
+                            type="button"
+                            variant={autoDinnerNights === n ? 'default' : 'outline'}
+                            className={`rounded-full min-w-[2.5rem] ${
+                              autoDinnerNights === n ? 'bg-laro hover:bg-laro-dark text-white' : ''
+                            }`}
+                            disabled={autoGenerating}
+                            onClick={() => setAutoDinnerNights(n)}
+                          >
+                            {n}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div>
                       <label className="text-sm font-medium mb-2 block">
                         {t('choosePlanLength')}

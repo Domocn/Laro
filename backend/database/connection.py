@@ -1283,6 +1283,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meal_plans' AND column_name='adult_boost') THEN
         ALTER TABLE meal_plans ADD COLUMN adult_boost TEXT DEFAULT '';
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meal_plans' AND column_name='servings') THEN
+        ALTER TABLE meal_plans ADD COLUMN servings INTEGER DEFAULT NULL;
+    END IF;
 
     -- Track when a recipe was last cooked
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='last_cooked_at') THEN

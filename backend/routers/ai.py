@@ -2657,6 +2657,25 @@ def _attach_auto_meal_plan_dates(plan: list, start_date) -> list:
     return plan
 
 
+def _filter_auto_plan_dinners(plan: list, dinner_nights: int) -> list:
+    """Keep at most N dinner slots (Quickle-style 'nights you cook')."""
+    if not dinner_nights or dinner_nights < 1:
+        return plan
+    kept = []
+    for day_plan in plan or []:
+        dinners = [
+            m
+            for m in day_plan.get("meals") or []
+            if str(m.get("meal_type") or "").lower() == "dinner"
+        ]
+        if not dinners:
+            continue
+        kept.append({**day_plan, "meals": [dinners[0]]})
+        if len(kept) >= dinner_nights:
+            break
+    return kept
+
+
 async def _apply_auto_meal_plan_to_week(
     *,
     user: dict,
@@ -2664,6 +2683,7 @@ async def _apply_auto_meal_plan_to_week(
     start_date,
     days: int,
     replace_week: bool,
+    default_servings: int | None = None,
 ) -> dict:
     """Persist generated meals into the target week; optionally clear first."""
     import uuid
@@ -2692,6 +2712,9 @@ async def _apply_auto_meal_plan_to_week(
             meal_type = meal.get("meal_type")
             if not recipe_id or not meal_type:
                 continue
+            slot_servings = meal.get("servings")
+            if slot_servings is None and default_servings:
+                slot_servings = default_servings
             plan_doc = {
                 "id": str(uuid.uuid4()),
                 "date": meal_date,
@@ -2701,6 +2724,7 @@ async def _apply_auto_meal_plan_to_week(
                 "notes": "",
                 "adult_boost": (meal.get("adult_boost") or "").strip()[:500],
                 "entry_type": "recipe",
+                "servings": int(slot_servings) if slot_servings else None,
                 "household_id": household_id,
                 "created_at": now,
             }
@@ -2752,7 +2776,9 @@ async def auto_generate_meal_plan(
 
     def fallback_plan(recipes_list: list, plan_days: int) -> dict:
         """Deterministic plan from the user's recipes when the LLM JSON fails."""
-        meal_types = ["Breakfast", "Lunch", "Dinner"]
+        dinner_only = data.dinner_nights is not None and int(data.dinner_nights or 0) > 0
+        meal_types = ["Dinner"] if dinner_only else ["Breakfast", "Lunch", "Dinner"]
+        nights = int(data.dinner_nights) if dinner_only else plan_days
         pool = list(recipes_list)
         random.shuffle(pool)
         if not pool:
@@ -2766,16 +2792,20 @@ async def auto_generate_meal_plan(
             }
         plan = []
         idx = 0
-        for day in range(plan_days):
+        day_limit = min(plan_days, nights) if dinner_only else plan_days
+        for day in range(day_limit):
             meals = []
             for mt in meal_types:
                 r = pool[idx % len(pool)]
                 idx += 1
-                meals.append({
+                meal_row = {
                     "meal_type": mt,
                     "recipe_id": r["id"],
                     "recipe_title": r["title"],
-                })
+                }
+                if data.default_servings:
+                    meal_row["servings"] = int(data.default_servings)
+                meals.append(meal_row)
             plan.append({
                 "day": day,
                 "date_offset": day,
@@ -2793,6 +2823,8 @@ async def auto_generate_meal_plan(
 
     async def finalize(plan_data: dict) -> dict:
         plan = _normalize_auto_meal_plan_days(plan_data.get("plan") or [], days)
+        if data.dinner_nights:
+            plan = _filter_auto_plan_dinners(plan, int(data.dinner_nights))
         plan = _attach_auto_meal_plan_dates(plan, start_date)
         plan_data["plan"] = plan
         plan_data.setdefault("source", "ai")
@@ -2808,6 +2840,7 @@ async def auto_generate_meal_plan(
                 start_date=start_date,
                 days=days,
                 replace_week=data.replace_week,
+                default_servings=data.default_servings,
             )
             plan_data.update(applied)
             plan_data["applied"] = True
