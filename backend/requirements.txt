@@ -86,7 +86,7 @@ Pygments==2.19.2
 PyJWT==2.10.1
 pyparsing==3.3.2
 pytest==9.0.2
-python-dateutil==2.9.0.post0
+python-dateutil==4.0.0
 python-dotenv==1.2.1
 python-jose==3.5.0
 python-multipart==0.0.22
