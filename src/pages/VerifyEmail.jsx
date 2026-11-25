@@ -1,52 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { MailCheck, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { BrandLockup } from '../components/BrandAcrostic';
+import { useLanguage } from '../context/LanguageContext';
 
 export const VerifyEmail = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const navigate = useNavigate();
   const { verifyEmail } = useAuth();
+  const { t } = useLanguage();
 
   const [status, setStatus] = useState('verifying'); // verifying, success, error
   const [errorMessage, setErrorMessage] = useState('');
 
+  // The token is single-use: the server clears it on the first call. Run exactly once,
+  // otherwise a provider re-render re-fires the effect and the second call shows "expired".
+  const ranRef = useRef(false);
+
   useEffect(() => {
+    if (ranRef.current) return;
+    ranRef.current = true;
     const verify = async () => {
       if (!token) {
         setStatus('error');
-        setErrorMessage('No verification token provided');
+        setErrorMessage(t('verifyNoToken'));
         return;
       }
 
       try {
         await verifyEmail(token);
         setStatus('success');
-        toast.success('Email verified successfully!');
+        toast.success(t('toastEmailVerified'));
       } catch (error) {
         setStatus('error');
-        setErrorMessage(error.response?.data?.detail || 'Verification failed. The link may have expired.');
+        setErrorMessage(error.response?.data?.detail || t('verifyFailedExpired'));
       }
     };
 
     verify();
-  }, [token, verifyEmail]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4">
+    <main id="main-content" tabIndex={-1} className="min-h-screen bg-cream flex items-center justify-center p-4">
       <motion.div
         className="w-full max-w-md"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <Link to="/" className="flex justify-center mb-8">
-          <img src="/laro-banner.png" alt="Laro" className="h-14" />
-        </Link>
+        <BrandLockup className="mb-8" imgClass="h-14" />
 
         <div className="bg-white rounded-2xl shadow-card border border-border/60 p-8 text-center">
           {status === 'verifying' && (
@@ -99,6 +107,6 @@ export const VerifyEmail = () => {
           )}
         </div>
       </motion.div>
-    </div>
+    </main>
   );
 };

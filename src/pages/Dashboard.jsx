@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { planLabel } from '../lib/recipeVersions';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
@@ -6,6 +7,7 @@ import { RecipeCard } from '../components/RecipeCard';
 import { TonightSuggestions } from '../components/TonightSuggestions';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useUserPreferences, weekStartsOnNumber } from '../hooks/useUserPreferences';
 import { recipeApi, mealPlanApi, aiApi } from '../lib/api';
 import {
   useLiveRefreshContext,
@@ -15,13 +17,13 @@ import {
 import { Button } from '../components/ui/button';
 import {
   Plus,
+  PlaneTakeoff,
   UtensilsCrossed,
   CalendarDays,
   ShoppingCart,
   Refrigerator,
   ArrowRight,
   ChefHat,
-  Download,
   Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,11 +32,13 @@ import { format, endOfWeek } from 'date-fns';
 export const Dashboard = () => {
   const { user, household } = useAuth();
   const { t } = useLanguage();
+  const { preferences } = useUserPreferences();
   const liveRefresh = useLiveRefreshContext();
   const [recipes, setRecipes] = useState([]);
   const [mealPlans, setMealPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [liveImports, setLiveImports] = useState([]);
+  const weekStartsOn = weekStartsOnNumber(preferences.weekStartsOn, 1);
 
   const loadData = useCallback(async () => {
     try {
@@ -42,7 +46,7 @@ export const Dashboard = () => {
         recipeApi.getAll(),
         mealPlanApi.getAll({
           start_date: format(new Date(), 'yyyy-MM-dd'),
-          end_date: format(endOfWeek(new Date()), 'yyyy-MM-dd'),
+          end_date: format(endOfWeek(new Date(), { weekStartsOn }), 'yyyy-MM-dd'),
         }),
       ]);
       setRecipes(recipesRes.data.slice(0, 6));
@@ -55,7 +59,7 @@ export const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, weekStartsOn]);
 
   useEffect(() => {
     loadData();
@@ -95,9 +99,16 @@ export const Dashboard = () => {
     }, [loadData]),
     liveRefresh
   );
+  useLiveRefreshEvent(
+    [EventType.MEAL_PLAN_CREATED, EventType.MEAL_PLAN_UPDATED, EventType.MEAL_PLAN_DELETED],
+    useCallback(() => {
+      loadData();
+    }, [loadData]),
+    liveRefresh
+  );
 
   const quickActions = [
-    { icon: Plus, label: t('addRecipe'), path: '/recipes/new', color: 'bg-laro-dark', shadowColor: 'shadow-soft' },
+    { icon: Plus, label: t('addRecipe'), path: '/recipes/add', color: 'bg-laro-dark', shadowColor: 'shadow-soft' },
     { icon: CalendarDays, label: t('mealPlan'), path: '/meal-planner', color: 'bg-laro', shadowColor: 'shadow-soft' },
     { icon: ShoppingCart, label: t('shopping'), path: '/shopping', color: 'bg-laro-house', shadowColor: 'shadow-soft' },
     { icon: Refrigerator, label: t('myFridge'), path: '/fridge', color: 'bg-laro-uplift', shadowColor: 'shadow-soft' },
@@ -105,7 +116,7 @@ export const Dashboard = () => {
 
   return (
     <Layout>
-      <div className="space-y-10" data-testid="dashboard">
+      <div className="space-y-8" data-testid="dashboard">
         {/* Welcome Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -114,27 +125,36 @@ export const Dashboard = () => {
         >
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="font-heading text-3xl sm:text-4xl font-semibold text-laro-brand tracking-tighter">
+              <h1 className="font-heading text-3xl font-semibold text-laro-brand tracking-tighter">
                 {t('welcomeBackName', { name: user?.name?.split(' ')[0] })}
               </h1>
-              <p className="text-muted-foreground mt-2 tracking-tight">
+              <p className="text-muted-foreground mt-1 tracking-tight">
                 {household ? `${household.name}` : t('yourPersonalKitchen')}
               </p>
             </div>
-            <Link to="/recipes/new">
-              <Button className="rounded-full" data-testid="dashboard-add-recipe">
-                <Plus className="w-4 h-4 mr-2" />
-                {t('addRecipe')}
-              </Button>
-            </Link>
           </div>
         </motion.div>
+
+        {!loading && (
+        <Link
+          to="/recipes/migrate"
+          data-testid="dashboard-migrate"
+          className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 px-4 py-3 hover:shadow-card transition-shadow"
+        >
+          <PlaneTakeoff className="w-5 h-5 text-amber-800 dark:text-amber-200 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-amber-950 dark:text-amber-100">{t('migrateTitle')}</p>
+            <p className="text-sm text-amber-900/80 dark:text-amber-100/80 mt-1">{t('migrateHubDesc')}</p>
+          </div>
+        </Link>
+        )}
 
         {liveImports.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             data-testid="importing-pill"
+            className="flex flex-wrap items-center gap-2"
           >
             <Link
               to="/settings/imports"
@@ -149,6 +169,50 @@ export const Dashboard = () => {
                 {liveImports.length > 1 ? ` · +${liveImports.length - 1}` : ''}
               </span>
             </Link>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-full h-9"
+              data-testid="dashboard-cancel-import"
+              onClick={async () => {
+                const id = liveImports[0]?.id;
+                if (!id) return;
+                try {
+                  await aiApi.cancelImport(id);
+                  toast.success(t('toastImportCancelled'));
+                  loadLiveImports();
+                } catch (error) {
+                  toast.error(error.response?.data?.detail || t('toastImportCancelFailed'));
+                }
+              }}
+            >
+              {t('cancelImport')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="rounded-full h-9 bg-laro hover:bg-laro-dark"
+              data-testid="dashboard-retry-import"
+              onClick={async () => {
+                const item = liveImports[0];
+                if (!item?.id) return;
+                try {
+                  if (!item.has_source_text) {
+                    window.location.hash = '#/recipes/quick-add';
+                    toast.message(t('toastImportRetryPasteAgain'));
+                    return;
+                  }
+                  await aiApi.retryImport(item.id);
+                  toast.success(t('toastImportRetryStarted'));
+                  loadLiveImports();
+                } catch (error) {
+                  toast.error(error.response?.data?.detail || t('toastImportRetryFailed'));
+                }
+              }}
+            >
+              {t('retryImport')}
+            </Button>
           </motion.div>
         )}
 
@@ -214,7 +278,7 @@ export const Dashboard = () => {
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">
                     {plan.meal_type ? t(plan.meal_type.toLowerCase()) : plan.meal_type}
                   </p>
-                  <p className="font-semibold mt-1 line-clamp-1 tracking-tight">{plan.recipe_title}</p>
+                  <p className="font-semibold mt-1 line-clamp-1 tracking-tight">{planLabel(plan.recipe_title, plan, t('mealPlanLowFodmap'))}</p>
                   <p className="text-sm text-laro mt-2">{format(new Date(plan.date), 'EEE, MMM d')}</p>
                 </div>
               ))}
@@ -248,21 +312,10 @@ export const Dashboard = () => {
               <h3 className="font-heading text-lg font-semibold mb-2">{t('noRecipes')}</h3>
               <p className="text-muted-foreground mb-6">{t('startRecipeCollection')}</p>
               <div className="flex justify-center gap-3 flex-wrap">
-                <Link to="/recipes/new">
+                <Link to="/recipes/add">
                   <Button className="rounded-full bg-laro hover:bg-laro-dark">
                     <Plus className="w-4 h-4 mr-2" />
-                    {t('createRecipe')}
-                  </Button>
-                </Link>
-                <Link to="/recipes/import">
-                  <Button variant="outline" className="rounded-full">
-                    {t('importFromUrl')}
-                  </Button>
-                </Link>
-                <Link to="/recipes/import-batch">
-                  <Button variant="outline" className="rounded-full">
-                    <Download className="w-4 h-4 mr-2" />
-                    {t('importFromApp')}
+                    {t('addRecipe')}
                   </Button>
                 </Link>
               </div>

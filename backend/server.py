@@ -40,6 +40,7 @@ from middleware import (
 )
 
 # Import routers
+from routers import recipe_recommendations
 from routers import (
     auth, households, recipes, ai, meal_plans, shopping_lists,
     homeassistant, notifications, calendar, import_data, llm_settings,
@@ -47,8 +48,9 @@ from routers import (
     roles, trusted_devices, recipe_versions, nutrition, ingredients, seed,
     recipe_import, voice_cooking, cost_tracking, reviews, sharing, jobs, debug,
     api_tokens, cookbooks, pantry, export, remote_access, mobile, friends,
-    subscriptions, support, rewards, google_health
+    subscriptions, support, rewards, google_health, errors, links, engagement
 )
+from routers import confirmed_lines as confirmed_lines_router
 
 # Setup Logging for Docker/Portainer visibility
 import sys
@@ -149,6 +151,17 @@ async def lifespan(app: FastAPI):
         startup_state.mark_database_failed(str(e))
         # Don't raise - allow server to start for health checks
         # The app will be degraded but can report its status
+
+    # Warm the bundled food-composition dataset off the event loop (~0.2 s, offline)
+    # so the first nutrition lookup doesn't pay for it.
+    try:
+        import threading
+
+        from utils import food_dataset
+
+        threading.Thread(target=food_dataset.load, name="food-dataset-load", daemon=True).start()
+    except Exception as e:
+        logger.warning(f"Food dataset warm-up not started: {e}")
 
     # Start Zeroconf service for Home Assistant discovery (optional)
     try:
@@ -254,6 +267,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan, title="Laro API")
 
+# Keep every server error (container logs are wiped on deploy) and alert the owner.
+from fastapi.exception_handlers import http_exception_handler as _default_http_handler
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from services.error_log import record_server_exception
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_error_logged(request: Request, exc: StarletteHTTPException):
+    # Hand-raised 500s (e.g. `raise HTTPException(500, str(e))`) are real bugs too.
+    if exc.status_code in (500, 502):
+        await record_server_exception(request, exc, status=exc.status_code)
+    return await _default_http_handler(request, exc)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error_logged(request: Request, exc: Exception):
+    await record_server_exception(request, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong on our side. It has been logged so we can fix it."},
+    )
+
 # GZip compression for mobile optimization (60-70% response size reduction)
 from starlette.middleware.gzip import GZipMiddleware
 app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
@@ -286,7 +322,9 @@ api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth.router)
 api_v1_router.include_router(households.router)
 api_v1_router.include_router(recipes.router)
+api_v1_router.include_router(confirmed_lines_router.router)
 api_v1_router.include_router(ai.router)
+api_v1_router.include_router(recipe_recommendations.router)
 api_v1_router.include_router(meal_plans.router)
 api_v1_router.include_router(shopping_lists.router)
 api_v1_router.include_router(homeassistant.router)
@@ -323,7 +361,10 @@ api_v1_router.include_router(remote_access.router)
 api_v1_router.include_router(mobile.router)
 api_v1_router.include_router(friends.router)
 api_v1_router.include_router(subscriptions.router)
+api_v1_router.include_router(errors.router)
+api_v1_router.include_router(links.router)
 api_v1_router.include_router(support.router)
+api_v1_router.include_router(engagement.router)
 api_v1_router.include_router(rewards.router)
 
 # Legacy /api router for backward compatibility (mirrors v1)
@@ -333,7 +374,9 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)
 api_router.include_router(households.router)
 api_router.include_router(recipes.router)
+api_router.include_router(confirmed_lines_router.router)
 api_router.include_router(ai.router)
+api_router.include_router(recipe_recommendations.router)
 api_router.include_router(meal_plans.router)
 api_router.include_router(shopping_lists.router)
 api_router.include_router(homeassistant.router)
@@ -370,7 +413,10 @@ api_router.include_router(remote_access.router)
 api_router.include_router(mobile.router)
 api_router.include_router(friends.router)
 api_router.include_router(subscriptions.router)
+api_router.include_router(errors.router)
+api_router.include_router(links.router)
 api_router.include_router(support.router)
+api_router.include_router(engagement.router)
 api_router.include_router(rewards.router)
 
 
@@ -379,7 +425,7 @@ async def _get_categories():
     return {
         "categories": [
             "All", "Breakfast", "Lunch", "Dinner",
-            "Dessert", "Appetizer", "Snack", "Beverage", "Other"
+            "Dessert", "Appetizer", "Snack", "Beverage", "Sauce", "Other"
         ]
     }
 
@@ -392,6 +438,8 @@ async def _get_config():
         "api_version": "v1",
         "database": "postgresql",
         "is_cloud": settings.is_cloud,
+        # Amazon Associates tag for "Shop at Amazon" links; set AMAZON_ASSOCIATE_TAG in .env.
+        "amazon_associate_tag": (os.getenv("AMAZON_ASSOCIATE_TAG") or "").strip() or None,
         "features": {
             "ai_import": True,
             "ai_fridge_search": True,

@@ -19,6 +19,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 import { sharingApi } from '../lib/api';
 
 // WhatsApp icon component
@@ -29,6 +30,7 @@ const WhatsAppIcon = ({ className }) => (
 );
 
 export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
+  const { confirmActions } = useAccessibility();
   const [loading, setLoading] = useState(false);
   const [existingLinks, setExistingLinks] = useState([]);
   const [loadingLinks, setLoadingLinks] = useState(true);
@@ -98,7 +100,7 @@ export const ShareRecipeModal = ({ isOpen, onClose, recipe }) => {
   };
 
   const handleRevokeLink = async (linkId) => {
-    if (!window.confirm('Revoke this share link? Anyone with this link will no longer be able to view the recipe.')) {
+    if (!confirmDestructive(confirmActions, 'Revoke this share link? Anyone with this link will no longer be able to view the recipe.')) {
       return;
     }
     

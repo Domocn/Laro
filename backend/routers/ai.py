@@ -1734,11 +1734,11 @@ async def list_my_imports(
     """List this user's recipe import attempts (in-progress, failed, succeeded)."""
     from database.repositories.import_attempt_repository import import_attempt_repository
 
-    allowed = {None, "importing", "failed", "succeeded"}
+    allowed = {None, "importing", "failed", "succeeded", "cancelled"}
     if status not in allowed:
         raise HTTPException(
             status_code=400,
-            detail="status must be one of: importing, failed, succeeded",
+            detail="status must be one of: importing, failed, succeeded, cancelled",
         )
     items = await import_attempt_repository.list_for_user(
         user_id=str(user["id"]),
@@ -1757,6 +1757,11 @@ async def get_my_import(
     """Poll a single import attempt (includes extracted recipe when succeeded)."""
     from database.repositories.import_attempt_repository import import_attempt_repository
 
+    # Unlock abandoned imports so the poller / Settings UI can offer Retry.
+    await import_attempt_repository.fail_stale_importing(
+        user_id=str(user["id"]),
+        older_than_minutes=15,
+    )
     item = await import_attempt_repository.get_for_user(
         import_id=import_id,
         user_id=str(user["id"]),
@@ -1765,6 +1770,146 @@ async def get_my_import(
     if not item:
         raise HTTPException(status_code=404, detail="Import not found")
     return item
+
+
+@router.post("/imports/{import_id}/cancel")
+async def cancel_my_import(
+    import_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Cancel an in-progress import so the UI can unlock (Cancel / Retry)."""
+    from database.repositories.import_attempt_repository import import_attempt_repository
+
+    item = await import_attempt_repository.cancel_for_user(
+        import_id=import_id,
+        user_id=str(user["id"]),
+        error="Cancelled",
+    )
+    if not item:
+        existing = await import_attempt_repository.get_for_user(
+            import_id=import_id,
+            user_id=str(user["id"]),
+            include_result=False,
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="Import not found")
+        # Already finished / cancelled — treat as idempotent success.
+        return existing
+    return item
+
+
+@router.post("/imports/{import_id}/retry")
+async def retry_my_import(
+    request: Request,
+    import_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Retry a failed/cancelled/stuck text import using the stored source text.
+    Starts a new async import (202) when source text is available.
+    """
+    from database.repositories.import_attempt_repository import import_attempt_repository
+    from models import ImportTextRequest
+
+    existing = await import_attempt_repository.get_for_user(
+        import_id=import_id,
+        user_id=str(user["id"]),
+        include_result=False,
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Import not found")
+
+    if existing.get("status") == "importing":
+        await import_attempt_repository.cancel_for_user(
+            import_id=import_id,
+            user_id=str(user["id"]),
+            error="Cancelled for retry",
+        )
+
+    source_text = await import_attempt_repository.get_source_text(
+        import_id=import_id,
+        user_id=str(user["id"]),
+    )
+    if not (source_text or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="No saved paste text for this import — paste the recipe again to retry.",
+        )
+
+    # Re-enter the normal async import-text path with the stored paste.
+    return await import_recipe_from_text(
+        request,
+        ImportTextRequest(text=source_text),
+        user,
+    )
+
+
+_QTY_START = re.compile(r"^\s*[\d\u00bc-\u00be\u2150-\u215e]")
+
+
+def _split_ingredient_amounts(recipe: dict) -> dict:
+    """Website JSON-LD gives whole lines ("100g plain flour") with empty amount/unit, which broke
+    servings scaling, shopping-list merging and nutrition. Split them with the ingredient parser,
+    keeping the original wording whenever the parser would drop words ("salt and pepper")."""
+    try:
+        from utils.ingredient_parse import parse_ingredient_line
+    except Exception:
+        return recipe
+    out = []
+    for ing in recipe.get("ingredients") or []:
+        if isinstance(ing, dict) and not str(ing.get("amount") or "").strip() \
+                and not str(ing.get("unit") or "").strip() and _QTY_START.match(str(ing.get("name") or "")):
+            line = str(ing["name"]).strip()
+            try:
+                parsed = parse_ingredient_line(line)
+            except Exception:
+                parsed = {}
+            amount = str(parsed.get("amount") or "").strip()
+            if amount:
+                unit = str(parsed.get("unit") or "").strip()
+                name = str(parsed.get("name") or "").strip()
+                # Remove the leading quantity/unit from the ORIGINAL line as the safe name.
+                rest = re.sub(r"^\s*[\d\u00bc-\u00be\u2150-\u215e./\s-]+(?:x\s*[\d.]+\s*\w*\s+)?", "", line)
+                if unit:
+                    rest = re.sub(r"^" + re.escape(unit) + r"s?\b\.?\s*", "", rest, flags=re.I)
+                orig_words = {w for w in re.findall(r"[a-z]+", rest.lower()) if len(w) > 2}
+                kept = {w for w in re.findall(r"[a-z]+", name.lower()) if len(w) > 2}
+                if not name or (orig_words and len(kept) < 0.6 * len(orig_words)):
+                    name = rest.strip() or line
+                ing = {**ing, "amount": amount, "unit": unit, "name": name}
+        out.append(ing)
+    if out:
+        try:
+            from utils.recipe_fields import normalize_ingredient
+            out = [normalize_ingredient(i) for i in out]
+        except Exception:
+            pass
+        recipe = {**recipe, "ingredients": out}
+    return recipe
+
+
+def _image_url_text(value) -> str:
+    """JSON-LD image can be a string, an ImageObject {"url": ...} or a list of either."""
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    if isinstance(value, dict):
+        value = value.get("url") or value.get("contentUrl") or ""
+    return value if isinstance(value, str) else ""
+
+
+def _tidy_recipes(recipes):
+    """Same clean-up for import previews as for saved recipes (review screen == what's saved)."""
+    from utils.recipe_fields import normalize_category
+    out = []
+    for r in recipes or []:
+        if isinstance(r, dict):
+            r = _split_ingredient_amounts(r)
+            if r.get("category"):
+                r = {**r, "category": normalize_category(r["category"])}
+            if r.get("image_url") is not None and not isinstance(r["image_url"], str):
+                r = {**r, "image_url": _image_url_text(r["image_url"])}
+        out.append(r)
+    return out
 
 
 @router.post("/import-url")
@@ -1813,7 +1958,7 @@ async def import_recipe_from_url(
             **extra,
         }
         if recipe is not None:
-            payload["recipe"] = recipe
+            payload["recipe"] = _tidy_recipes([recipe])[0]
         return with_source_meta(payload, url, source_author)
 
     try:
@@ -2274,14 +2419,35 @@ async def import_recipe_from_url(
         if not _title and not _ings and not _insts:
             logger.info(f"LLM returned an empty recipe for {url}")
             trace.finish("error", http_status=422, reason="empty_llm_recipe")
-            raise HTTPException(
-                status_code=422,
-                detail=(
+            # Say WHY, so the user knows what to do next (the reel advice confused people
+            # importing from sites like Allrecipes that block apps with 402/403/451).
+            from urllib.parse import urlparse as _urlparse
+            _host = (_urlparse(url).hostname or "").lower()
+            _blocked = getattr(locals().get("response"), "status_code", 200) in (401, 402, 403, 429, 451, 460)
+            if any(h in _host for h in ("instagram.", "tiktok.", "facebook.", "youtube.", "youtu.be")):
+                _msg = (
                     "Couldn't read a recipe from that link. For Instagram/TikTok, share "
                     "the reel into Laro as a video (or paste the caption). Link-only "
                     "import needs a public reel the server can fetch."
-                ),
-            )
+                )
+            elif _blocked:
+                _msg = (
+                    "That website blocks recipe apps from reading its pages. Open the recipe, "
+                    "copy the ingredients and method, then use Paste & Go in Laro."
+                )
+            else:
+                _msg = (
+                    "Couldn't find a recipe on that page. If it is a recipe, copy the text "
+                    "and use Paste & Go, or try a photo of it."
+                )
+            raise HTTPException(status_code=422, detail=_msg)
+
+        try:
+            from services.recipe_image_search import enrich_recipe_with_image
+
+            recipe_data = await enrich_recipe_with_image(recipe_data)
+        except Exception:
+            pass
 
         logger.info(f"Successfully extracted recipe from URL: {recipe_data.get('title', 'Unknown')}")
         site_meta = {}
@@ -2424,6 +2590,8 @@ async def import_recipe_from_text(
         import_id=trace.import_id,
         user_id=str(user["id"]),
         kind="import-text",
+        source_text=text,
+        title=(text.strip().splitlines()[0][:120] if text.strip() else None),
     )
 
     async def _run_text_import() -> None:
@@ -2446,8 +2614,25 @@ async def import_recipe_from_text(
                     max_tokens=4000,
                 )
 
+            # User may have cancelled while the LLM was running.
+            current = await import_attempt_repository.get_for_user(
+                import_id=trace.import_id,
+                user_id=str(user_snapshot["id"]),
+                include_result=False,
+            )
+            if current and current.get("status") == "cancelled":
+                trace.step("cancelled_after_llm")
+                return
+
             result = clean_llm_json(result)
             recipe_data = json.loads(result)
+            recipe_data = _split_ingredient_amounts(recipe_data) if isinstance(recipe_data, dict) else recipe_data
+            try:
+                from services.recipe_image_search import enrich_recipe_with_image
+
+                recipe_data = await enrich_recipe_with_image(recipe_data)
+            except Exception as img_err:
+                logger.debug("Recipe image enrich skipped: %s", img_err)
             logger.info(
                 "Successfully parsed recipe from text: %s (import_id=%s)",
                 recipe_data.get("title", "Unknown"),
@@ -2458,6 +2643,7 @@ async def import_recipe_from_text(
                 **recipe_summary(recipe_data),
                 recipe=recipe_data,
                 used_ai=True,
+                has_image=bool((recipe_data.get("image_url") or "").strip()),
             )
         except HTTPException as he:
             if trace.status == "started":
@@ -2579,6 +2765,12 @@ async def import_recipe_from_video(
 
         result = clean_llm_json(result)
         recipe_data = json.loads(result)
+        try:
+            from services.recipe_image_search import enrich_recipe_with_image
+
+            recipe_data = await enrich_recipe_with_image(recipe_data)
+        except Exception:
+            pass
         logger.info("Video/caption import OK: %s", recipe_data.get("title", "Unknown"))
         trace.finish("success", **recipe_summary(recipe_data), sources=meta)
 
@@ -3186,7 +3378,11 @@ async def import_meal_plan_document(
 
 
 async def _read_uploaded_pdf_bytes(request: Request):
-    """Shared multipart PDF bytes (field name: `file`, max 12MB). Returns (bytes, form)."""
+    """Shared multipart PDF bytes (field name: `file`, max 95MB). Returns (bytes, form).
+
+    Kept just under the 50MB global request cap (middleware/security.py) to leave
+    room for multipart overhead, so large recipe books upload cleanly.
+    """
     form = await request.form()
     upload = form.get("file")
     if upload is None:
@@ -3195,8 +3391,11 @@ async def _read_uploaded_pdf_bytes(request: Request):
     raw = await upload.read()
     if not raw:
         raise HTTPException(status_code=400, detail="Empty PDF upload")
-    if len(raw) > 12_000_000:
-        raise HTTPException(status_code=400, detail="PDF too large (max 12MB)")
+    if len(raw) > 95_000_000:
+        raise HTTPException(status_code=400, detail="PDF too large (max 95MB)")
+    if b"%PDF" not in raw[:1024]:
+        # Renamed photos/docs used to reach PyMuPDF and 500 ("Failed to open stream").
+        raise HTTPException(status_code=400, detail="That file isn't a PDF. Try exporting it as PDF, or import it as a photo instead.")
     return raw, form
 
 
@@ -3370,8 +3569,8 @@ async def _import_recipes_from_scanned_pdf(
             "status": "preview",
             "applied": False,
             "recipe_count": len(recipes),
-            "recipes": recipes,
-            "recipe": recipes[0] if len(recipes) == 1 else None,
+            "recipes": _tidy_recipes(recipes),
+            "recipe": _tidy_recipes(recipes)[0] if len(recipes) == 1 else None,
             "message": f"{msg} — review before saving.",
         }
 
@@ -3411,6 +3610,11 @@ async def _import_recipes_from_scanned_pdf(
             doc["cookbook_id"] = cookbook["id"]
         await recipe_repository.create(doc)
         created.append(prepare_recipe_for_response(doc))
+    if created:
+        # Line macros + totals in the background (the import response never waits on them).
+        from services.recipe_macros_jobs import schedule_recipe_macros
+
+        schedule_recipe_macros([c["id"] for c in created], user)
 
     return {
         **base,
@@ -3445,6 +3649,15 @@ async def _import_recipes_from_pdf_bytes(
     return result
 
 
+# Big cookbooks: a few sections per LLM call so replies stay short enough to be valid JSON,
+# run in parallel so the whole import finishes inside Cloudflare's 100 s limit.
+PDF_MAX_SECTIONS = 40
+PDF_SECTIONS_PER_CALL = 2  # sections are up to ~5000 chars each
+PDF_PARALLEL_CALLS = 8
+# Cloud: the bigger model keeps long cookbook recipes whole and is faster than gpt-oss:20b here.
+PDF_IMPORT_MODEL = os.environ.get("OLLAMA_IMPORT_MODEL", "gpt-oss:120b")
+
+
 async def _import_recipes_from_pdf_text(
     request: Request,
     user: dict,
@@ -3452,25 +3665,34 @@ async def _import_recipes_from_pdf_text(
     *,
     apply: bool = False,
     cookbook_id: Optional[str] = None,
+    charge_quota: bool = True,
 ) -> dict:
     """
     Shared recipe/meal-plan→recipes PDF extraction.
+    charge_quota=False lets a caller (the Drive book job) check/charge once for many calls.
     Detects weekly meal-plan structure and converts meals to recipes when possible.
     """
     import uuid
     import httpx
     from datetime import datetime, timezone
-    from utils.recipe_fields import nutrition_to_columns, prepare_recipe_for_response
+    from utils.recipe_fields import normalize_adaptations, nutrition_to_columns, prepare_recipe_for_response
     from services.recipe_pdf_import import (
         MULTI_RECIPE_PDF_PROMPT,
         dedupe_recipes,
         mark_recipe_for_review,
         normalize_recipe_title,
         parse_llm_recipes_payload,
-        split_recipe_text_chunks,
+        coalesce_incomplete_recipes,
+        fold_recipe_versions,
+        merge_section_fragments,
+        pack_recipe_sections,
+        caps_title_candidates,
+        tag_dietary_adaptations,
+        versions_found,
     )
     from services.meal_plan_url_import import looks_like_structured_meal_plan
     from services.meal_plan_import import parse_meal_plan_text, plan_meals_as_recipes
+    from config import settings
 
     cookbook = await _resolve_cookbook_for_user(user, cookbook_id)
 
@@ -3500,39 +3722,95 @@ async def _import_recipes_from_pdf_text(
             logger.info("Structured meal-plan parse skipped: %s", e)
 
     if not parsed:
-        chunks = split_recipe_text_chunks(text)
+        chunks = pack_recipe_sections(text)
         if len(chunks) > 1:
-            numbered = "\n\n".join(
-                f"=== RECIPE SECTION {i + 1} ===\n{chunk[:4000]}"
-                for i, chunk in enumerate(chunks[:20])
-            )
-            user_prompt = (
-                f"This PDF has {min(len(chunks), 20)} separated sections. "
-                f"Extract each as its own recipe (do not merge sections):\n\n{numbered}"
-            )
+            sections = chunks[:PDF_MAX_SECTIONS]
+            batches = [
+                (start, sections[start:start + PDF_SECTIONS_PER_CALL])
+                for start in range(0, len(sections), PDF_SECTIONS_PER_CALL)
+            ]
         else:
-            user_prompt = (
-                "Extract every distinct recipe in this document as separate objects "
-                f"(do not merge dishes):\n\n{text[:14000]}"
-            )
+            batches = [(0, None)]
+
+        if charge_quota:
+            await require_ai_quota(user)
+        sem = asyncio.Semaphore(PDF_PARALLEL_CALLS)
+
+        async def _extract_batch(client, start, batch):
+            if batch is None:
+                prompt = (
+                    "Extract every distinct recipe in this document as separate objects "
+                    f"(do not merge dishes):\n\n{text[:14000]}"
+                )
+            else:
+                numbered = "\n\n".join(
+                    f"=== RECIPE SECTION {start + i + 1} ===\n{chunk}"
+                    for i, chunk in enumerate(batch)
+                )
+                prompt = (
+                    f"This part of the PDF has {len(batch)} separated sections. "
+                    f"Extract each as its own recipe (do not merge sections):\n\n{numbered}"
+                )
+                heads = caps_title_candidates("\n".join(batch))
+                if heads:
+                    # Anchors the count: without it the AI folds whole dishes into their neighbours.
+                    prompt += (
+                        "\n\nHeadings printed in this text (some are only sub-parts such as a sauce or "
+                        "pesto, tip boxes, or chapter names — ignore those): "
+                        + "; ".join(heads[:40])
+                        + ". Every heading that names a separate dish MUST come back as its own recipe. "
+                        "Never fold a separate dish into another recipe or into its versions."
+                    )
+            async with sem:
+                raw_reply = await call_llm(
+                    client, MULTI_RECIPE_PDF_PROMPT, prompt, user["id"],
+                    format_json=True, max_tokens=10000,
+                    ollama_model_override=PDF_IMPORT_MODEL if settings.is_cloud else None,
+                )
+            try:
+                return parse_llm_recipes_payload(json.loads(clean_llm_json(raw_reply)))
+            except ValueError:  # JSONDecodeError too: usually a reply cut off mid-way
+                if not batch or len(batch) < 2:
+                    raise
+                # Retry section by section so a long reply can't truncate the lot.
+                logger.info("PDF batch at section %s was cut off; retrying one section at a time", start + 1)
+                out = []
+                for i, chunk in enumerate(batch):
+                    out.extend(await _extract_batch(client, start + i, [chunk]))
+                return out
 
         try:
             async with httpx.AsyncClient() as client:
                 logger.info(
-                    "Parsing recipe PDF (%s section(s)) for user %s",
+                    "Parsing recipe PDF (%s section(s), %s batch(es)) for user %s",
                     len(chunks),
+                    len(batches),
                     user["id"],
                 )
-                result = await call_llm_metered(
-                    client, MULTI_RECIPE_PDF_PROMPT, user_prompt, user
+                results = await asyncio.gather(
+                    *(_extract_batch(client, start, batch) for start, batch in batches),
+                    return_exceptions=True,
                 )
-            result = clean_llm_json(result)
-            parsed = parse_llm_recipes_payload(json.loads(result))
-            source = "recipes"
         except HTTPException:
             raise
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse multi-recipe PDF JSON: {e}")
+        except Exception as e:
+            logger.error(f"Recipe PDF import failed: {e}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to import: {sanitize_error_message(e)}"
+            )
+
+        failed = 0
+        for res in results:
+            if isinstance(res, HTTPException):
+                raise res
+            if isinstance(res, Exception):
+                failed += 1
+                logger.error(f"Failed to parse multi-recipe PDF batch: {res}")
+                continue
+            parsed.extend(res)
+        if failed:
+            logger.warning("PDF import: %s of %s batch(es) failed", failed, len(batches))
+        if not parsed and failed:
             raise HTTPException(
                 status_code=422,
                 detail=(
@@ -3540,11 +3818,11 @@ async def _import_recipes_from_pdf_text(
                     "Try a clearer text PDF, or use Meal Plan → PDF for weekly plans."
                 ),
             )
-        except Exception as e:
-            logger.error(f"Recipe PDF import failed: {e}")
-            raise HTTPException(
-                status_code=500, detail=f"Failed to import: {sanitize_error_message(e)}"
-            )
+        parsed = tag_dietary_adaptations(coalesce_incomplete_recipes(merge_section_fragments(fold_recipe_versions(parsed))))
+        source = "recipes"
+        # One import = one AI use, however many batches it took.
+        if charge_quota and parsed and not is_premium_user(user):
+            await consume_ai_quota(user["id"])
 
     if not parsed:
         raise HTTPException(
@@ -3563,6 +3841,9 @@ async def _import_recipes_from_pdf_text(
     existing_titles.discard("")
 
     recipes, skipped = dedupe_recipes(parsed, existing_titles)
+    found_versions = versions_found(recipes)
+    for entry in found_versions:
+        logger.info("PDF import: %s has %s version(s): %s", entry["recipe"], len(entry["versions"]), ", ".join(entry["versions"]))
     kind = "recipes"
     base = {
         "kind": kind,
@@ -3571,6 +3852,7 @@ async def _import_recipes_from_pdf_text(
         "needs_review": True,
         "used_ai": used_ai,
         "sections_detected": len(chunks),
+        "versions_found": found_versions,
     }
     if not recipes:
         return {
@@ -3595,8 +3877,8 @@ async def _import_recipes_from_pdf_text(
             "status": "preview",
             "applied": False,
             "recipe_count": len(recipes),
-            "recipes": recipes,
-            "recipe": recipes[0] if len(recipes) == 1 else None,
+            "recipes": _tidy_recipes(recipes),
+            "recipe": _tidy_recipes(recipes)[0] if len(recipes) == 1 else None,
             "cookbook": {"id": cookbook["id"], "title": cookbook["title"]} if cookbook else None,
         }
 
@@ -3605,6 +3887,7 @@ async def _import_recipes_from_pdf_text(
 
     now = datetime.now(timezone.utc).isoformat()
     created = []
+    needs_macros = []
     for recipe in recipes:
         recipe_id = str(uuid.uuid4())
         nutrition = recipe.get("nutrition") or {}
@@ -3628,11 +3911,26 @@ async def _import_recipes_from_pdf_text(
             "difficulty": "easy",
             **nutrition_to_columns(nutrition if isinstance(nutrition, dict) else {}),
         }
+        adaptations = normalize_adaptations(recipe.get("adaptations"))
+        if adaptations:
+            doc["adaptations"] = adaptations
+        # Totals = sum(line macros) / servings (Original, versions, Low FODMAP). Lines already
+        # cached apply now; the rest are estimated in the background after the response.
+        from services.version_macros import refresh_recipe_macros
+
+        macros = await refresh_recipe_macros(doc, allow_ai=False)
+        doc.update(macros["fields"])
+        if not macros["complete"]:
+            needs_macros.append(recipe_id)
         if cookbook:
             doc["cookbook_id"] = cookbook["id"]
             doc["source_type"] = "cookbook"
         await recipe_repository.create(doc)
         created.append(prepare_recipe_for_response(doc))
+    if needs_macros:
+        from services.recipe_macros_jobs import schedule_recipe_macros
+
+        schedule_recipe_macros(needs_macros, user)
 
     return {
         **base,
@@ -3644,6 +3942,143 @@ async def _import_recipes_from_pdf_text(
         "cookbook": {"id": cookbook["id"], "title": cookbook["title"]} if cookbook else None,
         "message": f"Added {len(created)} recipe(s) marked for review.",
     }
+
+
+from pydantic import BaseModel
+
+
+class DriveImportRequest(BaseModel):
+    url: str
+    cookbook_id: Optional[str] = None
+
+
+@router.post("/import-pdf-drive")
+async def import_pdf_from_drive(body: DriveImportRequest, user: dict = Depends(get_current_user)):
+    """
+    Import a big recipe PDF (whole cookbook) from a Google Drive share link.
+    Runs in the background; poll GET /ai/import-jobs/{job_id}.
+    """
+    from services.drive_import import (
+        DriveImportError, drive_file_id, find_running_job, mark_running, new_job, save_job,
+    )
+
+    try:
+        file_id = drive_file_id(body.url)
+    except DriveImportError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    # Same book already importing (second tap, or started on another device): show that one.
+    running = await find_running_job(user["id"], file_id)
+    if running:
+        return {"job_id": running["id"], "status": running["status"], "message": running["message"]}
+    await require_ai_quota(user)
+    await _resolve_cookbook_for_user(user, body.cookbook_id)
+    job = new_job(user["id"], file_id)
+    await save_job(job)
+    await mark_running(job)
+    task = asyncio.create_task(_run_drive_pdf_job(job, user, body.cookbook_id))
+    _DRIVE_JOB_TASKS.add(task)
+    task.add_done_callback(_DRIVE_JOB_TASKS.discard)
+    return {"job_id": job["id"], "status": job["status"], "message": job["message"]}
+
+
+@router.get("/import-jobs/{job_id}")
+async def get_import_job(job_id: str, user: dict = Depends(get_current_user)):
+    from services.drive_import import get_job
+
+    job = await get_job(job_id)
+    if not job or job.get("user_id") != user["id"]:
+        raise HTTPException(status_code=404, detail="Import not found (it may have expired).")
+    return {k: v for k, v in job.items() if k not in ("user_id", "file_id")}
+
+
+_DRIVE_JOB_TASKS: set = set()
+
+
+async def _run_drive_pdf_job(job: dict, user: dict, cookbook_id: Optional[str]) -> None:
+    """Download → read pages → import recipe-aligned page groups one by one (so dedupe sees earlier saves)."""
+    import tempfile
+    from services.drive_import import DriveImportError, download_drive_file, save_job
+    from services.recipe_pdf_import import group_pages_at_recipe_starts
+
+    async def update(**fields):
+        job.update(fields)
+        await save_job(job)
+
+    fd, path = tempfile.mkstemp(suffix=".pdf", prefix="laro-drive-")
+    os.close(fd)
+    try:
+        await update(status="downloading", message="Downloading from Google Drive…")
+        size = await download_drive_file(job["file_id"], path)
+
+        await update(status="reading", message=f"Reading the PDF ({size // (1024 * 1024)} MB)…")
+        page_texts = await asyncio.to_thread(_pdf_page_texts, path)
+        if sum(len(t.strip()) for t in page_texts) < 200:
+            raise DriveImportError(
+                "This PDF is scanned pictures with no text, so it can't be read in one go. "
+                "Use Quick Add → Photo for a few pages at a time."
+            )
+        groups = group_pages_at_recipe_starts(page_texts, max_pages=10)
+        await update(status="importing", parts=len(groups), message=f"Found {len(groups)} sections. Importing…")
+
+        added, skipped, failed = 0, 0, 0
+        found_versions: List[dict] = []
+        for i, (a, b) in enumerate(groups, 1):
+            await update(part=i, message=f"Importing part {i} of {len(groups)} — {added} recipes so far")
+            text = "\n".join(page_texts[a:b])
+            if len(text.strip()) < 200:
+                continue
+            try:
+                res = await _import_recipes_from_pdf_text(
+                    None, user, text, apply=True, cookbook_id=cookbook_id, charge_quota=False
+                )
+                added += int(res.get("recipe_count") or 0)
+                skipped += len(res.get("skipped") or [])
+                if res.get("applied"):
+                    found_versions.extend(res.get("versions_found") or [])
+            except HTTPException as e:
+                if e.status_code in (402, 403):
+                    raise DriveImportError(str(e.detail))
+                if e.status_code != 422:  # 422 = no recipes on those pages (intro, index…)
+                    failed += 1
+                    logger.warning("Drive import part %s/%s failed: %s", i, len(groups), e.detail)
+            except Exception as e:
+                failed += 1
+                logger.error("Drive import part %s/%s crashed: %s", i, len(groups), e)
+
+        if added and not is_premium_user(user):
+            await consume_ai_quota(user["id"])
+        msg = f"Added {added} recipe{'s' if added != 1 else ''} — they're in Needs review."
+        if skipped:
+            msg += f" {skipped} already in your library were skipped."
+        if failed:
+            msg += f" {failed} part{'s' if failed != 1 else ''} couldn't be read."
+        if found_versions:
+            n = len(found_versions)
+            msg += f" {n} recipe{'s' if n != 1 else ''} came with versions you can pick between."
+        await update(
+            status="done", recipe_count=added, skipped_count=skipped, failed_parts=failed,
+            versions_found=found_versions, message=msg,
+        )
+    except DriveImportError as e:
+        await update(status="failed", message=str(e))
+    except Exception as e:
+        logger.exception("Drive import job %s failed", job["id"])
+        await update(status="failed", message=f"Import failed: {sanitize_error_message(e)}")
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _pdf_page_texts(path: str) -> List[str]:
+    import pymupdf
+
+    doc = pymupdf.open(path)
+    try:
+        return [page.get_text() for page in doc]
+    finally:
+        doc.close()
 
 
 @router.post("/import-recipe-pdf")
@@ -4339,6 +4774,10 @@ class ChatSessionReportRequest(BaseModel):
     details: Optional[str] = None  # Extra notes from the user about the bug
     platform: Optional[str] = "web"
     app_version: Optional[str] = None
+    # Client-side lines when the session was not persisted yet (e.g. welcome-only chat)
+    transcript: Optional[List[ChatMessage]] = None
+    recipe_id: Optional[str] = None
+    recipe_title: Optional[str] = None
 
 
 def _chat_title_from_message(message: str) -> str:
@@ -4506,13 +4945,32 @@ async def report_chat_session_bug(
     messages = await ai_chat_message_repository.list_for_session(
         session_id, user_id=user["id"]
     )
-    if not messages:
-        raise HTTPException(status_code=400, detail="Chat is empty — send a message before reporting")
+    if not messages and data.transcript:
+        for line in data.transcript:
+            role = (line.role or "user").strip().lower()
+            content = (line.content or "").strip()
+            if not content:
+                continue
+            await ai_chat_message_repository.append(
+                session_id=session_id,
+                user_id=user["id"],
+                role=role if role in ("user", "assistant", "system") else "user",
+                content=content,
+            )
+        messages = await ai_chat_message_repository.list_for_session(
+            session_id, user_id=user["id"]
+        )
 
     lines = []
     for m in messages:
         role = (m.get("role") or "unknown").upper()
         lines.append(f"{role}: {m.get('content') or ''}")
+    if not lines and (data.recipe_title or data.recipe_id):
+        title = (data.recipe_title or "").strip() or data.recipe_id
+        lines.append(f"CONTEXT: User opened AI chat while viewing recipe \"{title}\".")
+    if not lines:
+        lines.append("CONTEXT: User reported a problem from the chat UI (no messages yet).")
+
     transcript = "\n\n".join(lines)
     if len(transcript) > 9000:
         transcript = transcript[:9000] + "\n\n…[transcript truncated]"
@@ -4570,6 +5028,50 @@ async def report_chat_session_bug(
     }
 
 
+def _fridge_context_text(items, today=None) -> str:
+    """Pantry/fridge snapshot for chat, soonest expiry first, so 'what should I use up?' is answered
+    from the user's real fridge instead of generic advice."""
+    from datetime import date as _date
+
+    today = today or _date.today()
+    rows = []
+    for it in items or []:
+        name = str(it.get("name") or "").strip()
+        if not name:
+            continue
+        exp = it.get("expiry_date")
+        days = None
+        if exp:
+            try:
+                d = exp if isinstance(exp, _date) else _date.fromisoformat(str(exp)[:10])
+                days = (d - today).days
+            except ValueError:
+                days = None
+        qty = " ".join(str(x) for x in (it.get("quantity"), it.get("unit")) if x not in (None, ""))
+        rows.append((days if days is not None else 10**6, name, qty, days))
+    if not rows:
+        return ""
+    rows.sort(key=lambda r: (r[0], r[1].lower()))
+    lines = []
+    for _k, name, qty, days in rows[:25]:
+        if days is None:
+            when = "no expiry date"
+        elif days < 0:
+            when = f"EXPIRED {-days} day(s) ago"
+        elif days == 0:
+            when = "expires TODAY"
+        elif days == 1:
+            when = "expires tomorrow"
+        else:
+            when = f"expires in {days} days"
+        lines.append(f"- {name}{' (' + qty + ')' if qty else ''}: {when}")
+    return (
+        "The user's fridge/pantry right now (soonest expiry first). When they ask what to cook, "
+        "what to use up, or about food waste, use THESE items and prioritise the ones expiring "
+        "soonest; don't give generic advice:\n" + "\n".join(lines)
+    )
+
+
 @router.post("/chat")
 async def chat(
     request: Request,
@@ -4612,6 +5114,22 @@ Formatting rules (important — replies are shown in a small chat bubble):
     )
     if pref_ctx:
         system_prompt = system_prompt + "\n\n" + pref_ctx
+
+    # Ground "use it up" questions in the real fridge (was generic advice).
+    try:
+        from dependencies import pantry_repository
+
+        pantry_items = await pantry_repository.find_by_household_or_user(
+            user_id=user["id"],
+            household_id=user.get("household_id"),
+            category=None,
+            include_staples=True,
+        )
+        fridge_ctx = _fridge_context_text(pantry_items)
+        if fridge_ctx:
+            system_prompt += "\n\n" + fridge_ctx
+    except Exception as e:  # never block chat on the pantry lookup
+        logger.warning("chat: pantry context unavailable: %s", e)
 
     # When the user opened chat from a recipe page, keep answers grounded there
     if data.recipe_title or data.recipe_id:
@@ -4735,7 +5253,8 @@ Format your response like this:
 Guidelines:
 - Always include the recipe JSON block when creating/suggesting recipes
 - Use realistic measurements and clear instructions
-- Choose category from: Breakfast, Lunch, Dinner, Dessert, Appetizer, Snack, Beverage, Other
+- Choose category from: Breakfast, Lunch, Dinner, Dessert, Appetizer, Snack, Beverage, Sauce, Other
+- Use "Sauce" for sauces, dips, dressings, condiments, spreads, jams, and gravies
 - When a food database block is provided, use those foods as building blocks and estimate
   nutrition (protein/calories) from the listed per-100g macros; invent unique combinations
 - Be encouraging and helpful in your message!
@@ -5114,9 +5633,9 @@ async def extract_recipe_from_images(
             "needs_review": True,
             "images_processed": n,
             "recipe_count": len(client_recipes),
-            "recipes": client_recipes,
+            "recipes": _tidy_recipes(client_recipes),
             # Always include first recipe for older clients that only read `.recipe`
-            "recipe": client_recipes[0],
+            "recipe": _tidy_recipes(client_recipes)[0],
             "skipped": skipped,
             "cookbook": {
                 "id": cookbook["id"],

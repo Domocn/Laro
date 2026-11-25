@@ -396,14 +396,19 @@ async def list_sessions(
     # Get current session token from header
     current_token = request.headers.get("Authorization", "").replace("Bearer ", "")
 
+    def _iso(value):
+        # Postgres hands back datetime objects; SessionInfo wants strings.
+        return value.isoformat() if hasattr(value, "isoformat") else str(value or "")
+
     result = []
     for s in sessions:
+        created = _iso(s["created_at"])
         result.append(SessionInfo(
             id=s["id"],
-            user_agent=s.get("user_agent", "Unknown"),
-            ip_address=s.get("ip_address", "Unknown"),
-            created_at=s["created_at"],
-            last_active=s.get("last_active", s["created_at"]),
+            user_agent=s.get("user_agent") or "Unknown",
+            ip_address=s.get("ip_address") or "Unknown",
+            created_at=created,
+            last_active=_iso(s.get("last_active")) or created,
             is_current=s.get("token", "") == current_token
         ))
 
@@ -510,7 +515,7 @@ async def request_account_deletion(data: AccountDeletionRequest, background_task
 
 
 @router.post("/account-deletion/confirm")
-async def confirm_account_deletion(data: AccountDeletionConfirm, background_tasks: BackgroundTasks):
+async def confirm_account_deletion(data: AccountDeletionConfirm, request: Request, background_tasks: BackgroundTasks):
     """
     Confirm account deletion with token.
     This permanently deletes the user's account and all associated data.
@@ -525,7 +530,8 @@ async def confirm_account_deletion(data: AccountDeletionConfirm, background_task
             WHERE deletion_token = $1
             AND deletion_token_expires > $2
         """
-        row = await conn.fetchrow(query, data.token, datetime.now(timezone.utc).isoformat())
+        # TIMESTAMP column: compare with a naive UTC datetime, not ISO text
+        row = await conn.fetchrow(query, data.token, datetime.now(timezone.utc).replace(tzinfo=None))
 
     if not row:
         raise HTTPException(status_code=400, detail="Invalid or expired deletion token")
@@ -534,33 +540,10 @@ async def confirm_account_deletion(data: AccountDeletionConfirm, background_task
     user_email = user["email"]
     user_id = user["id"]
 
-    # Delete all user data (GDPR compliance)
-    try:
-        async with pool.acquire() as conn:
-            # Delete in order to respect foreign key constraints
-            # Delete recipes
-            await conn.execute("DELETE FROM recipes WHERE user_id = $1", user_id)
-            # Delete cookbooks
-            await conn.execute("DELETE FROM cookbooks WHERE user_id = $1", user_id)
-            # Delete meal plans
-            await conn.execute("DELETE FROM meal_plans WHERE user_id = $1", user_id)
-            # Delete shopping lists
-            await conn.execute("DELETE FROM shopping_lists WHERE user_id = $1", user_id)
-            # Delete pantry items
-            await conn.execute("DELETE FROM pantry_items WHERE user_id = $1", user_id)
-            # Delete sessions
-            await conn.execute("DELETE FROM sessions WHERE user_id = $1", user_id)
-            # Delete TOTP secrets
-            await conn.execute("DELETE FROM totp_secrets WHERE user_id = $1", user_id)
-            # Delete share links
-            await conn.execute("DELETE FROM share_links WHERE user_id = $1", user_id)
-            # Delete friends
-            await conn.execute("DELETE FROM friends WHERE user_id = $1 OR friend_id = $1", user_id)
-            # Delete the user
-            await conn.execute("DELETE FROM users WHERE id = $1", user_id)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
+    # Same clean-up as Settings > Delete account (routers/auth.py). The old hand-written
+    # DELETE list used columns that do not exist (recipes.user_id, share_links, friends...).
+    from routers.auth import delete_account as _delete_account
+    await _delete_account(request, user)
 
     # Send confirmation email
     if is_email_configured():

@@ -222,7 +222,10 @@ export const SetupWizard = () => {
                 <div className="w-20 h-20 bg-laro/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
                   <ChefHat className="w-10 h-10 text-laro" />
                 </div>
-                <h1 className="font-heading text-2xl font-bold mb-2">Welcome to Laro!</h1>
+                <h1 className="font-heading text-2xl font-bold mb-2">Welcome to Laro</h1>
+                <p className="text-muted-foreground mb-2">
+                  Local · Archived · Recipes · Organised. Named for the household hearth.
+                </p>
                 <p className="text-muted-foreground mb-6">
                   Let's set up your recipe management system. This wizard will help you configure 
                   essential settings for your instance.

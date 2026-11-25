@@ -156,7 +156,7 @@ export const TonightSuggestions = () => {
           <p className="text-sm sm:text-base text-muted-foreground mb-4 max-w-sm mx-auto">
             Add some recipes to get personalized suggestions
           </p>
-          <Button onClick={() => navigate('/recipes/new')} className="rounded-full">
+          <Button onClick={() => navigate('/recipes/add')} className="rounded-full">
             Add Your First Recipe
           </Button>
         </div>

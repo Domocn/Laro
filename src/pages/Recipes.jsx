@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
@@ -16,9 +16,11 @@ import {
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { CATEGORIES } from '../lib/utils';
+import { MacroFilterBar } from '../components/MacroFilterBar';
+import { applyMacroFilter, combineMacroFilters, isMacroFilterActive } from '../lib/macroFilter';
 import {
-  Plus, Search, Filter, Link as LinkIcon, Heart, Download, Sparkles,
-  BookOpen, Crown, CheckSquare, Trash2, X,
+  Plus, Search, Heart,
+  BookOpen, Crown, CheckSquare, Trash2, X, Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -51,7 +53,11 @@ export const Recipes = () => {
   const [category, setCategory] = useState(searchParams.get('category') || 'All');
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(searchParams.get('favorites') === 'true');
   const [needsReviewOnly, setNeedsReviewOnly] = useState(searchParams.get('review') === '1');
-  const [recipeLimit, setRecipeLimit] = useState(15);
+  const [recipeLimit, setRecipeLimit] = useState(50);
+  const [addRecipeLimit, setAddRecipeLimit] = useState(50);
+  const [closingWindow, setClosingWindow] = useState(false);
+  const [closingAllowance, setClosingAllowance] = useState(500);
+  const [closingUntil, setClosingUntil] = useState('2026-11-15');
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -68,25 +74,36 @@ export const Recipes = () => {
     return recipe.author_id === user.id;
   }, [user?.id, isAdmin]);
 
+  // Debounce typing so search doesn't fire (and flash a spinner) on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const h = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(h);
+  }, [search]);
+  // Ignore responses that arrive after a newer request (out-of-order results).
+  const requestIdRef = useRef(0);
+
   const loadRecipes = useCallback(async (opts = {}) => {
     const silent = !!opts.silent;
+    const reqId = ++requestIdRef.current;
     try {
       if (!silent) setLoading(true);
       const params = {};
       if (category !== 'All') params.category = category;
-      if (search) params.search = search;
+      if (debouncedSearch) params.search = debouncedSearch;
       if (showFavoritesOnly) params.favorites_only = true;
 
       const res = await recipeApi.getAll(params);
+      if (reqId !== requestIdRef.current) return;
       setRecipes(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
-      if (!silent) {
+      if (!silent && reqId === requestIdRef.current) {
         toast.error(error.response?.data?.detail || `${t('toastLoadRecipesFailed')} (E-RC001)`);
       }
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && reqId === requestIdRef.current) setLoading(false);
     }
-  }, [category, search, showFavoritesOnly, t]);
+  }, [category, debouncedSearch, showFavoritesOnly, t]);
 
   useEffect(() => {
     loadRecipes();
@@ -133,7 +150,19 @@ export const Recipes = () => {
     rewardsApi.balance()
       .then((res) => {
         const limit = res.data?.limits?.recipes;
+        const addLimit = res.data?.limits?.recipes_add;
         if (typeof limit === 'number') setRecipeLimit(limit);
+        if (typeof addLimit === 'number') setAddRecipeLimit(addLimit);
+        else if (typeof limit === 'number') setAddRecipeLimit(limit);
+        if (typeof res.data?.limits?.closing_app_window_open === 'boolean') {
+          setClosingWindow(res.data.limits.closing_app_window_open);
+        }
+        if (typeof res.data?.limits?.closing_app_allowance === 'number') {
+          setClosingAllowance(res.data.limits.closing_app_allowance);
+        }
+        if (res.data?.limits?.closing_app_until) {
+          setClosingUntil(res.data.limits.closing_app_until);
+        }
       })
       .catch(() => {});
   }, [isPro]);
@@ -142,19 +171,33 @@ export const Recipes = () => {
     setNeedsReviewOnly(searchParams.get('review') === '1');
   }, [searchParams]);
 
-  const visibleRecipes = useMemo(() => {
+  const [macroPresetIds, setMacroPresetIds] = useState([]);
+  const [customMacros, setCustomMacros] = useState({});
+  const [proteinMin, setProteinMin] = useState(null);
+  const macroFilter = useMemo(
+    () => combineMacroFilters(macroPresetIds, customMacros, proteinMin),
+    [macroPresetIds, customMacros, proteinMin]
+  );
+  const macroActive = isMacroFilterActive(macroFilter);
+
+  const reviewFiltered = useMemo(() => {
     if (!needsReviewOnly) return recipes;
     return recipes.filter((r) =>
       (r.tags || []).some((tag) => String(tag).toLowerCase() === 'needs-review')
     );
   }, [recipes, needsReviewOnly]);
 
+  // Per-serving macro filter (client-side; recipes without nutrition are counted, not shown).
+  const macroResult = useMemo(() => applyMacroFilter(reviewFiltered, macroFilter), [reviewFiltered, macroFilter]);
+  const visibleRecipes = macroResult.shown;
+
   const deletableVisible = useMemo(
     () => visibleRecipes.filter(canDeleteRecipe),
     [visibleRecipes, canDeleteRecipe]
   );
 
-  const atRecipeLimit = !isPro && recipes.length >= recipeLimit;
+  const atRecipeLimit = !isPro && recipes.length >= addRecipeLimit;
+  const overEverydayFree = !isPro && !atRecipeLimit && closingWindow && recipes.length >= recipeLimit;
 
   const exitSelectMode = useCallback(() => {
     setSelectMode(false);
@@ -225,11 +268,13 @@ export const Recipes = () => {
 
   const handleSearch = useCallback((e) => {
     e.preventDefault();
-    loadRecipes();
+    // Enter searches straight away instead of waiting for the debounce.
+    if (search === debouncedSearch) loadRecipes();
+    else setDebouncedSearch(search);
     const next = { search, category, favorites: showFavoritesOnly };
     if (needsReviewOnly) next.review = '1';
     setSearchParams(next);
-  }, [loadRecipes, search, category, showFavoritesOnly, needsReviewOnly, setSearchParams]);
+  }, [loadRecipes, search, debouncedSearch, category, showFavoritesOnly, needsReviewOnly, setSearchParams]);
 
   const handleCategoryChange = useCallback((cat) => {
     setCategory(cat);
@@ -274,13 +319,21 @@ export const Recipes = () => {
               {selectMode
                 ? `${selectedIds.size} selected`
                 : needsReviewOnly
-                  ? t('recipeCountAwaitingReview', { count: visibleRecipes.length })
+                  ? t('recipeCountAwaitingReview', { count: reviewFiltered.length })
                   : showFavoritesOnly
-                    ? t('recipeCountFavorited', { count: visibleRecipes.length })
-                    : t('recipeCountCollection', { count: visibleRecipes.length })}
+                    ? t('recipeCountFavorited', { count: reviewFiltered.length })
+                    : t('recipeCountCollection', { count: reviewFiltered.length })}
             </p>
           </div>
           <div className="flex gap-3 flex-wrap">
+            {!selectMode && (
+              <Link to="/recipe-finder">
+                <Button variant="outline" className="rounded-full" data-testid="open-recipe-finder">
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {t('finderOpen')}
+                </Button>
+              </Link>
+            )}
             {selectMode ? (
               <>
                 <Button
@@ -353,26 +406,39 @@ export const Recipes = () => {
                   <Heart className={`w-4 h-4 mr-2 ${showFavoritesOnly ? 'fill-current' : ''}`} />
                   {t('favorites')}
                 </Button>
-                <Link to="/recipes/import">
-                  <Button
-                    variant="outline"
-                    className="rounded-full"
-                    data-testid="import-recipe-btn"
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    {t('importRecipe')}
-                  </Button>
-                </Link>
-                <Link to="/recipes/new">
+                <Link to="/recipes/add">
                   <Button className="rounded-full bg-laro hover:bg-laro-dark" data-testid="new-recipe-btn">
                     <Plus className="w-4 h-4 mr-2" />
-                    {t('newRecipe')}
+                    {t('addRecipe')}
                   </Button>
                 </Link>
               </>
             )}
           </div>
         </motion.div>
+
+        {overEverydayFree && (
+          <div
+            className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+            data-testid="recipe-migrate-window-banner"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="font-medium">{t('recipeLimitMigrateTitle', { everyday: recipeLimit })}</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {t('recipeLimitMigrateBody', {
+                  count: recipes.length,
+                  until: closingUntil,
+                  allowance: closingAllowance,
+                })}
+              </p>
+            </div>
+            <Link to="/recipes/migrate">
+              <Button size="sm" className="rounded-full bg-laro hover:bg-laro-dark">
+                {t('migrateTitle')}
+              </Button>
+            </Link>
+          </div>
+        )}
 
         {atRecipeLimit && (
           <div
@@ -385,7 +451,7 @@ export const Recipes = () => {
                 {t('recipeLimitBannerTitle')}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                {t('recipeLimitBannerBody', { count: recipes.length, limit: recipeLimit })}
+                {t('recipeLimitBannerBody', { count: recipes.length, limit: addRecipeLimit })}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -444,6 +510,28 @@ export const Recipes = () => {
               </button>
             ))}
           </div>
+
+          <MacroFilterBar
+            presetIds={macroPresetIds}
+            custom={customMacros}
+            proteinMin={proteinMin}
+            onProteinMinChange={setProteinMin}
+            onTogglePreset={(id) =>
+              setMacroPresetIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
+            }
+            onCustomChange={setCustomMacros}
+            onClear={() => {
+              setMacroPresetIds([]);
+              setCustomMacros({});
+              setProteinMin(null);
+            }}
+          />
+          {macroActive && !loading && reviewFiltered.length > 0 && (
+            <p className="text-sm text-muted-foreground" data-testid="macro-filter-summary">
+              {t('macroMatchSummary', { shown: visibleRecipes.length, total: reviewFiltered.length })}
+              {macroResult.hiddenNoNutrition > 0 && ` · ${t('macroHiddenNoNutrition', { count: macroResult.hiddenNoNutrition })}`}
+            </p>
+          )}
         </motion.div>
 
         {/* Recipe Grid */}
@@ -466,11 +554,13 @@ export const Recipes = () => {
             <p className="text-muted-foreground mb-6">
               {needsReviewOnly
                 ? t('nothingAwaitingReview')
-                : search || category !== 'All'
+                : macroActive
+                  ? t('macroNoMatches')
+                  : search || category !== 'All'
                   ? t('tryAdjustingFilters')
                   : t('startAddingRecipes')}
             </p>
-            <Link to="/recipes/new">
+            <Link to="/recipes/add">
               <Button className="rounded-full bg-laro hover:bg-laro-dark">
                 <Plus className="w-4 h-4 mr-2" />
                 {t('addYourFirstRecipe')}

@@ -508,10 +508,12 @@ async def sync_recipe_to_google_health(
     recipe: dict,
     cook_session_id: Optional[str] = None,
     servings: float = 1.0,
+    nutrition_override: Optional[dict] = None,
 ) -> Optional[dict]:
     """
     Best-effort sync. Returns log metadata on success, None if skipped,
     raises on hard API failure after link exists.
+    ``nutrition_override``: per-serving figures the user checked for this cook (wins).
     """
     link = await get_link(user_id)
     if not link:
@@ -519,7 +521,7 @@ async def sync_recipe_to_google_health(
     if not link.get("sync_on_cook", True):
         return None
 
-    nutrition = columns_to_nutrition(recipe) or {}
+    nutrition = dict(nutrition_override) if nutrition_override else (columns_to_nutrition(recipe) or {})
     if not any(nutrition.get(k) for k in ("calories", "protein", "carbs", "fat")):
         return None
 

@@ -13,13 +13,18 @@ from datetime import datetime, timezone
 from typing import Optional
 
 # Keep in sync with Android SubscriptionRepository.FREE_RECIPE_LIMIT
-FREE_RECIPE_LIMIT = 15
+FREE_RECIPE_LIMIT = 50
 
 # Friend referral signup trial (and referrer reward when referee subscribes)
 REFERRAL_TRIAL_DAYS = 14
 
 
-async def assert_can_create_recipes(user: dict, recipe_repository, count_to_add: int = 1) -> None:
+async def assert_can_create_recipes(
+    user: dict,
+    recipe_repository,
+    count_to_add: int = 1,
+    limit_override: Optional[int] = None,
+) -> None:
     """Raise HTTP 402 when a free user would exceed the recipe cap."""
     from fastapi import HTTPException
 
@@ -30,6 +35,8 @@ async def assert_can_create_recipes(user: dict, recipe_repository, count_to_add:
     current = await recipe_repository.count({"author_id": user["id"]})
     bonus = int(user.get("recipe_bonus_slots") or 0)
     limit = FREE_RECIPE_LIMIT + max(0, bonus)
+    if limit_override is not None:
+        limit = max(limit, int(limit_override))
     if current + count_to_add > limit:
         raise HTTPException(
             status_code=402,
@@ -41,7 +48,7 @@ async def assert_can_create_recipes(user: dict, recipe_repository, count_to_add:
 
 
 def owner_emails() -> set[str]:
-    raw = os.getenv("LARO_OWNER_EMAILS", "cowandom79@gmail.com")
+    raw = os.getenv("LARO_OWNER_EMAILS", "")
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 

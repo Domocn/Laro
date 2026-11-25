@@ -20,7 +20,7 @@ AISLE_DATA: list[tuple[str, int, list[str]]] = [
     ("Bakery", 2, [
         "bread", "bagel", "croissant", "muffin", "donut", "doughnut", "cake", "pie",
         "pastry", "roll", "bun", "loaf", "baguette", "sourdough", "pita", "naan",
-        "tortilla", "wrap", "brioche",
+        "tortilla", "wrap", "brioche", "garlic bread", "taco shell",
     ]),
     ("Dairy", 3, [
         "milk", "cheese", "yogurt", "butter", "cream", "sour cream", "cottage cheese",
@@ -44,14 +44,15 @@ AISLE_DATA: list[tuple[str, int, list[str]]] = [
         "noodle", "ramen", "rice", "quinoa", "couscous", "barley", "farro", "oat",
     ]),
     ("Canned Goods", 8, [
-        "canned", "tomato sauce", "tomato paste", "diced tomato", "crushed tomato",
+        "canned", "tomato sauce", "tomato paste", "tomato purée", "tomato puree", "passata",
+        "diced tomato", "crushed tomato", "chopped tomatoes", "tinned", "tin of",
         "soup", "broth", "stock", "coconut milk", "chickpea", "black bean", "kidney bean",
     ]),
     ("Condiments & Sauces", 9, [
         "ketchup", "mustard", "mayonnaise", "mayo", "hot sauce", "salsa", "soy sauce",
         "teriyaki", "worcestershire", "bbq", "barbecue", "vinegar", "olive oil",
         "vegetable oil", "canola oil", "sesame oil", "dressing", "honey", "maple syrup",
-        "jam", "jelly", "peanut butter", "tahini",
+        "jam", "jelly", "peanut butter", "tahini", "curry paste", "pesto",
     ]),
     ("Baking", 10, [
         "flour", "sugar", "brown sugar", "powdered sugar", "baking soda", "baking powder",
@@ -96,11 +97,23 @@ def categorize_grocery_item(item_name: str, overrides: Optional[Dict[str, str]] 
         for key, aisle in overrides.items():
             if key and (key in name or name in key):
                 return aisle
-    for aisle_name, _order, keywords in AISLE_DATA:
+    # Most specific (longest) keyword wins across ALL aisles. First-match-in-aisle-order put
+    # "coconut milk" in Dairy (via "milk"), "tomato purée" in Produce and "garlic bread" in Produce.
+    best = None  # (keyword length, -sort order, aisle)
+    for aisle_name, order, keywords in AISLE_DATA:
         if aisle_name == "Other":
             continue
         for keyword in keywords:
-            if keyword in name or (len(name) > 2 and name in keyword):
+            if keyword in name:
+                cand = (len(keyword), -order, aisle_name)
+                if best is None or cand > best:
+                    best = cand
+    if best:
+        return best[2]
+    # Fallback: very short item names that are part of a keyword ("veg" in "vegetable")
+    for aisle_name, _order, keywords in AISLE_DATA:
+        for keyword in keywords:
+            if len(name) > 2 and name in keyword:
                 return aisle_name
     return "Other"
 

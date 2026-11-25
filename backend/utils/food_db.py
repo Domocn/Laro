@@ -1,9 +1,12 @@
 """
 Curated food composition DB for AI recipe ideas grounded in real macros.
 
-Pragmatic MVP: a small in-repo table (per 100g) focused on high-protein foods
-plus common pantry staples — not a multi-GB USDA dump. Values are approximate
-food-composition averages for meal planning / idea generation, not medical advice.
+A small hand-tuned table (per 100g) of high-protein foods, pantry staples and
+plant-based / dairy-free specifics, backed by the full UK CoFID 2021 + USDA FDC
+dataset (``utils.food_dataset``, bundled in ``data/foods/``) for everything else.
+``find_food`` is UK-first by default (UK supermarket labels -> CoFID -> curated); see its
+docstring for the order and ``region="us"``. Values are food-composition averages for meal planning / idea generation, not
+medical advice.
 
 Used to:
 - Retrieve allowed building blocks (high protein + pantry overlap + preferred)
@@ -465,6 +468,263 @@ FOOD_DATABASE: Dict[str, FoodEntry] = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Raw / as-sold basis. Recipes weigh ingredients raw (dry pasta, raw chicken), and
+# labels + apps quote raw values, so the plain name is the raw figure. A "(cooked)"
+# twin is used only when the recipe line says cooked / tinned / drained.
+# Values: USDA FDC SR Legacy + UK CoFID typical, per 100 g.
+# ---------------------------------------------------------------------------
+_RAW_VALUES = {
+    # name: (kcal, protein, carbs, fat, fibre)
+    "chicken breast": (120, 22.5, 0, 2.6, 0),
+    "chicken thigh": (121, 19.7, 0, 4.1, 0),
+    "turkey breast": (114, 23.7, 0.1, 1.5, 0),
+    "lean ground turkey": (150, 18.7, 0, 8.3, 0),
+    "beef": (198, 19.4, 0, 12.7, 0),
+    "pork": (211, 17, 0, 15.4, 0),
+    "tuna": (109, 24.4, 0, 0.5, 0),
+    "shrimp": (85, 20.1, 0, 0.5, 0),
+    "egg": (143, 12.6, 0.7, 9.5, 0),
+    "seitan": (120, 21, 4, 1.9, 0.6),
+    "yogurt": (61, 3.5, 4.7, 3.3, 0),
+    "yoghurt": (61, 3.5, 4.7, 3.3, 0),
+    "milk": (46, 3.5, 4.8, 1.7, 0),
+    "rice": (365, 7.1, 80, 0.7, 1.3),
+    "brown rice": (370, 7.9, 77, 2.9, 3.5),
+    "pasta": (371, 13, 75, 1.5, 3.2),
+    "whole wheat pasta": (352, 14.6, 72, 2.5, 9.2),
+    "quinoa": (368, 14.1, 64, 6.1, 7),
+    "lentils": (352, 24.6, 63, 1.1, 10.7),
+    "chickpeas": (378, 20.5, 63, 6, 12.2),
+    "black beans": (341, 21.6, 62, 1.4, 15.5),
+    "kidney beans": (333, 23.6, 60, 0.8, 24.9),
+    "beans": (333, 23.6, 60, 0.8, 24.9),
+}
+for _name, (_kcal, _p, _c, _f, _fib) in _RAW_VALUES.items():
+    FOOD_DATABASE[_name].update({"calories": _kcal, "protein": _p, "carbs": _c, "fat": _f, "fiber": _fib})
+
+_COOKED_VALUES = {
+    "chicken breast": (165, 31, 0, 3.6, 0),
+    "chicken thigh": (209, 26, 0, 10.9, 0),
+    "turkey breast": (135, 30, 0, 1, 0),
+    "beef": (250, 26, 0, 15, 0),
+    "pork": (242, 27, 0, 14, 0),
+    "tuna": (132, 29, 0, 1, 0),
+    "shrimp": (99, 24, 0.2, 0.3, 0),
+    "egg": (155, 13, 1.1, 11, 0),
+    "rice": (130, 2.7, 28, 0.3, 0.4),
+    "brown rice": (112, 2.6, 24, 0.9, 1.8),
+    "pasta": (131, 5, 25, 1.1, 1.8),
+    "whole wheat pasta": (124, 5.3, 26, 0.5, 3.9),
+    "quinoa": (120, 4.4, 21, 1.9, 2.8),
+    "lentils": (116, 9, 20, 0.4, 7.9),
+    "chickpeas": (139, 7.2, 16.1, 2.9, 4.1),  # tinned, drained (CoFID)
+    "black beans": (132, 8.9, 24, 0.5, 8.7),
+    "kidney beans": (127, 8.7, 23, 0.5, 6.4),
+    "beans": (127, 8.7, 22, 0.5, 6.4),
+}
+for _name, (_kcal, _p, _c, _f, _fib) in _COOKED_VALUES.items():
+    FOOD_DATABASE[f"{_name} (cooked)"] = {
+        "calories": _kcal, "protein": _p, "carbs": _c, "fat": _f, "fiber": _fib,
+        "tags": list(FOOD_DATABASE[_name].get("tags") or []), "category": FOOD_DATABASE[_name].get("category"),
+    }
+
+# Common recipe ingredients the table was missing (and specific names that used to
+# fall through to a wrong generic match, e.g. "coconut milk" -> dairy milk).
+_EXTRA_FOODS = {
+    # name: (kcal, protein, carbs, fat, fibre, category)
+    "vital wheat gluten": (370, 75, 14, 1.9, 0.6, "protein"),
+    "impossible mince": (212, 16.8, 8, 12.4, 2.7, "protein"),
+    "plant-based mince": (212, 16.8, 8, 12.4, 2.7, "protein"),
+    "vegetarian sausages": (220, 15, 10, 13, 3, "protein"),
+    "nutritional yeast": (380, 45, 37, 4, 20, "pantry"),
+    "aquafaba": (18, 1, 3, 0.3, 0, "pantry"),
+    "salt": (0, 0, 0, 0, 0, "seasoning"),
+    "black salt": (0, 0, 0, 0, 0, "seasoning"),
+    "black pepper": (251, 10.4, 64, 3.3, 25.3, "seasoning"),
+    "water": (0, 0, 0, 0, 0, "pantry"),
+    "baking powder": (53, 0, 28, 0, 0.2, "baking"),
+    "bicarbonate of soda": (0, 0, 0, 0, 0, "baking"),
+    "baking soda": (0, 0, 0, 0, 0, "baking"),
+    "instant dried yeast": (325, 40, 41, 7.6, 27, "baking"),
+    "yeast": (325, 40, 41, 7.6, 27, "baking"),
+    "psyllium husk": (180, 2, 4, 0.6, 80, "baking"),
+    "xanthan gum": (330, 0, 78, 0, 77, "baking"),
+    "vanilla extract": (288, 0.1, 12.7, 0.1, 0, "baking"),
+    "almond extract": (288, 0, 12.7, 0, 0, "baking"),
+    "cornflour": (381, 0.3, 91, 0.1, 0.9, "baking"),
+    "cornstarch": (381, 0.3, 91, 0.1, 0.9, "baking"),
+    "potato starch": (333, 0.1, 83, 0.1, 0, "baking"),
+    "tapioca starch": (358, 0.2, 89, 0, 0.9, "baking"),
+    "gluten-free flour": (345, 6, 78, 1.5, 3, "baking"),
+    "almond flour": (579, 21, 22, 50, 12.5, "baking"),
+    "almond meal": (579, 21, 22, 50, 12.5, "baking"),
+    "buckwheat flour": (335, 12.6, 70.6, 3.1, 10, "baking"),
+    "brown rice flour": (363, 7.2, 76.5, 2.8, 4.6, "baking"),
+    "rice flour": (366, 6, 80, 1.4, 2.4, "baking"),
+    "millet flour": (382, 10.8, 75, 4.2, 3.5, "baking"),
+    "icing sugar": (398, 0, 99.8, 0, 0, "baking"),
+    "custard powder": (354, 0.6, 88, 0.1, 0, "baking"),
+    "desiccated coconut": (660, 6.9, 24, 65, 16.3, "baking"),
+    "cocoa nibs": (600, 13, 35, 46, 33, "baking"),
+    "milk chocolate": (535, 7.6, 59, 30, 3.4, "sweet"),
+    "white chocolate": (539, 5.9, 59, 32, 0.2, "sweet"),
+    "chocolate chips": (480, 4.2, 64, 24, 6, "sweet"),
+    "marshmallows": (318, 1.8, 81, 0.2, 0.1, "sweet"),
+    "jam": (250, 0.4, 61, 0.1, 1, "sweet"),
+    "biscuits": (480, 6, 68, 21, 2, "sweet"),
+    "coconut milk": (197, 2, 2.8, 21, 0, "dairy-alt"),
+    "light coconut milk": (73, 0.7, 1.6, 7, 0, "dairy-alt"),
+    "condensed milk": (321, 7.9, 54, 8.7, 0, "dairy"),
+    "condensed coconut milk": (330, 2.5, 55, 11, 0, "dairy-alt"),
+    "coconut cream": (330, 3.6, 6.7, 34.7, 2.2, "dairy-alt"),
+    "dairy-free milk": (33, 3, 0.5, 1.8, 0.5, "dairy-alt"),
+    "oat milk": (45, 1, 6.6, 1.5, 0.8, "dairy-alt"),
+    "almond milk": (13, 0.4, 0, 1.1, 0.2, "dairy-alt"),
+    "soy milk": (33, 3.3, 0.2, 1.8, 0.5, "dairy-alt"),
+    "dairy-free butter": (720, 0.2, 0.5, 80, 0, "dairy-alt"),
+    "dairy-free cheese": (300, 0.5, 20, 24, 0, "dairy-alt"),
+    "dairy-free feta": (280, 0.5, 20, 23, 0, "dairy-alt"),
+    "dairy-free cream cheese": (260, 1, 6, 25, 0, "dairy-alt"),
+    "dairy-free parmesan": (330, 1, 15, 29, 0, "dairy-alt"),
+    "dairy-free cream": (180, 2, 4, 17, 0.5, "dairy-alt"),
+    "dairy-free whipping cream": (250, 0.5, 4, 25, 0, "dairy-alt"),
+    "coconut yoghurt": (128, 0.8, 5, 11.5, 0.5, "dairy-alt"),
+    "coconut yogurt": (128, 0.8, 5, 11.5, 0.5, "dairy-alt"),
+    "dairy-free yoghurt": (128, 0.8, 5, 11.5, 0.5, "dairy-alt"),
+    "dairy-free yogurt": (128, 0.8, 5, 11.5, 0.5, "dairy-alt"),
+    "dairy-free mayonnaise": (650, 0.5, 2, 71, 0, "condiment"),
+    "dairy-free chocolate": (550, 5, 50, 36, 6, "sweet"),
+    "dairy-free white chocolate": (560, 3, 55, 36, 0, "sweet"),
+    "dairy-free milk chocolate": (550, 5, 55, 34, 3, "sweet"),
+    "sesame oil": (884, 0, 0, 100, 0, "oil"),
+    "tahini": (595, 17, 21, 54, 9.3, "pantry"),
+    "sesame paste": (595, 17, 21, 54, 9.3, "pantry"),
+    "sesame seeds": (573, 17.7, 23, 49.7, 11.8, "nuts-seeds"),
+    "poppy seeds": (525, 18, 28, 42, 19.5, "nuts-seeds"),
+    "poppyseeds": (525, 18, 28, 42, 19.5, "nuts-seeds"),
+    "fennel seeds": (345, 15.8, 52, 14.9, 39.8, "seasoning"),
+    "hazelnuts": (628, 15, 17, 61, 9.7, "nuts-seeds"),
+    "pistachios": (562, 20, 28, 45, 10.6, "nuts-seeds"),
+    "tamari": (60, 10.5, 5.6, 0.1, 0.8, "condiment"),
+    "coconut aminos": (100, 0, 25, 0, 0, "condiment"),
+    "miso": (198, 12.8, 26, 6, 5.4, "condiment"),
+    "miso paste": (198, 12.8, 26, 6, 5.4, "condiment"),
+    "vinegar": (19, 0, 0.9, 0, 0, "condiment"),
+    "rice wine vinegar": (18, 0, 0, 0, 0, "condiment"),
+    "apple cider vinegar": (21, 0, 0.9, 0, 0, "condiment"),
+    "red wine vinegar": (19, 0, 0.3, 0, 0, "condiment"),
+    "fish sauce": (35, 5, 3.6, 0, 0, "condiment"),
+    "vegetarian fish sauce": (50, 2, 10, 0, 0, "condiment"),
+    "oyster sauce": (51, 1.4, 11, 0.3, 0.3, "condiment"),
+    "hoisin sauce": (220, 3.3, 44, 3.4, 2.8, "condiment"),
+    "sriracha": (93, 1.9, 19, 0.9, 2.2, "condiment"),
+    "gochujang": (230, 4.5, 48, 2, 2, "condiment"),
+    "chilli crisp": (650, 5, 10, 65, 4, "condiment"),
+    "dijon mustard": (151, 7.4, 3.5, 11.5, 2, "condiment"),  # Dijon is far richer than US yellow mustard
+    "curry paste": (120, 2.5, 13, 6.5, 4, "condiment"),
+    "satay sauce": (250, 7, 14, 19, 2, "condiment"),
+    "pesto": (430, 5, 6, 43, 2, "condiment"),
+    "hummus": (166, 7.9, 14.3, 9.6, 6, "condiment"),
+    "stock powder": (243, 10, 27, 10.8, 1, "pantry"),
+    "stock": (5, 0.3, 0.6, 0.2, 0, "pantry"),
+    "kimchi": (15, 1.1, 2.4, 0.5, 1.6, "vegetable"),
+    "olives": (115, 0.8, 6, 10.7, 3.2, "vegetable"),
+    "capers": (23, 2.4, 4.9, 0.9, 3.2, "condiment"),
+    "pickles": (11, 0.3, 2.3, 0.2, 1, "vegetable"),
+    "artichoke hearts": (100, 2, 6, 8, 3, "vegetable"),
+    "spring onion": (32, 1.8, 7.3, 0.2, 2.6, "vegetable"),
+    "spring onions": (32, 1.8, 7.3, 0.2, 2.6, "vegetable"),
+    "ginger": (80, 1.8, 18, 0.8, 2, "vegetable"),
+    "red chilli": (40, 1.9, 8.8, 0.4, 1.5, "vegetable"),
+    "chilli": (40, 1.9, 8.8, 0.4, 1.5, "vegetable"),
+    "chilli flakes": (314, 12, 50, 17, 27, "seasoning"),
+    "beetroot": (43, 1.6, 9.6, 0.2, 2.8, "vegetable"),
+    "rocket": (25, 2.6, 3.7, 0.7, 1.6, "vegetable"),
+    "bean sprouts": (30, 3, 5.9, 0.2, 1.8, "vegetable"),
+    "pumpkin": (26, 1, 6.5, 0.1, 0.5, "vegetable"),
+    "squash": (45, 1, 11.7, 0.1, 2, "vegetable"),
+    "fennel": (31, 1.2, 7.3, 0.2, 3.1, "vegetable"),
+    "french fries": (150, 2.5, 25, 4.5, 2.5, "vegetable"),
+    "breadcrumbs": (380, 6, 80, 3, 3, "grain"),
+    "dried mixed herbs": (270, 9, 60, 5, 38, "seasoning"),
+    "bay leaves": (313, 7.6, 75, 8.4, 26.3, "seasoning"),
+    "lemongrass": (99, 1.8, 25, 0.5, 0, "herb"),
+    "jalapenos": (29, 0.9, 6.5, 0.4, 2.8, "vegetable"),
+    "cranberry sauce": (159, 0.2, 40, 0.2, 1.1, "condiment"),
+    "raspberries": (52, 1.2, 12, 0.7, 6.5, "fruit"),
+    "passionfruit": (97, 2.2, 23, 0.7, 10.4, "fruit"),
+    "dried apricots": (241, 3.4, 63, 0.5, 7.3, "fruit"),
+    "currants": (283, 4.1, 74, 0.3, 6.8, "fruit"),
+    "lime juice": (25, 0.4, 8.4, 0.1, 0.4, "fruit"),
+    "lemon juice": (22, 0.4, 6.9, 0.2, 0.3, "fruit"),
+    "parsley": (36, 3, 6.3, 0.8, 3.3, "herb"),
+    "mint": (70, 3.8, 15, 0.9, 8, "herb"),
+    "coriander": (23, 2.1, 3.7, 0.5, 2.8, "herb"),
+    "basil": (23, 3.2, 2.7, 0.6, 1.6, "herb"),
+    "dill": (43, 3.5, 7, 1.1, 2.1, "herb"),
+    "chives": (30, 3.3, 4.4, 0.7, 2.5, "herb"),
+    "rosemary": (131, 3.3, 21, 5.9, 14, "herb"),
+    "cinnamon": (247, 4, 81, 1.2, 53, "seasoning"),
+    "ground cumin": (375, 17.8, 44, 22, 10.5, "seasoning"),
+    "ground coriander": (298, 12.4, 55, 17.8, 41.9, "seasoning"),
+    "dried oregano": (265, 9, 69, 4.3, 42.5, "seasoning"),
+    "smoked paprika": (282, 14, 54, 13, 35, "seasoning"),
+    "nutmeg": (525, 5.8, 49, 36, 21, "seasoning"),
+    "five spice": (350, 10, 60, 10, 30, "seasoning"),
+    "instant coffee": (241, 12, 41, 0.5, 0, "drink"),
+    "rice paper": (333, 5.9, 83.5, 0.6, 1, "grain"),
+    "rice noodles": (364, 6, 80, 0.6, 1.6, "grain"),
+    "rice vermicelli": (364, 6, 80, 0.6, 1.6, "grain"),
+    "noodles": (360, 11, 72, 2, 3, "grain"),
+    "instant noodles": (450, 9, 60, 19, 2.5, "grain"),
+    "puff pastry": (400, 4, 38, 26, 1.5, "grain"),
+    "wrap": (300, 5, 50, 8, 3, "grain"),
+    "tortilla": (300, 5, 50, 8, 3, "grain"),
+}
+for _name, (_kcal, _p, _c, _f, _fib, _cat) in _EXTRA_FOODS.items():
+    FOOD_DATABASE.setdefault(_name, {
+        "calories": _kcal, "protein": _p, "carbs": _c, "fat": _f, "fiber": _fib,
+        "tags": [], "category": _cat,
+    })
+
+# ---------------------------------------------------------------------------
+# Carbohydrate basis. UK labels and CoFID (the bundled dataset) state *available*
+# carbohydrate, fibre listed separately; USDA and most US tables state *total*
+# carbohydrate "by difference", fibre included (chia: 42 g total vs 7.8 g on a UK label).
+# The curated values above came mostly from USDA, so their carbs are converted once here:
+#   carbs       = available carbohydrate (UK basis, the default everywhere)
+#   carbs_total = total carbohydrate incl. fibre (US basis)
+# kcal are left exactly as sourced. Entries listed below were already on the UK basis.
+# ---------------------------------------------------------------------------
+_CARBS_ALREADY_AVAILABLE = frozenset({
+    "weetabix",            # official UK Weetabix label
+    "chickpeas (cooked)",  # CoFID, tinned + drained
+    "psyllium husk",       # label value already excludes the ~80 g fibre
+})
+for _name, _entry in FOOD_DATABASE.items():
+    _carbs = float(_entry.get("carbs") or 0)
+    _fib = float(_entry.get("fiber") or 0)
+    if _name in _CARBS_ALREADY_AVAILABLE:
+        _entry["carbs_total"] = round(_carbs + _fib, 1)
+    else:
+        _entry["carbs_total"] = _carbs
+        _entry["carbs"] = round(max(0.0, _carbs - _fib), 1)
+
+# Exact-name redirects: "pepper" alone is the seasoning; the vegetable needs a qualifier.
+FOOD_ALIASES = {
+    "pepper": "black pepper",
+    "ground pepper": "black pepper",
+    "capsicum": "bell pepper",
+    "red pepper": "bell pepper",
+    "green pepper": "bell pepper",
+    "yellow pepper": "bell pepper",
+    "courgette": "zucchini",
+}
+
+# Words in a recipe line that mean the weight is cooked / tinned, not raw.
+_COOKED_MARKERS = re.compile(r"\b(cooked|canned|tinned|drained|leftover|boiled|steamed)\b|\btin\b|\bcan of\b", re.I)
+
 # Back-compat alias for nutrition router flat macros (no tags)
 NUTRITION_PER_100G: Dict[str, Dict[str, float]] = {
     name: {
@@ -473,6 +733,7 @@ NUTRITION_PER_100G: Dict[str, Dict[str, float]] = {
         "carbs": entry["carbs"],
         "fat": entry["fat"],
         "fiber": entry.get("fiber", 0) or 0,
+        "carbs_total": entry["carbs_total"],
     }
     for name, entry in FOOD_DATABASE.items()
 }
@@ -632,42 +893,314 @@ def resolve_nutrition_goals(
     }
 
 
-def find_food(name: str, *, remote: bool = False) -> Optional[Tuple[str, FoodEntry]]:
+def _curated_result(db_name: str) -> Tuple[str, FoodEntry]:
+    entry = dict(FOOD_DATABASE[db_name])
+    entry.setdefault("source", "curated")
+    entry.setdefault("source_id", db_name)
+    entry.setdefault("state", "cooked" if db_name.endswith(" (cooked)") else "raw")
+    return db_name, entry
+
+
+_WHOLE_FOOD_CATEGORIES = frozenset({"vegetable", "fruit", "legume", "protein", "grain"})
+
+_DATASET_COOKED_STATES = frozenset({"boiled", "steamed", "cooked", "canned", "fried", "roasted", "grilled", "baked", "toasted"})
+
+
+def _dataset_label(name: str) -> str:
+    """Plain display name for a dataset hit: the recipe's own words, minus prep notes."""
+    text = re.sub(r"\([^)]*\)", " ", (name or "").lower())
+    text = re.split(r"\s+or\s+|\s*/\s*|,", text)[0]
+    return re.sub(r"\s+", " ", _normalize_name(text)).strip() or (name or "").strip().lower()
+
+
+def find_food_in_dataset(
+    name: str, *, cooked: Optional[bool] = None, sources: Optional[frozenset] = None
+) -> Optional[Tuple[str, FoodEntry, Any]]:
+    """Look an ingredient up in the bundled CoFID + USDA dataset only.
+
+    Returns (label, entry, match) or None when there is no confident match. ``sources``
+    limits the rows considered (``food_dataset.COFID_SOURCES`` / ``USDA_SOURCES``).
+    """
+    from utils import food_dataset
+
+    if cooked is None:
+        cooked = bool(_COOKED_MARKERS.search(name or ""))
+    match = food_dataset.search(name or "", cooked=cooked, sources=sources)
+    if match is None:
+        return None
+    label = _dataset_label(name)
+    if cooked and match.state in _DATASET_COOKED_STATES and not _COOKED_MARKERS.search(label):
+        label = f"{label} (cooked)"
+    return label, match.entry(), match
+
+
+# ---------------------------------------------------------------------------
+# Regions. UK is the default everywhere: UK supermarket labels for processed foods, then UK
+# CoFID for plain foods, then the curated table. "us" uses USDA FoodData Central first.
+# Every entry carries both carb figures (``carbs`` available, ``carbs_total`` incl. fibre);
+# callers pick the one their region displays.
+# ---------------------------------------------------------------------------
+DEFAULT_REGION = "uk"
+REGIONS = ("uk", "us")
+
+
+def normalize_region(region: Any) -> str:
+    """"us" for US-style nutrition, otherwise "uk" (the default)."""
+    text = str(region or "").strip().lower().replace("_", "-")
+    return "us" if text in ("us", "usa", "u.s.", "u.s.a.", "en-us", "united states", "america") else DEFAULT_REGION
+
+
+# Curated entries that keep their own value over the region's primary dataset (CoFID for
+# "uk", USDA for "us"): the dataset's nearest row is a different food, or the curated value
+# encodes something the dataset lacks / gets wrong for recipes. Plant-based / dairy-free
+# names always use the curated (or UK label) entry - the datasets don't describe them.
+_CURATED_OVERRIDES: Dict[str, str] = {
+    "milk": "CoFID's nearest plain row is sheep's milk; curated is UK semi-skimmed",
+    "yogurt": "dataset picks Greek-style; curated is plain whole-milk yoghurt",
+    "yoghurt": "dataset picks Greek-style; curated is plain whole-milk yoghurt",
+    "cream": "CoFID match is salad cream",
+    "corn": "CoFID match is corn oil",
+    "olives": "CoFID match is olive oil",
+    "pickles": "CoFID match is sweet pickle (chutney)",
+    "beans": "CoFID match is cluster beans; curated is generic dried beans",
+    "biscuits": "CoFID match is iced biscuits",
+    "apple": "CoFID match is cooking apples; recipes mean eating apples",
+    "rice": "CoFID's plain-rice match is red rice; curated is white rice, raw",
+    "quinoa": "CoFID quinoa (309 kcal) is ~15% under UK labels (360-375 kcal)",
+    "brown rice (cooked)": "CoFID match is brown rice salad",
+    "pasta (cooked)": "CoFID match is fresh pasta, boiled; curated is dried pasta, boiled",
+    "pork (cooked)": "CoFID match is pork crackling",
+    "chicken thigh (cooked)": "USDA match is chicken skin",
+    "orange": "USDA match is orange peel",
+    "lemon": "USDA match is lemon peel",
+    "seitan": "neither dataset has seitan",
+    "nutritional yeast": "neither dataset has it ('yeast' is baker's yeast)",
+    "vegetable oil": "USDA match is palm kernel oil",
+    "coconut aminos": "dataset match is coconut flesh",
+    "artichoke hearts": "dataset match is ox heart",
+    "bean sprouts": "dataset match is alfalfa sprouts",
+    "chilli": "dataset match is chili powder; curated is fresh chilli",
+    "ground coriander": "dataset match is fresh coriander leaves",
+    "rice paper": "dataset match is raw rice",
+    "cocoa nibs": "dataset match is cocoa powder",
+    "xanthan gum": "dataset match is chewing gum",
+    "poppyseeds": "dataset match is poppyseed oil",
+    "low-fat cottage cheese": "dataset match is low-fat Monterey cheese",
+    "skim milk": "dataset match is part-skim mozzarella",
+    "flour": "CoFID's plain 'flour' match is gram flour; curated is plain wheat flour",
+}
+
+# Extra overrides for the US region (USDA's nearest row is a different food).
+_US_CURATED_OVERRIDES: Dict[str, str] = {
+    "tuna": "USDA match is tuna salad",
+    "canned tuna": "USDA match is tuna canned in oil; curated is in water / brine",
+    "tuna (cooked)": "USDA match is tuna canned in oil",
+    "beef (cooked)": "USDA match is canned corned beef",
+    "bread": "USDA match is cheese bread",
+    "butter": "USDA match is anhydrous butter oil",
+    "walnuts": "USDA match is walnut oil",
+    "hazelnuts": "USDA match is hazelnut oil",
+    "mozzarella": "USDA match is nonfat mozzarella",
+    "lean beef mince": "USDA match is 80% lean (not lean) ground beef",
+    "greek yogurt": "USDA match is nonfat Greek yogurt",
+    "greek yoghurt": "USDA match is nonfat Greek yogurt",
+}
+
+# Description words that mean a cooked dish, for a line that asks for the raw food
+# ("Chicken, breast, casseroled" is not raw chicken breast).
+_COOKED_DESC_RE = re.compile(
+    r"\b(casseroled|stewed|roasted|roast|grilled|fried|baked|boiled|cooked|microwaved|poached|braised|steamed)\b",
+    re.I,
+)
+
+# A dataset value more than this factor away from the curated one is taken as a different
+# food (e.g. "pork, cooked" -> crackling), and the curated entry is kept.
+_MAX_PRIMARY_RATIO = 2.0
+
+
+def _primary_sources(region: str) -> frozenset:
+    from utils import food_dataset
+
+    return food_dataset.USDA_SOURCES if region == "us" else food_dataset.COFID_SOURCES
+
+
+def _region_dataset_hit(name: str, cooked: bool, region: str) -> Optional[Tuple[str, FoodEntry, Any]]:
+    """Dataset lookup for a line nothing curated answers: the region's own source first."""
+    hit = find_food_in_dataset(name, cooked=cooked, sources=_primary_sources(region))
+    if hit is not None and (region == "us" or hit[2].score >= 0.9):
+        return hit  # UK: a confident CoFID row beats a slightly better-scored USDA one
+    return find_food_in_dataset(name, cooked=cooked)
+
+
+def find_food(
+    name: str, *, remote: bool = False, region: str = DEFAULT_REGION
+) -> Optional[Tuple[str, FoodEntry]]:
     """Find best matching food entry. Returns (canonical_name, entry) or None.
 
-    When remote=True and the curated DB misses, try Open Food Facts / USDA FDC
-    (no AI) so nutrition calculations cover branded & uncommon ingredients.
+    ``region="uk"`` (default):
+      1. UK supermarket label medians (``utils.uk_labels``) for processed / branded foods
+         (houmous, plant drinks, vegan cheese, pastes, tofu, tinned beans drained ...);
+      2. UK CoFID 2021 for plain foods the curated table names, unless the curated entry is
+         in ``_CURATED_OVERRIDES`` (dataset row is a different food / curated knows better)
+         or the name is plant-based / dairy-free;
+      3. the curated table (hand-tuned names, aliases, plant-based specifics);
+      4. the bundled CoFID + USDA dataset for everything else;
+      5. when remote=True, live Open Food Facts / USDA FDC lookups (no AI).
+    ``region="us"``: USDA FDC (Foundation / SR Legacy) in place of 1-2, then the same fallbacks.
+
+    Raw / as sold by default; cooked / tinned / drained in the line picks cooked values.
+    Entries carry ``source`` / ``source_id`` / ``state`` and both carb figures: ``carbs``
+    (available carbohydrate, UK basis) and ``carbs_total`` (incl. fibre, US basis).
     """
+    region = normalize_region(region)
+    cooked = bool(_COOKED_MARKERS.search(name or ""))
     cleaned = _normalize_name(name)
     if not cleaned:
         return None
-    if cleaned in FOOD_DATABASE:
-        return cleaned, FOOD_DATABASE[cleaned]
+    if region == "uk":
+        from utils import uk_labels
 
-    # Prefer longest substring match to avoid "egg" matching "eggplant" wrongly —
-    # we don't have eggplant; still prefer more specific names.
-    best: Optional[Tuple[str, FoodEntry]] = None
-    best_len = 0
-    for db_name, entry in FOOD_DATABASE.items():
-        if db_name in cleaned or cleaned in db_name:
-            if len(db_name) > best_len:
-                best = (db_name, entry)
-                best_len = len(db_name)
-    if best:
+        # The words as written first: "fresh breadcrumbs" is not "breadcrumbs".
+        label_hit = uk_labels.find(name, cooked=cooked) or uk_labels.find(cleaned, cooked=cooked)
+        if label_hit is not None:
+            return label_hit
+    cleaned = FOOD_ALIASES.get(cleaned, cleaned)
+    plant_based = bool(re.search(r"\b(dairy-free|vegan|plant-based|non-dairy)\b", cleaned))
+
+    def _primary(db_name: str, query: str) -> Optional[Tuple[str, FoodEntry]]:
+        """The region's dataset (CoFID / USDA) for a plain food the curated table names."""
+        overrides = {**_CURATED_OVERRIDES, **_US_CURATED_OVERRIDES} if region == "us" else _CURATED_OVERRIDES
+        if plant_based or db_name in overrides:
+            return None
+        twin = f"{db_name} (cooked)"
+        curated_name = twin if cooked and twin in FOOD_DATABASE else db_name
+        if curated_name in overrides:
+            return None
+        hit = find_food_in_dataset(query, cooked=cooked, sources=_primary_sources(region))
+        if hit is None:
+            return None
+        from utils import food_dataset
+
+        match = hit[2]
+        if match.score < 0.9:
+            return None
+        if cooked != (match.state in _DATASET_COOKED_STATES):
+            return None  # raw line -> raw / as-sold row; cooked line -> cooked / tinned row
+        if not cooked and _COOKED_DESC_RE.search(match.description):
+            return None
+        ident, _states = food_dataset._query_parts(query)
+        covered = set(food_dataset.tokens(match.description))
+        if not ident or not all((food_dataset._SYNONYMS.get(t, frozenset((t,))) & covered) for t in ident):
+            return None
+        mine = float(FOOD_DATABASE[curated_name].get("calories") or 0)
+        theirs = float(match.values.get("calories") or 0)
+        if (mine <= 0) != (theirs <= 0):
+            return None
+        if mine > 0 and max(mine, theirs) / min(mine, theirs) > _MAX_PRIMARY_RATIO:
+            return None
+        return curated_name, hit[1]  # stable canonical name ("egg", "rice (cooked)"), dataset values
+
+    def _pick(db_name: str, aliased: bool = False) -> Tuple[str, FoodEntry]:
+        if plant_based and not db_name.startswith("dairy-free") and f"dairy-free {db_name}" in FOOD_DATABASE:
+            db_name = f"dairy-free {db_name}"  # "dairy-free unsweetened milk" is plant milk, not cow's
+        primary = _primary(db_name, db_name if aliased else (name or db_name))
+        if primary is not None:
+            return primary
+        twin = f"{db_name} (cooked)"
+        if cooked and twin in FOOD_DATABASE:
+            return _curated_result(twin)
+        if cooked and not plant_based and FOOD_DATABASE[db_name].get("category") in _WHOLE_FOOD_CATEGORIES:
+            # Curated values are raw; "tinned tomatoes" wants the canned figure if the
+            # dataset has a confident one. (Not for products that are only sold tinned,
+            # like coconut cream - their curated value already is the tinned one.)
+            hit = _region_dataset_hit(name, True, region)
+            if hit is not None and hit[2].score >= 0.9 and hit[2].state in _DATASET_COOKED_STATES:
+                return hit[0], hit[1]
+        return _curated_result(db_name)
+
+    def _partial_or_dataset(db_name: str) -> Tuple[str, FoodEntry]:
+        """Curated partial hit vs. a dataset match that explains the whole line."""
+        if plant_based:
+            return _pick(db_name)
+        from utils import food_dataset
+
+        ident, _states = food_dataset._query_parts(name or "")
+        curated_words = set(food_dataset.tokens(db_name))
+        if not ident or set(ident) <= curated_words:
+            return _pick(db_name)
+        hit = _region_dataset_hit(name, cooked, region)
+        if hit is not None:
+            match = hit[2]
+            covered = set(food_dataset.tokens(match.description))
+            explained = all(
+                (food_dataset._SYNONYMS.get(t, frozenset((t,))) & covered) for t in ident
+            )
+            if explained and match.score >= 0.9:
+                return hit[0], hit[1]
+        return _pick(db_name)
+
+    def _longest_match(text: str) -> Optional[str]:
+        # Longest whole-word match: "coconut milk" beats "milk", "rice wine vinegar" beats
+        # "rice", and "egg" never matches inside "eggplant".
+        best: Optional[str] = None
+        for db_name in FOOD_DATABASE:
+            if db_name.endswith(" (cooked)"):
+                continue
+            if re.search(rf"(?<![\w-]){re.escape(db_name)}(?![\w-])", text) and (
+                best is None or len(db_name) > len(best)
+            ):
+                best = db_name
         return best
+
+    if cleaned in FOOD_DATABASE:
+        return _pick(cleaned, aliased=cleaned != _normalize_name(name))
+    # "nutritional yeast or dairy-free parmesan": the recipe's first choice counts.
+    # ...and "tomatoes, diced": the prep note after a comma isn't the food.
+    first_choice = re.split(r"\s+or\s+|\s*/\s*|\s*,", cleaned)[0].strip()
+    def _singular(w: str) -> str:
+        if len(w) > 4 and w.endswith("oes"):
+            return w[:-2]  # potatoes, tomatoes
+        if len(w) > 4 and w.endswith("ies"):
+            return w[:-3] + "y"  # berries
+        if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
+            return w[:-1]
+        return w
+
+    singular = " ".join(_singular(w) for w in first_choice.split())
+    # The unstripped line too, so "dried oregano" / "dried apricots" find their own entries.
+    original = re.split(r"\s+or\s+|\s*/\s*", (name or "").lower().strip())[0].strip()
+    for text in (original, first_choice, singular, cleaned):
+        if text in FOOD_ALIASES:
+            return _pick(FOOD_ALIASES[text], aliased=True)
+        best_name = _longest_match(text)
+        if best_name:
+            if best_name in (text, first_choice, singular):
+                return _pick(best_name)
+            return _partial_or_dataset(best_name)
+
+    hit = _region_dataset_hit(name, cooked, region)
+    if hit is not None:
+        return hit[0], hit[1]
 
     if not remote:
         return None
     try:
         from services.nutrition_lookup import lookup_remote_nutrition
 
-        remote_entry = lookup_remote_nutrition(cleaned)
+        remote_entry = lookup_remote_nutrition(cleaned, prefer_uk=region == "uk")
         if remote_entry:
             label = _normalize_name(str(remote_entry.get("label") or cleaned)) or cleaned
+            carbs = float(remote_entry.get("carbs", 0) or 0)
+            fiber = float(remote_entry.get("fiber", 0) or 0)
+            if str(remote_entry.get("source") or "").startswith("usda"):
+                carbs, carbs_total = max(0.0, carbs - fiber), carbs  # FDC: carbohydrate by difference
+            else:
+                carbs_total = carbs + fiber  # Open Food Facts: EU / UK labels state available carbs
             entry: FoodEntry = {
                 "calories": remote_entry.get("calories", 0),
                 "protein": remote_entry.get("protein", 0),
-                "carbs": remote_entry.get("carbs", 0),
+                "carbs": round(carbs, 1),
+                "carbs_total": round(carbs_total, 1),
                 "fat": remote_entry.get("fat", 0),
                 "fiber": remote_entry.get("fiber", 0),
                 "salt": remote_entry.get("salt", 0),
@@ -676,6 +1209,8 @@ def find_food(name: str, *, remote: bool = False) -> Optional[Tuple[str, FoodEnt
                 "tags": list(remote_entry.get("tags") or ["remote"]),
                 "category": remote_entry.get("category") or "remote",
                 "source": remote_entry.get("source"),
+                "source_id": remote_entry.get("source_id") or remote_entry.get("label"),
+                "state": "raw",
             }
             return label, entry
     except Exception:

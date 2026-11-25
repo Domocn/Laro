@@ -109,8 +109,8 @@ export const RecipeImportModal = ({ isOpen, onClose, onSuccess }) => {
       toast.error('Please choose a PDF');
       return;
     }
-    if (pdfFile.size > 12_000_000) {
-      toast.error('PDF too large (max 12MB)');
+    if (pdfFile.size > 95_000_000) {
+      toast.error('PDF too large (max 95MB)');
       return;
     }
 
@@ -144,7 +144,7 @@ export const RecipeImportModal = ({ isOpen, onClose, onSuccess }) => {
       toast.success(
         n === 1
           ? 'Recipe imported for review'
-          : `Separated ${n} recipes from one PDF — each marked for review` +
+          : `Separated ${n} recipes from one PDF, each marked for review` +
             (skipped ? ` (${skipped} duplicates skipped)` : '')
       );
       if (onSuccess) onSuccess(recipes[0]);
@@ -384,7 +384,7 @@ Mix dry ingredients. Add eggs and vanilla. Bake at 350°F for 25 minutes."
                   <p className="text-xs text-muted-foreground mt-1">{pdfFile.name}</p>
                 )}
                 <p className="text-xs text-muted-foreground mt-2">
-                  Text-based PDFs (max 12MB). Weekly plans become separate recipes; use Meal Plan → PDF to also schedule the week.
+                  Text-based PDFs (max 95MB). Weekly plans become separate recipes; use Meal Plan → PDF to also schedule the week.
                 </p>
               </div>
               <Button

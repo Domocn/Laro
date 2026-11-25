@@ -25,3 +25,5 @@ EXPOSE 8001
 
 # Run the application
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001"]
+
+# ci: deploy pipeline restored 2026-09-24 (docker-publish checkout pinned to v4); this line triggers a rebuild so the PDF-upload + R8 login fixes ship.

@@ -6,19 +6,39 @@ NYT Cooking, Bon Appetit, Serious Eats, Budget Bytes, Delish, and generic Recipe
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional, List
-from dependencies import get_current_user, recipe_repository, recipe_version_repository
+from dependencies import (
+    get_current_user,
+    recipe_repository,
+    recipe_version_repository,
+    meal_plan_repository,
+)
 from utils.activity_logger import log_action
 from utils.security import is_safe_external_url
 from datetime import datetime, timezone
 import uuid
 import re
 import json
+import html
 import httpx
 import logging
 
 logger = logging.getLogger(__name__)
 
+from services.recipe_macros_jobs import schedule_recipe_macros
+
 router = APIRouter(prefix="/import", tags=["Recipe Import"])
+
+
+def _row(recipe: dict) -> dict:
+    """Split "100g flour" lines like the AI import does, then keep only real recipe columns."""
+    try:
+        from routers.ai import _split_ingredient_amounts
+        recipe = _split_ingredient_amounts(recipe)
+    except Exception:
+        pass
+    from utils.recipe_fields import recipe_row_for_insert
+    return recipe_row_for_insert(recipe)
+
 
 # =============================================================================
 # SUPPORTED PLATFORMS
@@ -41,6 +61,7 @@ SUPPORTED_PLATFORMS = {
     "halfbakedharvest.com": {"name": "Half Baked Harvest", "logo": "🌾", "selector": "recipe-schema"},
     "pinchofyum.com": {"name": "Pinch of Yum", "logo": "🤤", "selector": "recipe-schema"},
     "pinchofnom.com": {"name": "Pinch of Nom", "logo": "🍽️", "selector": "recipe-schema"},
+    "mealime.com": {"name": "Mealime", "logo": "🥗", "selector": "recipe-schema"},
 }
 
 # =============================================================================
@@ -52,6 +73,17 @@ class ImportRequest(BaseModel):
 
 class BulkImportRequest(BaseModel):
     urls: List[str]
+
+class MigrateRequest(BaseModel):
+    text: str
+    source: Optional[str] = "mealime"
+
+
+class PlanMigratedWeekRequest(BaseModel):
+    recipe_ids: List[str]
+    meal_type: Optional[str] = "dinner"
+    start_date: Optional[str] = None
+    days: Optional[int] = 5
 
 class ImportFromTextRequest(BaseModel):
     text: str
@@ -146,7 +178,7 @@ def parse_recipe_object(data: dict) -> dict:
         elif isinstance(inst, dict):
             text = inst.get("text", "") or inst.get("name", "")
             if text:
-                instructions.append(text)
+                instructions.append(html.unescape(text))
 
     prep_time = parse_duration(data.get("prepTime", ""))
     cook_time = parse_duration(data.get("cookTime", ""))
@@ -168,8 +200,8 @@ def parse_recipe_object(data: dict) -> dict:
             servings = int(match.group(1))
 
     return {
-        "title": data.get("name", "Imported Recipe"),
-        "description": data.get("description", ""),
+        "title": html.unescape(data.get("name", "Imported Recipe") or "Imported Recipe"),
+        "description": html.unescape(data.get("description", "") or ""),
         "ingredients": ingredients,
         "instructions": instructions,
         "prep_time": prep_time or (total_time // 2 if total_time else 15),
@@ -362,14 +394,11 @@ async def import_from_url(
         "household_id": user.get("household_id"),
         "created_at": now,
         "updated_at": now,
-        "is_favorite": False,
-        "times_cooked": 0,
-        "current_version": 1,
-        "imported_from": platform_info["name"] if platform_info else "Web",
         **recipe_data
     }
 
-    await recipe_repository.create(recipe)
+    await recipe_repository.create(_row(recipe))
+    schedule_recipe_macros([recipe["id"]], user)  # line macros + totals, after the response
 
     await recipe_version_repository.create({
         "id": str(uuid.uuid4()),
@@ -432,14 +461,12 @@ async def bulk_import(
                     "household_id": user.get("household_id"),
                     "created_at": now,
                     "updated_at": now,
-                    "is_favorite": False,
-                    "times_cooked": 0,
-                    "current_version": 1,
                     **recipe_data
                 }
                 recipe["source_url"] = url
 
-                await recipe_repository.create(recipe)
+                await recipe_repository.create(_row(recipe))
+                schedule_recipe_macros([recipe["id"]], user)  # line macros + totals, after the response
                 results["successful"].append({
                     "url": url,
                     "title": recipe["title"],
@@ -468,6 +495,283 @@ async def bulk_import(
         "message": f"Imported {len(results['successful'])} of {len(data.urls)} recipes",
         "results": results
     }
+
+
+@router.get("/migrate/status")
+async def migrate_status(user: dict = Depends(get_current_user)):
+    """How many closing-app copies a free account can still bring over."""
+    from utils.free_limits import (
+        CLOSING_APP_MIGRATION_UNTIL,
+        CLOSING_APP_RECIPE_ALLOWANCE,
+        closing_app_recipe_limit,
+        closing_app_window_open,
+        recipe_limit,
+    )
+
+    current = await recipe_repository.count({"author_id": user["id"]})
+    limit = closing_app_recipe_limit(user)
+    remaining = max(0, limit - current) if limit < 10_000 else 10_000
+    return {
+        "mealime_shutdown": "2026-10-21",
+        "window_until": CLOSING_APP_MIGRATION_UNTIL.date().isoformat(),
+        "window_open": closing_app_window_open(),
+        "allowance": CLOSING_APP_RECIPE_ALLOWANCE,
+        "free_recipe_limit": recipe_limit(user),
+        "current_recipes": current,
+        "remaining": remaining,
+    }
+
+
+@router.post("/migrate")
+async def migrate_closing_apps(
+    request: Request,
+    data: MigrateRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Import recipes from a shutting-down app (Mealime names or public URLs)."""
+    from services.mealime_migrate import (
+        extract_any_url,
+        leftover_paste,
+        load_catalog,
+        recipe_payload_for_save,
+        resolve_name,
+        source_type_for_url,
+        split_paste,
+    )
+    from utils.free_limits import closing_app_recipe_limit
+    from utils.subscription import assert_can_create_recipes
+
+    lines = split_paste(data.text)
+    if not lines:
+        raise HTTPException(
+            status_code=400,
+            detail="Paste recipe names or public links (Mealime, Samsung Food, Whisk, Pepperplate).",
+        )
+
+    # Keep each request short enough for a browser/app timeout.
+    batch = lines[:15]
+    catalog = []
+    needs_names = any(
+        not (line.lower().startswith("http://") or line.lower().startswith("https://"))
+        and not extract_any_url(line)
+        for line in batch
+    )
+    if needs_names:
+        try:
+            catalog = await load_catalog(request.app.state.http_client)
+        except Exception as e:
+            logger.warning("Mealime catalog fetch failed: %s", e)
+            catalog = []
+
+    results = {"successful": [], "failed": [], "skipped": []}
+    limit = closing_app_recipe_limit(user)
+
+    for idx, line in enumerate(batch):
+        url = extract_any_url(line)
+        if not url:
+            stripped = line.strip()
+            if stripped.lower().startswith(("http://", "https://")):
+                url = stripped
+            else:
+                match = resolve_name(stripped, catalog)
+                if match:
+                    url = match["url"]
+                else:
+                    results["failed"].append({
+                        "input": line,
+                        "error": "Could not match that name. Paste the public recipe link instead.",
+                    })
+                    continue
+
+        if not url.lower().startswith(("http://", "https://")):
+            url = "https://" + url
+
+        is_safe, error = is_safe_external_url(url)
+        if not is_safe:
+            results["failed"].append({"input": line, "url": url, "error": error})
+            continue
+
+        try:
+            await assert_can_create_recipes(
+                user, recipe_repository, 1, limit_override=limit
+            )
+        except HTTPException as cap:
+            results["skipped"].append({
+                "input": line,
+                "url": url,
+                "error": cap.detail if isinstance(cap.detail, str) else str(cap.detail),
+            })
+            results["skipped"].extend(
+                {"input": rest, "error": "Stopped at the free-plan recipe cap."}
+                for rest in batch[idx + 1:]
+            )
+            break
+
+        try:
+            recipe_data = await fetch_recipe_from_url(url, request.app.state.http_client)
+            if not recipe_data or not (
+                recipe_data.get("ingredients") or recipe_data.get("instructions")
+            ):
+                results["failed"].append({
+                    "input": line,
+                    "url": url,
+                    "error": "That page did not expose a recipe we could copy.",
+                })
+                continue
+
+            now = datetime.now(timezone.utc).isoformat()
+            payload = recipe_payload_for_save(recipe_data, url)
+            payload["source_type"] = source_type_for_url(url)
+            remote_cover = payload.get("image_url") or ""
+            if str(remote_cover).startswith("http"):
+                from utils.image_store import stash_remote_cover
+                local = await stash_remote_cover(
+                    request.app.state.http_client, remote_cover, prefix="migrate"
+                )
+                if local:
+                    payload["image_url"] = local
+            recipe = {
+                "id": str(uuid.uuid4()),
+                "author_id": user["id"],
+                "household_id": user.get("household_id"),
+                "created_at": now,
+                "updated_at": now,
+                **payload,
+            }
+            await recipe_repository.create(_row(recipe))
+            schedule_recipe_macros([recipe["id"]], user)  # line macros + totals, after the response
+            results["successful"].append({
+                "input": line,
+                "url": url,
+                "title": recipe.get("title"),
+                "id": recipe["id"],
+            })
+            await log_action(
+                user, "recipe_imported", request,
+                target_type="recipe",
+                target_id=recipe["id"],
+                details={"title": recipe.get("title"), "url": url, "source": "closing_app"},
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning("Closing-app import failed for %s: %s", url, e)
+            results["failed"].append({"input": line, "url": url, "error": str(e)})
+
+    processed = len(batch)
+    remaining_count = max(0, len(lines) - processed)
+    remaining_text = leftover_paste(lines, processed)
+    return {
+        "message": (
+            f"Imported {len(results['successful'])} of {processed} recipes"
+            + (f" ({remaining_count} still in this paste — we will continue)" if remaining_count else "")
+        ),
+        "processed": processed,
+        "remaining_in_paste": remaining_count,
+        "remaining_text": remaining_text,
+        "results": results,
+    }
+
+
+@router.post("/migrate/plan-week")
+async def plan_migrated_week(
+    request: Request,
+    data: PlanMigratedWeekRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Fill empty dinner slots this week with just-imported recipes (Mealime-style)."""
+    from datetime import date, timedelta
+    from services.mealime_migrate import assign_week_dinners
+    from database.websocket_manager import ws_manager, EventType
+
+    ids = [rid for rid in (data.recipe_ids or []) if rid][:14]
+    if not ids:
+        raise HTTPException(status_code=400, detail="Pick at least one imported recipe.")
+
+    owned = []
+    for rid in ids:
+        recipe = await recipe_repository.find_by_id(rid)
+        if recipe and recipe.get("author_id") == user["id"]:
+            owned.append(recipe)
+    if not owned:
+        raise HTTPException(status_code=404, detail="Those recipes are not in your kitchen.")
+
+    meal_type = (data.meal_type or "dinner").lower().strip() or "dinner"
+    if data.start_date:
+        try:
+            start = date.fromisoformat(data.start_date[:10])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD.")
+    else:
+        start = datetime.now(timezone.utc).date()
+    days = data.days or 5
+
+    household_id = user.get("household_id") or user["id"]
+    end = (start + timedelta(days=max(days, 1) - 1)).isoformat()
+    existing = await meal_plan_repository.find_by_household(
+        household_id, start.isoformat(), end
+    )
+    occupied = {
+        str(row.get("date"))[:10]
+        for row in existing
+        if (row.get("meal_type") or "").lower() == meal_type
+    }
+    slots = assign_week_dinners(
+        [r["id"] for r in owned], occupied, start, days=days
+    )
+    created = []
+    now = datetime.now(timezone.utc).isoformat()
+    by_id = {r["id"]: r for r in owned}
+    for day, recipe_id in slots:
+        recipe = by_id[recipe_id]
+        plan_id = str(uuid.uuid4())
+        plan_doc = {
+            "id": plan_id,
+            "date": day,
+            "meal_type": meal_type,
+            "recipe_id": recipe_id,
+            "recipe_title": recipe.get("title") or "Imported recipe",
+            "notes": "",
+            "adult_boost": "",
+            "entry_type": "recipe",
+            "household_id": household_id,
+            "created_at": now,
+        }
+        await meal_plan_repository.create(plan_doc)
+        created.append({
+            "id": plan_id,
+            "date": day,
+            "meal_type": meal_type,
+            "recipe_id": recipe_id,
+            "recipe_title": plan_doc["recipe_title"],
+        })
+        await log_action(
+            user, "meal_plan_created", request,
+            target_type="meal_plan",
+            target_id=plan_id,
+            details={"date": day, "source": "closing_app_migrate"},
+        )
+        try:
+            await ws_manager.broadcast_to_household_or_user(
+                user_id=user["id"],
+                household_id=user.get("household_id"),
+                event_type=EventType.MEAL_PLAN_CREATED,
+                data={"id": plan_id, "date": day},
+            )
+        except Exception:
+            pass
+
+    leftover_ids = [r["id"] for r in owned if r["id"] not in {s[1] for s in slots}]
+    return {
+        "message": (
+            f"Planned {len(created)} {meal_type}s this week"
+            if created
+            else "Those dinner slots are already filled."
+        ),
+        "planned": created,
+        "skipped_recipe_ids": leftover_ids,
+    }
+
 
 @router.post("/text")
 async def import_from_text(
@@ -518,14 +822,11 @@ Return ONLY valid JSON, no other text."""
             "household_id": user.get("household_id"),
             "created_at": now,
             "updated_at": now,
-            "is_favorite": False,
-            "times_cooked": 0,
-            "current_version": 1,
-            "imported_from": "Text",
             **recipe_data
         }
 
-        await recipe_repository.create(recipe)
+        await recipe_repository.create(_row(recipe))
+        schedule_recipe_macros([recipe["id"]], user)  # line macros + totals, after the response
 
         # Log text import
         await log_action(

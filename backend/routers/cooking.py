@@ -9,6 +9,7 @@ from dependencies import (
 )
 from database.websocket_manager import ws_manager, EventType
 from database.connection import get_db
+import json
 import logging
 import uuid
 from datetime import datetime, timezone, date
@@ -23,6 +24,7 @@ async def _maybe_sync_google_health(
     user_id: str,
     recipe_id: str,
     cook_session_id: Optional[str] = None,
+    nutrition_override: Optional[dict] = None,
 ) -> Optional[dict]:
     """Best-effort Google Health nutrition sync; never fails the cook flow."""
     try:
@@ -38,6 +40,7 @@ async def _maybe_sync_google_health(
             recipe=recipe,
             cook_session_id=cook_session_id,
             servings=1.0,
+            nutrition_override=nutrition_override,
         )
     except Exception:
         logger.warning(
@@ -80,11 +83,11 @@ async def _merge_personal_note(user_id: str, recipe_id: str, notes: str, when: d
                 merged, when, existing["id"],
             )
         else:
-            # Rating is required on the table — use a neutral 3 until user rates
+            # No star rating until the user actually rates (NULL), so cook notes don't fake a 3.
             await conn.execute(
                 """INSERT INTO user_recipe_ratings
                    (id, user_id, recipe_id, rating, personal_notes, created_at, updated_at)
-                   VALUES ($1, $2, $3, 3, $4, $5, $5)""",
+                   VALUES ($1, $2, $3, NULL, $4, $5, $5)""",
                 str(uuid.uuid4()), user_id, recipe_id, notes, when,
             )
 
@@ -231,11 +234,15 @@ async def complete_cook_session(session_id: str, data: CookSessionComplete, user
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     notes = (data.notes or "").strip()
 
-    await cook_session_repository.update_session(session_id, {
+    override = data.nutrition_override  # validated per-serving figures (models.py)
+    session_update = {
         "completed_at": now,
         "feedback": feedback,
         "notes": notes,
-    })
+    }
+    if override:
+        session_update["nutrition_override"] = json.dumps(override)
+    await cook_session_repository.update_session(session_id, session_update)
 
     if feedback:
         await recipe_feedback_repository.upsert_feedback(
@@ -250,7 +257,7 @@ async def complete_cook_session(session_id: str, data: CookSessionComplete, user
         await _merge_personal_note(user["id"], session["recipe_id"], notes, now)
 
     google_health_log = await _maybe_sync_google_health(
-        user["id"], session["recipe_id"], session_id
+        user["id"], session["recipe_id"], session_id, override
     )
 
     await ws_manager.broadcast_to_household_or_user(
@@ -265,6 +272,7 @@ async def complete_cook_session(session_id: str, data: CookSessionComplete, user
         "feedback": feedback,
         "last_cooked_at": now.isoformat(),
         "notes": notes,
+        "nutrition_override": override,
         "google_health_synced": bool(google_health_log),
         "google_health_log_id": google_health_log.get("id") if google_health_log else None,
     }
@@ -288,8 +296,9 @@ async def mark_recipe_cooked(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     notes = (data.notes or "").strip()
     session_id = str(uuid.uuid4())
+    override = data.nutrition_override  # validated per-serving figures (models.py)
 
-    await cook_session_repository.create({
+    session_row = {
         "id": session_id,
         "user_id": user["id"],
         "recipe_id": recipe_id,
@@ -297,7 +306,10 @@ async def mark_recipe_cooked(
         "completed_at": now,
         "feedback": feedback,
         "notes": notes,
-    })
+    }
+    if override:
+        session_row["nutrition_override"] = json.dumps(override)
+    await cook_session_repository.create(session_row)
 
     if feedback:
         await recipe_feedback_repository.upsert_feedback(
@@ -312,7 +324,7 @@ async def mark_recipe_cooked(
         await _merge_personal_note(user["id"], recipe_id, notes, now)
 
     google_health_log = await _maybe_sync_google_health(
-        user["id"], recipe_id, session_id
+        user["id"], recipe_id, session_id, override
     )
 
     await ws_manager.broadcast_to_household_or_user(
@@ -328,6 +340,7 @@ async def mark_recipe_cooked(
         "last_cooked_at": now.isoformat(),
         "notes": notes,
         "feedback": feedback,
+        "nutrition_override": override,
         "google_health_synced": bool(google_health_log),
         "google_health_log_id": google_health_log.get("id") if google_health_log else None,
     }

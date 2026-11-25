@@ -186,7 +186,7 @@ export const RecreateStoreMeal = () => {
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/recipes/add')}
             aria-label={t('back')}
           >
             <ArrowLeft className="w-5 h-5" />

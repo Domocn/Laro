@@ -9,12 +9,13 @@ from dependencies import (
     hash_password, get_current_user, create_token,
     user_repository, session_repository, totp_secret_repository, oauth_account_repository,
     system_settings_repository, llm_settings_repository, custom_prompts_repository,
-    invite_code_repository, audit_log_repository, backup_repository, backup_settings_repository,
+    invite_code_repository, promo_code_repository, audit_log_repository, backup_repository, backup_settings_repository,
     recipe_repository, meal_plan_repository, shopping_list_repository,
     ip_allowlist_repository, ip_blocklist_repository, login_attempt_repository,
     user_preferences_repository
 )
 from datetime import datetime, timezone, timedelta
+import re
 import uuid
 import secrets
 import asyncio
@@ -95,6 +96,20 @@ class InviteCodeResponse(BaseModel):
     grants_admin: bool
     expires_at: Optional[str]
     created_at: str
+
+class PromoCodeCreate(BaseModel):
+    code: str
+    trial_days: int = 14
+    description: Optional[str] = None
+    max_uses: Optional[int] = None  # None = unlimited
+    expires_days: Optional[int] = None  # None = never
+    referrer_email: Optional[str] = None  # credit this user as the referrer
+
+class PromoCodeUpdate(BaseModel):
+    active: Optional[bool] = None
+    trial_days: Optional[int] = None
+    description: Optional[str] = None
+    max_uses: Optional[int] = None
 
 class AuditLogEntry(BaseModel):
     id: str
@@ -542,6 +557,143 @@ async def delete_invite_code(code_id: str, admin: dict = Depends(get_admin_user)
     )
 
     return {"message": "Invite code deleted"}
+
+# =============================================================================
+# PROMO CODE MANAGEMENT
+# =============================================================================
+
+PROMO_CODE_RE = re.compile(r"^[A-Z0-9_-]{3,32}$")
+PROMO_MAX_TRIAL_DAYS = 365
+
+
+def _promo_out(promo: dict) -> dict:
+    out = dict(promo)
+    for key in ("expires_at", "created_at"):
+        if hasattr(out.get(key), "isoformat"):
+            out[key] = out[key].isoformat()
+    return out
+
+
+def _check_trial_days(days: int) -> None:
+    if days < 1 or days > PROMO_MAX_TRIAL_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Trial length must be between 1 and {PROMO_MAX_TRIAL_DAYS} days",
+        )
+
+
+@router.get("/promo-codes")
+async def list_promo_codes(admin: dict = Depends(get_admin_user)):
+    """List all promo codes, with the referrer's email when one is credited"""
+    codes = [_promo_out(c) for c in await promo_code_repository.list_all()]
+    referrer_ids = list({c["referrer_user_id"] for c in codes if c.get("referrer_user_id")})
+    if referrer_ids:
+        users = await user_repository.find_by_ids(referrer_ids)
+        emails = {u["id"]: u.get("email") for u in users}
+        for c in codes:
+            c["referrer_email"] = emails.get(c.get("referrer_user_id"))
+    return {"codes": codes}
+
+@router.post("/promo-codes")
+async def create_promo_code(
+    data: PromoCodeCreate,
+    admin: dict = Depends(get_admin_user)
+):
+    """Create a promo code that gives new sign-ups its own Pro trial length"""
+    code = (data.code or "").strip().upper()
+    if not PROMO_CODE_RE.match(code):
+        raise HTTPException(
+            status_code=400,
+            detail="Code must be 3-32 characters: letters, numbers, - or _",
+        )
+    _check_trial_days(data.trial_days)
+    if data.max_uses is not None and data.max_uses < 1:
+        raise HTTPException(status_code=400, detail="Max uses must be at least 1 (or blank for unlimited)")
+    if await promo_code_repository.find_by_code(code):
+        raise HTTPException(status_code=400, detail="That promo code already exists")
+
+    referrer_user_id = None
+    if data.referrer_email and data.referrer_email.strip():
+        email = data.referrer_email.strip()
+        referrer = (
+            await user_repository.find_by_email(email)
+            or await user_repository.find_by_email(email.lower())
+        )
+        if not referrer:
+            raise HTTPException(status_code=400, detail="No user with that referrer email")
+        referrer_user_id = referrer["id"]
+
+    current_time = datetime.now(timezone.utc).replace(tzinfo=None)
+    expires_at = None
+    if data.expires_days:
+        expires_at = current_time + timedelta(days=data.expires_days)
+
+    promo = {
+        "id": str(uuid.uuid4()),
+        "code": code,
+        "description": (data.description or "").strip() or None,
+        "trial_days": data.trial_days,
+        "max_uses": data.max_uses,
+        "uses": 0,
+        "active": True,
+        "referrer_user_id": referrer_user_id,
+        "expires_at": expires_at,
+        "created_by": admin["id"],
+        "created_at": current_time,
+    }
+    await promo_code_repository.create(promo)
+
+    await log_audit(
+        admin["id"], admin["email"], "promo_code_created",
+        "promo_code", promo["id"], {"code": code, "trial_days": data.trial_days}
+    )
+
+    out = _promo_out(promo)
+    out["referrer_email"] = referrer["email"] if referrer_user_id else None
+    return out
+
+@router.patch("/promo-codes/{code_id}")
+async def update_promo_code(
+    code_id: str,
+    data: PromoCodeUpdate,
+    admin: dict = Depends(get_admin_user)
+):
+    """Pause / resume a promo code or change its trial length, uses or note"""
+    promo = await promo_code_repository.find_by_id(code_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promo code not found")
+
+    update = data.model_dump(exclude_unset=True)
+    # Only max_uses may be cleared (null = unlimited)
+    update = {k: v for k, v in update.items() if v is not None or k == "max_uses"}
+    if "trial_days" in update:
+        _check_trial_days(update["trial_days"])
+    if update.get("max_uses") is not None and update["max_uses"] < 1:
+        raise HTTPException(status_code=400, detail="Max uses must be at least 1 (or blank for unlimited)")
+    if not update:
+        return _promo_out(promo)
+
+    await promo_code_repository.update_code(code_id, update)
+    await log_audit(
+        admin["id"], admin["email"], "promo_code_updated",
+        "promo_code", code_id, update
+    )
+    return _promo_out({**promo, **update})
+
+@router.delete("/promo-codes/{code_id}")
+async def delete_promo_code(code_id: str, admin: dict = Depends(get_admin_user)):
+    """Delete a promo code (trials already started keep running)"""
+    result = await promo_code_repository.delete_code(code_id)
+
+    if result == 0:
+        raise HTTPException(status_code=404, detail="Promo code not found")
+
+    await log_audit(
+        admin["id"], admin["email"], "promo_code_deleted",
+        "promo_code", code_id
+    )
+
+    return {"message": "Promo code deleted"}
 
 # =============================================================================
 # AUDIT LOG ENDPOINTS

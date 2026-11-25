@@ -7,6 +7,7 @@ from typing import Optional, List
 from dependencies import get_current_user, recipe_repository, recipe_version_repository, user_repository
 from datetime import datetime, timezone
 import uuid
+from utils.authorization import require_recipe_view, require_recipe_edit
 
 router = APIRouter(prefix="/recipes", tags=["Recipe Versioning"])
 
@@ -21,6 +22,15 @@ class VersionCompare(BaseModel):
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+async def _load_viewable_recipe(recipe_id: str, user: dict) -> dict:
+    """Fetch a recipe and 404 unless the caller may view it (prevents IDOR)."""
+    recipe = await recipe_repository.find_by_id(recipe_id)
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
+    return recipe
+
 
 async def create_recipe_version(recipe_id: str, recipe_data: dict, user_id: str, change_note: str = None):
     """Create a new version snapshot of a recipe"""
@@ -56,9 +66,7 @@ async def list_recipe_versions(
 ):
     """List all versions of a recipe"""
     # Verify recipe exists and user has access
-    recipe = await recipe_repository.find_by_id(recipe_id)
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+    recipe = await _load_viewable_recipe(recipe_id, user)
 
     versions = await recipe_version_repository.find_by_recipe(recipe_id)
 
@@ -81,6 +89,7 @@ async def get_recipe_version(
     user: dict = Depends(get_current_user)
 ):
     """Get a specific version of a recipe"""
+    await _load_viewable_recipe(recipe_id, user)
     version_doc = await recipe_version_repository.get_version(recipe_id, version)
 
     if not version_doc:
@@ -99,20 +108,14 @@ async def restore_recipe_version(
     user: dict = Depends(get_current_user)
 ):
     """Restore a recipe to a specific version"""
+    recipe = await _load_viewable_recipe(recipe_id, user)
+    require_recipe_edit(user, recipe)
+
     # Get the version to restore
     version_doc = await recipe_version_repository.get_version(recipe_id, version)
 
     if not version_doc:
         raise HTTPException(status_code=404, detail="Version not found")
-
-    # Get current recipe
-    recipe = await recipe_repository.find_by_id(recipe_id)
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
-
-    # Check permission
-    if recipe.get("author_id") != user["id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized")
 
     # Save current state as new version before restoring
     current_data = {k: v for k, v in recipe.items() if k not in ["current_version"]}
@@ -149,6 +152,7 @@ async def compare_recipe_versions(
     user: dict = Depends(get_current_user)
 ):
     """Compare two versions of a recipe"""
+    await _load_viewable_recipe(recipe_id, user)
     version_a = await recipe_version_repository.get_version(recipe_id, data.version_a)
     version_b = await recipe_version_repository.get_version(recipe_id, data.version_b)
 

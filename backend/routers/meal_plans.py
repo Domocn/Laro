@@ -8,6 +8,7 @@ from models import MealPlanCreate, MealPlanUpdate, MealPlanResponse
 from dependencies import get_current_user, meal_plan_repository, recipe_repository
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
+from services.recipe_variants import clean_version_name
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -40,6 +41,8 @@ def _shape_plan(plan: dict) -> dict:
         shaped["notes"] = ""
     if shaped.get("recipe_title") is None:
         shaped["recipe_title"] = ""
+    shaped["recipe_version"] = clean_version_name(shaped.get("recipe_version"))
+    shaped["low_fodmap"] = bool(shaped.get("low_fodmap"))
     shaped["date"] = _plan_date(shaped.get("date"))
     return shaped
 
@@ -90,13 +93,15 @@ async def create_meal_plan(plan: MealPlanCreate, request: Request, user: dict = 
 
     plan_doc = {
         "id": plan_id,
-        "date": plan.date,
+        "date": _plan_date(plan.date),
         "meal_type": plan.meal_type,
         "recipe_id": recipe_id,
         "recipe_title": recipe_title,
         "notes": plan.notes or "",
         "adult_boost": _normalize_adult_boost(plan.adult_boost),
         "entry_type": entry_type,
+        "recipe_version": clean_version_name(plan.recipe_version) if entry_type == "recipe" else None,
+        "low_fodmap": bool(plan.low_fodmap) and entry_type == "recipe",
         "household_id": household_id,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -107,7 +112,7 @@ async def create_meal_plan(plan: MealPlanCreate, request: Request, user: dict = 
         target_type="meal_plan",
         target_id=plan_id,
         details={
-            "date": plan.date,
+            "date": _plan_date(plan.date),
             "meal_type": plan.meal_type,
             "recipe_title": recipe_title,
             "entry_type": entry_type,
@@ -204,8 +209,12 @@ async def update_meal_plan(
                 detail="recipe_title is required for note and leftover entries",
             )
 
+    if recipe_id != plan.get("recipe_id"):
+        # Different recipe: the old version name / swaps don't apply unless resent.
+        plan = {**plan, "recipe_version": None, "low_fodmap": False}
+
     update_doc = {
-        "date": payload.get("date", plan.get("date")),
+        "date": _plan_date(payload.get("date", plan.get("date"))),
         "meal_type": payload.get("meal_type", plan.get("meal_type")),
         "recipe_id": recipe_id,
         "recipe_title": recipe_title,
@@ -214,6 +223,13 @@ async def update_meal_plan(
             payload["adult_boost"] if "adult_boost" in payload else plan.get("adult_boost") or ""
         ),
         "entry_type": entry_type,
+        # Only change the version / Low FODMAP choice when the client sends it.
+        "recipe_version": clean_version_name(
+            payload["recipe_version"] if "recipe_version" in payload else plan.get("recipe_version")
+        ) if entry_type == "recipe" else None,
+        "low_fodmap": bool(
+            payload["low_fodmap"] if "low_fodmap" in payload else plan.get("low_fodmap")
+        ) and entry_type == "recipe",
     }
     await meal_plan_repository.update_plan(plan_id, update_doc)
 
@@ -331,6 +347,8 @@ async def repeat_week(
             "notes": plan.get("notes") or "",
             "adult_boost": plan.get("adult_boost") or "",
             "entry_type": entry_type,
+            "recipe_version": plan.get("recipe_version") if entry_type == "recipe" else None,
+            "low_fodmap": bool(plan.get("low_fodmap")) and entry_type == "recipe",
             "household_id": household_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

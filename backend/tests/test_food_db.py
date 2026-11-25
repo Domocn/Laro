@@ -30,7 +30,35 @@ def test_find_food_fuzzy_match():
     match = find_food("fresh skinless chicken breast fillets")
     assert match is not None
     assert match[0] == "chicken breast"
-    assert match[1]["protein"] == 31
+    assert match[1]["protein"] == 22.5  # raw weight (recipes weigh chicken raw)
+
+
+def test_raw_by_default_cooked_when_the_line_says_so():
+    gf = find_food("500g gluten-free pasta")[1]  # dry gluten-free pasta (USDA FDC), not cooked
+    assert gf["state"] == "dried" and "gluten-free" in gf["description"].lower()
+    assert 330 <= gf["calories"] <= 380
+    assert find_food("200g cooked rice")[0] == "rice (cooked)"
+    assert find_food("400g tin chickpeas, drained")[0] == "chickpeas (cooked)"
+    assert 30 <= find_food("cooked chicken breast")[1]["protein"] <= 33  # CoFID grilled breast 32 g
+
+
+def test_specific_names_beat_generic_words():
+    assert find_food("coconut milk")[0] == "coconut milk"
+    assert find_food("dairy-free milk chocolate")[0] == "dairy-free milk chocolate"
+    assert find_food("dairy-free unsweetened milk")[0] == "dairy-free milk"
+    assert find_food("dairy-free feta")[0] == "dairy-free feta"
+    assert find_food("rice wine vinegar")[0] == "rice wine vinegar"
+    assert find_food("apple cider vinegar")[0] == "apple cider vinegar"
+    assert find_food("pepper")[0] == "black pepper"
+    assert find_food("red pepper")[0] == "bell pepper"
+    assert find_food("almond meal / flour")[0] == "almond meal"
+    assert find_food("nutritional yeast or dairy-free parmesan")[0] == "nutritional yeast"
+    assert find_food("eggs")[0] == "egg"
+    assert find_food("potatoes")[0] == "potato"
+    # "egg" must not match inside another word; the full dataset knows eggplant = aubergine.
+    eggplant = find_food("eggplant")
+    assert eggplant is not None and eggplant[0] != "egg"
+    assert eggplant[1]["description"] == "Aubergine, raw"
 
 
 def test_resolve_goals_defaults_for_high_protein():
@@ -125,7 +153,11 @@ def test_build_ai_food_context_skips_when_no_goals():
     assert ctx == ""
 
 
-def test_estimate_nutrition_from_foods():
+def test_estimate_nutrition_from_foods(monkeypatch):
+    # Keep this test offline: with network, Open Food Facts / USDA return *some* match even for
+    # nonsense names, so the "unknown ingredient" assertion became network-dependent (failed in CI).
+    import services.nutrition_lookup as nl
+    monkeypatch.setattr(nl, "lookup_remote_nutrition", lambda *a, **k: None)
     result = estimate_nutrition_from_foods(
         ["200g chicken breast", "100g greek yogurt", "xyzzy-unknown-macromolecule-99"],
         servings=2,

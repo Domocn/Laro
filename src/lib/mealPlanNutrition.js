@@ -3,6 +3,8 @@
  * Pure functions — unit-tested; used by MealPlanner (and portable to Android).
  */
 
+import { nutritionForPlan } from './versionMacros';
+
 const WEEKDAY_CODES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 /** date-fns / JS getDay(): 0=Sun … 6=Sat → mon–sun codes used in preferences */
@@ -39,14 +41,26 @@ export function recipeCalories(recipe) {
   return Number.isFinite(v) ? v : null;
 }
 
+function recipeNumber(recipe, key, column) {
+  if (!recipe) return null;
+  const raw = recipe.nutrition?.[key] ?? (column ? recipe[column] : null) ?? null;
+  if (raw == null || raw === '') return null;
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : null;
+}
+
 /**
  * Sum nutrition for meals on a day by joining meal plans → recipes.
+ * `carbs` is the UK figure (fibre excluded); `carbsTotal` (incl. fibre, US / CA labels) is null
+ * unless every meal with carbs knows its total — never a partial sum.
  * Notes/leftovers without nutrition contribute 0 (counted in mealsWithNutrition only when known).
  */
 export function rollupDayNutrition(meals = [], recipes = []) {
   const byId = new Map((recipes || []).map((r) => [r.id, r]));
   let protein = 0;
   let calories = 0;
+  let carbs = 0;
+  let carbsTotal = 0;
   let mealsWithNutrition = 0;
   let recipeMeals = 0;
 
@@ -54,19 +68,32 @@ export function rollupDayNutrition(meals = [], recipes = []) {
     const kind = meal.entry_type || (meal.recipe_id ? 'recipe' : 'note');
     if (kind !== 'recipe' || !meal.recipe_id) continue;
     recipeMeals += 1;
-    const recipe = byId.get(meal.recipe_id);
+    const base = byId.get(meal.recipe_id);
+    // The planned version / Low FODMAP option has its own macros (adaptations.versions[i].nutrition).
+    const recipe = base && (meal.recipe_version || meal.low_fodmap)
+      ? { ...base, nutrition: nutritionForPlan(base, meal) }
+      : base;
     const p = recipeProteinGrams(recipe);
     const c = recipeCalories(recipe);
+    const carb = recipeNumber(recipe, 'carbs', 'nutrition_carbs');
+    const carbTotal = recipeNumber(recipe, 'carbs_total');
     if (p != null || c != null) {
       mealsWithNutrition += 1;
       if (p != null) protein += p;
       if (c != null) calories += c;
+    }
+    if (carb != null) carbs += carb;
+    if (carbsTotal != null) {
+      if (carbTotal != null) carbsTotal += carbTotal;
+      else if (carb) carbsTotal = null;
     }
   }
 
   return {
     protein: Math.round(protein),
     calories: Math.round(calories),
+    carbs: Math.round(carbs),
+    carbsTotal: carbsTotal == null ? null : Math.round(carbsTotal),
     mealsWithNutrition,
     recipeMeals,
     hasAnyNutrition: mealsWithNutrition > 0,
@@ -152,7 +179,10 @@ export function suggestProteinSwaps({
 
     for (const meal of mealCandidates) {
       const current = recipes.find((r) => r.id === meal.recipe_id);
-      const currentP = recipeProteinGrams(current) || 0;
+      const planned = current && (meal.recipe_version || meal.low_fodmap)
+        ? { ...current, nutrition: nutritionForPlan(current, meal) }
+        : current;
+      const currentP = recipeProteinGrams(planned) || 0;
       const gain = protein - currentP;
       if (gain <= 0) continue;
       scored.push({

@@ -1,0 +1,12 @@
+{
+  "fixes": [
+    {
+      "bad": "chinese fire",
+      "good": "Chinese five-spice",
+      "count": 15,
+      "import_ids": [
+        "imp_t1"
+      ]
+    }
+  ]
+}

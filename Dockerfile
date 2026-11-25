@@ -1,35 +1,32 @@
-# Build stage
+# Build stage — Vite (migrated off react-scripts/craco)
 FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Install yarn
-RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+# Dependencies first so source edits don't bust the install layer.
+# Copy the lockfile too and prefer `npm ci` so the image resolves exactly the
+# same tree as CI and local dev; fall back if a checkout has no lockfile.
+COPY package.json package-lock.json* ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
-# Copy package files (yarn.lock is optional but recommended)
-COPY package.json ./
-COPY yarn.lock* ./
-
-# Install dependencies
-RUN yarn install --frozen-lockfile || yarn install
-
-# Copy source
+# Source
 COPY . .
 
-# Build argument for backend URL - use placeholder for runtime injection
+# Build argument for backend URL - use placeholder for runtime injection.
+# The real value is injected at container start by docker-entrypoint.sh.
 ARG REACT_APP_BACKEND_URL=%REACT_APP_BACKEND_URL%
 ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
 # Never ship source maps publicly — they expand attack surface and scanner noise
 ENV GENERATE_SOURCEMAP=false
 
 # Build the app
-RUN yarn build
+RUN npm run build
 
 # Production stage
 FROM nginx:alpine
 
-# Copy built files
-COPY --from=build /app/build /usr/share/nginx/html
+# Copy built files (Vite outDir)
+COPY --from=build /app/dist /usr/share/nginx/html
 
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf

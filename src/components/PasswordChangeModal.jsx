@@ -6,6 +6,7 @@ import { Label } from './ui/label';
 import { Lock, Loader2, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
+import { usePopupTurn } from '../lib/popupQueue';
 
 export const PasswordChangeModal = () => {
   const { forcePasswordChange, changePassword } = useAuth();
@@ -29,7 +30,8 @@ export const PasswordChangeModal = () => {
     }
   }, [forcePasswordChange]);
 
-  if (!forcePasswordChange) return null;
+  const myTurn = usePopupTurn('password-change', !!forcePasswordChange);
+  if (!myTurn) return null;
 
   const checks = [
     { met: newPassword.length >= policy.min_length, label: `At least ${policy.min_length} characters` },

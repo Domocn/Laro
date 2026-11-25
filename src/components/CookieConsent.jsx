@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { Cookie, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { isPublicRecipeViewPath } from '../lib/publicRecipeView';
+import { isQuietLegalPath, LEGAL_PRIVACY_HREF } from '../lib/legalPaths';
+import { usePopupTurn } from '../lib/popupQueue';
 
 const COOKIE_CONSENT_KEY = 'laro_cookie_consent';
 
@@ -10,9 +12,11 @@ export const CookieConsent = () => {
   const location = useLocation();
   const [visible, setVisible] = useState(false);
   const onPublicRecipe = isPublicRecipeViewPath(location.pathname);
+  const onLegal = isQuietLegalPath(location.pathname);
+  const onLanding = (location.pathname.replace(/\/+$/, '') || '/') === '/';
 
   useEffect(() => {
-    if (onPublicRecipe) {
+    if (onPublicRecipe || onLegal || onLanding) {
       setVisible(false);
       return undefined;
     }
@@ -24,7 +28,7 @@ export const CookieConsent = () => {
     }
     setVisible(false);
     return undefined;
-  }, [onPublicRecipe]);
+  }, [onPublicRecipe, onLegal, onLanding]);
 
   const accept = () => {
     localStorage.setItem(COOKIE_CONSENT_KEY, 'accepted');
@@ -36,7 +40,8 @@ export const CookieConsent = () => {
     setVisible(false);
   };
 
-  if (!visible || onPublicRecipe) return null;
+  const myTurn = usePopupTurn('cookie-consent', visible && !onPublicRecipe && !onLegal && !onLanding);
+  if (!myTurn) return null;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 p-4 animate-in slide-in-from-bottom duration-500">
@@ -46,9 +51,9 @@ export const CookieConsent = () => {
           <div className="flex-1 min-w-0">
             <p className="text-sm text-foreground">
               We use cookies and local storage to keep you signed in, remember your preferences, and improve your experience.{' '}
-              <Link to="/privacy-policy" className="text-laro hover:underline font-medium">
+              <a href={LEGAL_PRIVACY_HREF} className="text-laro hover:underline font-medium">
                 Privacy Policy
-              </Link>
+              </a>
             </p>
             <div className="flex items-center gap-2 mt-3">
               <Button

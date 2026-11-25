@@ -54,6 +54,29 @@ def recipe_limit(user: dict) -> int:
     return FREE_RECIPE_LIMIT + _bonus(user, "recipe_bonus_slots")
 
 
+# Mealime shuts 21 Oct 2026 with no export. Hosted free users can keep more
+# copies than the usual 50 while they move, then the normal cap applies to
+# new recipes. We do not delete what they already imported.
+CLOSING_APP_MIGRATION_UNTIL = datetime(2026, 11, 15, 23, 59, 59, tzinfo=timezone.utc)
+CLOSING_APP_RECIPE_ALLOWANCE = 500
+
+
+def closing_app_window_open(now: datetime | None = None) -> bool:
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now <= CLOSING_APP_MIGRATION_UNTIL
+
+
+def closing_app_recipe_limit(user: dict, now: datetime | None = None) -> int:
+    """Recipe ceiling used while importing from a shutting-down app."""
+    if is_premium_user(user):
+        return 10_000
+    if closing_app_window_open(now):
+        return max(recipe_limit(user), CLOSING_APP_RECIPE_ALLOWANCE)
+    return recipe_limit(user)
+
+
 async def assert_can_add_friend(user: dict) -> None:
     if is_premium_user(user):
         return

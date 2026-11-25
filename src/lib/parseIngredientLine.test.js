@@ -84,6 +84,34 @@ describe('parseIngredientLine', () => {
     });
   });
 
+  it('keeps a trailing unit of measure as the unit, with no name', () => {
+    // A bare quantity + unit has an empty name, but the unit must survive so
+    // the measurement preference can still convert it.
+    expect(parseIngredientLine('100g')).toEqual({ amount: '100', unit: 'g', name: '' });
+    expect(parseIngredientLine('250ml')).toEqual({ amount: '250', unit: 'ml', name: '' });
+    expect(parseIngredientLine('2 cups')).toEqual({ amount: '2', unit: 'cups', name: '' });
+    expect(parseIngredientLine('2 oz')).toEqual({ amount: '2', unit: 'oz', name: '' });
+  });
+
+  it('treats a trailing count noun as the ingredient name', () => {
+    // "4 eggs" is four eggs, not four of an unnamed unit.
+    expect(parseIngredientLine('4 eggs')).toEqual({ amount: '4', unit: '', name: 'eggs' });
+    expect(parseIngredientLine('2 slices')).toEqual({ amount: '2', unit: '', name: 'slices' });
+  });
+
+  it('keeps a count noun as the unit when an ingredient follows it', () => {
+    expect(parseIngredientLine('2 cloves garlic')).toEqual({
+      amount: '2',
+      unit: 'cloves',
+      name: 'garlic',
+    });
+    expect(parseIngredientLine('3 cans beans')).toEqual({
+      amount: '3',
+      unit: 'cans',
+      name: 'beans',
+    });
+  });
+
   it('keeps non-unit words with the name when amount is present', () => {
     expect(parseIngredientLine('1 spring onion')).toEqual({
       amount: '1',

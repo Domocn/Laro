@@ -28,22 +28,22 @@ export const ServerConfig = () => {
   // Preset options
   const presets = [
     { 
-      label: 'Laro Cloud',
-      url: process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001',
-      icon: Globe,
-      description: 'Use the hosted version'
-    },
-    { 
-      label: 'Local Server', 
+      label: 'This device', 
       url: 'http://localhost:8001',
       icon: Home,
-      description: 'Running on this device'
+      description: 'Local server on this computer'
     },
     { 
-      label: 'Local Network', 
+      label: 'Home network', 
       url: 'http://192.168.1.',
       icon: Wifi,
-      description: 'Another device on your network'
+      description: 'Another device on your LAN'
+    },
+    { 
+      label: 'Hosted cloud (optional)',
+      url: process.env.REACT_APP_BACKEND_URL || 'https://laro.food',
+      icon: Globe,
+      description: 'laro.food if you cannot self-host'
     },
   ];
 
@@ -137,7 +137,7 @@ export const ServerConfig = () => {
   };
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4">
+    <main id="main-content" tabIndex={-1} className="min-h-screen bg-cream flex items-center justify-center p-4">
       <motion.div 
         className="w-full max-w-md"
         initial={{ opacity: 0, y: 20 }}
@@ -148,7 +148,7 @@ export const ServerConfig = () => {
         <div className="flex justify-center mb-8">
           <img
             src="/laro-banner.png"
-            alt="Laro - Your Kitchen Sidekick"
+            alt="Laro: Local, Archived, Recipes, Organised"
             className="h-16"
           />
         </div>
@@ -160,8 +160,8 @@ export const ServerConfig = () => {
               <Server className="w-5 h-5 text-laro" />
             </div>
             <div>
-              <h1 className="font-heading text-xl font-bold">Connect to Server</h1>
-              <p className="text-sm text-muted-foreground">Enter your Laro server address</p>
+              <h1 className="font-heading text-xl font-bold">Connect locally</h1>
+              <p className="text-sm text-muted-foreground">Your box first. Hosted cloud is optional.</p>
             </div>
           </div>
 
@@ -286,6 +286,6 @@ export const ServerConfig = () => {
           then enter its IP address above.
         </p>
       </motion.div>
-    </div>
+    </main>
   );
 };

@@ -28,7 +28,7 @@ const PLAY_STORE_URL =
 export const LARO_PRO_OFFERING_BENEFITS = [
   'Unlimited AI meal plans & recipe imports',
   'Scan recipes from photos and video',
-  'Unlimited cookbook — no recipe caps',
+  'Unlimited cookbook, no recipe caps',
   'Barcode product lookup while shopping',
   'Household kitchen sharing with friends',
   'AI cooking assistant while you cook',
@@ -115,16 +115,32 @@ export function SubscriptionSection({ userId, userEmail, user }) {
     Boolean(status?.is_lifetime || status?.is_owner) ||
     (statusFailed && authIsLifetime);
   const isOwner = Boolean(status?.is_owner) || (statusFailed && authIsOwner);
+  const rawStatus = String(status?.status || user?.subscription_status || 'premium').toLowerCase();
+  const rawSource = String(status?.source || user?.subscription_source || '').toLowerCase();
+  const isTrial = isPro && !isLifetime && !rcStatus?.isPro && rawStatus === 'trial';
+  const endsAt = status?.expires_at || user?.subscription_expires;
+  const endsLabel = endsAt
+    ? new Date(endsAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+    : null;
   const planLabel = isOwner
     ? 'Owner · Lifetime'
     : isLifetime
       ? 'Lifetime Pro'
-      : isPro
-        ? String(status?.status || user?.subscription_status || 'premium').replace(
-            /^\w/,
-            (c) => c.toUpperCase()
-          )
-        : null;
+      : isTrial
+        ? 'Free trial'
+        : isPro
+          ? 'Pro'
+          : null;
+  const SOURCE_LABELS = {
+    promo: 'Free trial from your sign-up code',
+    referral: 'Free trial from a friend',
+    revenuecat: 'Paid subscription',
+    admin: 'Given by Laro',
+    owner: 'App owner',
+  };
+  const sourceLabel = isTrial
+    ? SOURCE_LABELS[rawSource] || 'Free trial'
+    : SOURCE_LABELS[rawSource] || (isOwner ? 'App owner' : null);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -156,13 +172,13 @@ export function SubscriptionSection({ userId, userEmail, user }) {
     try {
       const result = await presentRevenueCatPaywall(userId, userEmail);
       if (result == null) {
-        toast.message('Web checkout is not available yet — open Laro on Android to subscribe.');
+        toast.message('Web checkout is not available yet. Open Laro on Android to subscribe.');
         window.open(PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
         return;
       }
       if (result.noPackages) {
         toast.message(
-          'Web plans are not in RevenueCat yet — subscribe on Android for now.'
+          'Web plans are not in RevenueCat yet. Subscribe on Android for now.'
         );
         window.open(PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
         return;
@@ -213,10 +229,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
           Laro Pro
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Cook smarter — AI, scans, and an unlimited kitchen
-        </p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Powered by RevenueCat · synced with your account
+          Cook smarter: AI, scans, and an unlimited kitchen
         </p>
       </div>
 
@@ -248,14 +261,15 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                 {userEmail && (
                   <p className="text-xs text-muted-foreground mt-1">{userEmail}</p>
                 )}
-                {((status?.source || (statusFailed && user?.subscription_source)) || isOwner) && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Source: {status?.source || user?.subscription_source || (isOwner ? 'owner' : '—')}
-                    {(status?.expires_at || user?.subscription_expires) && !isLifetime
-                      ? ` · expires ${new Date(status?.expires_at || user?.subscription_expires).toLocaleDateString()}`
-                      : isLifetime
-                        ? ' · never expires'
+                {isPro && sourceLabel && (
+                  <p className="text-xs text-muted-foreground mt-0.5" data-testid="subscription-source">
+                    {sourceLabel}
+                    {isLifetime
+                      ? '. Never expires.'
+                      : endsLabel
+                        ? `. ${isTrial ? 'Ends' : 'Paid until'} ${endsLabel}.`
                         : ''}
+                    {isTrial ? ' No card needed and nothing is charged.' : ''}
                   </p>
                 )}
               </div>
@@ -303,7 +317,10 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                 <p className="text-sm font-medium text-foreground">Free plan includes</p>
                 <ul className="text-xs text-muted-foreground space-y-1">
                   <li>
-                    {freeLimits?.recipes ?? 15} recipes
+                    {freeLimits?.recipes ?? 50} recipes
+                    {freeLimits?.closing_app_window_open
+                      ? ` (up to ${freeLimits?.closing_app_allowance ?? 500} if you are leaving a closing app)`
+                      : ''}
                     {freeLimits?.free_defaults?.recipes && freeLimits.recipes > freeLimits.free_defaults.recipes
                       ? ` (base ${freeLimits.free_defaults.recipes} + bonuses)`
                       : ''}
@@ -315,7 +332,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                   <li>{freeLimits?.household_members ?? 2} household members</li>
                 </ul>
                 <p className="text-xs text-muted-foreground pt-1">
-                  Earn points by referring friends — redeem below or invite on{' '}
+                  Earn points by referring friends. Redeem below or invite on{' '}
                   <Link to="/friends" className="text-laro hover:underline font-medium">
                     Friends
                   </Link>
@@ -326,7 +343,7 @@ export function SubscriptionSection({ userId, userEmail, user }) {
             <RewardStore />
 
             <div className="flex flex-wrap gap-2 pt-1">
-              {!isPro && (
+              {(!isPro || isTrial) && (
                 <Button
                   onClick={handleUpgradeWeb}
                   disabled={purchasing}
@@ -338,12 +355,14 @@ export function SubscriptionSection({ userId, userEmail, user }) {
                   ) : (
                     <Crown className="w-4 h-4 mr-2" />
                   )}
-                  {webBilling && webPackagesReady !== false
-                    ? t('unlockLaroPro')
-                    : t('getProOnAndroid')}
+                  {isTrial
+                    ? 'Keep Pro after your trial'
+                    : webBilling && webPackagesReady !== false
+                      ? t('unlockLaroPro')
+                      : t('getProOnAndroid')}
                 </Button>
               )}
-              {isPro && (
+              {isPro && !isTrial && !isLifetime && (
                 <Button
                   variant="outline"
                   className="rounded-full"

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from dependencies import get_current_user, user_repository, recipe_repository
+from utils.authorization import require_recipe_view
 
 router = APIRouter(prefix="/favorites", tags=["favorites"])
 
@@ -14,6 +15,7 @@ async def add_favorite(recipe_id: str, user: dict = Depends(get_current_user)):
     recipe = await recipe_repository.find_by_id(recipe_id)
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     await user_repository.add_favorite(user["id"], recipe_id)
     return {"message": "Added to favorites", "is_favorite": True}

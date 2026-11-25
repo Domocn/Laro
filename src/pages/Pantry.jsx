@@ -340,7 +340,10 @@ export const Pantry = () => {
     }
   };
 
-  const PantryItemForm = () => (
+  // Called as a function, not rendered as a <PantryItemForm /> element: a component defined inside this one is a new
+  // type on every render, so React remounted the whole form on each keystroke and the Input lost
+  // focus (the iOS keyboard kept dismissing while typing an item name). Same fix as Cookbooks.
+  const renderPantryItemForm = () => (
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="name">{t('itemNameRequired')}</Label>
@@ -841,7 +844,7 @@ export const Pantry = () => {
                     <p className="text-muted-foreground mb-4">
                       {t('tryMoreIngredientsOrAi')}
                     </p>
-                    <Link to="/recipes/new">
+                    <Link to="/recipes/add">
                       <Button className="rounded-full bg-laro hover:bg-laro-dark">
                         <Plus className="w-4 h-4 mr-2" />
                         {t('createRecipe')}
@@ -862,7 +865,7 @@ export const Pantry = () => {
                 {t('addToPantry')}
               </DialogTitle>
             </DialogHeader>
-            <PantryItemForm />
+            {renderPantryItemForm()}
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateModal(false)} className="rounded-full">
                 {t('cancel')}
@@ -884,7 +887,7 @@ export const Pantry = () => {
                 {t('editItem')}
               </DialogTitle>
             </DialogHeader>
-            <PantryItemForm />
+            {renderPantryItemForm()}
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowEditModal(false)} className="rounded-full">
                 {t('cancel')}

@@ -4,6 +4,7 @@ Async task queue for heavy AI operations
 """
 import os
 from celery import Celery
+from celery.schedules import crontab
 from config import settings
 
 # Parse Redis URL
@@ -72,7 +73,42 @@ app.conf.beat_schedule = {
         'task': 'workers.tasks.sync_uk_open_prices_task',
         'schedule': 12 * 60 * 60.0,  # every 12 hours
     },
+    # Owner email: errors from the last 24h (skipped when there were none)
+    'laro-daily-error-summary': {
+        'task': 'workers.tasks.send_daily_error_summary',
+        'schedule': crontab(hour=7, minute=30),  # UTC
+    },
+    # "What's stopping you?" emails to people inactive for a few days.
+    # Dry run (log only) unless FEEDBACK_EMAILS_ENABLED=true. See services/feedback_nudge.py.
+    'laro-feedback-nudges': {
+        'task': 'workers.tasks.send_feedback_nudges',
+        'schedule': crontab(hour=10, minute=0),  # UTC (10:00 or 11:00 UK)
+    },
+    # Opt-in Sunday email with next week's meal plan (Preferences > weekly plan email)
+    'laro-weekly-plan-email': {
+        'task': 'workers.tasks.send_weekly_plan_emails',
+        'schedule': crontab(hour=16, minute=30, day_of_week='sun'),  # UTC
+    },
 }
+
+
+
+# Any background job that raises goes into the error log (Admin → Errors + owner email),
+# so a broken job like the reminder sweep can't fail silently for days.
+from celery.signals import task_failure  # noqa: E402
+
+
+@task_failure.connect
+def _log_task_failure(sender=None, exception=None, einfo=None, **_kwargs):
+    try:
+        from services.error_log import record_task_failure
+        from workers.tasks import _run_async
+
+        name = getattr(sender, 'name', '') or ''
+        _run_async(record_task_failure(name, exception, str(einfo or '')))
+    except Exception:
+        pass  # reporting must never take the worker down
+
 
 if __name__ == '__main__':
     app.start()

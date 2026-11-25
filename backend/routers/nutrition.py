@@ -432,6 +432,7 @@ async def get_barcode_nutrition(
     return {
         "barcode": re.sub(r"\D", "", code),
         "name": entry.get("label") or code,
+        "product_name": entry.get("label") or code,
         "brands": entry.get("brands"),
         "per_100g": per_100g,
         "uk_percent_ri_per_100g": entry.get("uk_percent_ri_per_100g") or uk_percent_ri(per_100g),

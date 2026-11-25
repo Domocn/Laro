@@ -46,7 +46,21 @@ class LaroConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         port = discovery_info.port or 8001
         name = discovery_info.name.replace("._laro._tcp.local.", "")
 
-        self._discovered_url = f"http://{host}:{port}"
+        # Only trust discovery of hosts on the local network. A spoofed mDNS
+        # advert pointing at a public host could otherwise harvest API tokens.
+        try:
+            import ipaddress
+            ip = ipaddress.ip_address(host)
+            if not (ip.is_private or ip.is_loopback or ip.is_link_local):
+                _LOGGER.warning("Ignoring Laro discovery for non-local host %s", host)
+                return self.async_abort(reason="not_local")
+        except ValueError:
+            return self.async_abort(reason="not_local")
+
+        # Prefer HTTPS when the instance advertises it (TXT record "https=1").
+        props = getattr(discovery_info, "properties", {}) or {}
+        scheme = "https" if str(props.get("https", "")).lower() in ("1", "true") else "http"
+        self._discovered_url = f"{scheme}://{host}:{port}"
         self._discovered_name = name
 
         # Check if already configured

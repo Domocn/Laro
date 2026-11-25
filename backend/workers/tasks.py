@@ -12,6 +12,31 @@ from workers.celery_app import app
 logger = logging.getLogger(__name__)
 
 
+def _run_async(coro):
+    """asyncio.run for Celery tasks, with a database pool that belongs to this run.
+
+    Each asyncio.run makes a new event loop, but the asyncpg pool is a module global.
+    Reusing a pool made in an earlier (now closed) loop fails with "Event loop is closed"
+    or "another operation is in progress", so drop any stale pool first and close ours after.
+    """
+    import asyncio
+    from database import connection
+
+    async def _wrapped():
+        pool = connection._pool
+        if pool is not None and getattr(pool, "_loop", None) is not asyncio.get_running_loop():
+            connection._pool = None
+        try:
+            return await coro
+        finally:
+            try:
+                await connection.close_db()
+            except Exception:
+                connection._pool = None
+
+    return asyncio.run(_wrapped())
+
+
 @app.task(bind=True, name='import_recipe_from_url_task')
 def import_recipe_from_url_task(
     self,
@@ -101,7 +126,7 @@ def import_recipe_from_url_task(
             }
 
     # Run async code in sync context
-    return asyncio.run(_process())
+    return _run_async(_process())
 
 
 @app.task(bind=True, name='import_recipe_from_text_task')
@@ -176,7 +201,7 @@ def import_recipe_from_text_task(
                 "error": str(e)
             }
 
-    return asyncio.run(_process())
+    return _run_async(_process())
 
 
 @app.task(bind=True, name='generate_meal_plan_task')
@@ -310,7 +335,7 @@ Strictly honour any HARD EXCLUSION adult/kid veto lists in Preferences — never
                 "error": str(e)
             }
 
-    return asyncio.run(_process())
+    return _run_async(_process())
 
 
 @app.task(bind=True, name='fridge_search_task')
@@ -449,7 +474,7 @@ Find matching recipes{" and suggest a new unique recipe grounded in the food dat
                 "error": str(e)
             }
 
-    return asyncio.run(_process())
+    return _run_async(_process())
 
 
 # ---------------------------------------------------------------------------
@@ -462,7 +487,7 @@ def run_reminder_sweep() -> dict:
     import asyncio
     from services.reminders import run_all_reminder_sweeps
 
-    return asyncio.run(run_all_reminder_sweeps())
+    return _run_async(run_all_reminder_sweeps())
 
 
 @app.task(name='workers.tasks.sync_uk_open_prices_task')
@@ -474,6 +499,37 @@ def sync_uk_open_prices_task(force: bool = False) -> dict:
     import asyncio
     from services.uk_open_prices import sync_uk_open_prices
 
-    result = asyncio.run(sync_uk_open_prices(force=force))
+    result = _run_async(sync_uk_open_prices(force=force))
     logger.info("UK Open Prices sync task finished: %s", result)
+    return result
+
+
+@app.task(name='workers.tasks.send_weekly_plan_emails')
+def send_weekly_plan_emails() -> dict:
+    """Opt-in Sunday email: next week's meal plan with calendar file and printable page."""
+    from services.weekly_plan_email import run_weekly
+
+    result = _run_async(run_weekly())
+    logger.info("Weekly plan emails: %s", result)
+    return result
+
+
+@app.task(name='workers.tasks.send_feedback_nudges')
+def send_feedback_nudges() -> dict:
+    """Daily 'haven't seen you for a while' feedback emails (dry run unless enabled)."""
+    from services.feedback_nudge import run_daily
+
+    result = _run_async(run_daily())
+    logger.info("Feedback nudges: %s", result)
+    return result
+
+
+@app.task(name='workers.tasks.send_daily_error_summary')
+def send_daily_error_summary() -> dict:
+    """Morning email to the owner listing yesterday's errors (services/error_log.py)."""
+    import asyncio
+    from services.error_log import send_daily_summary
+
+    result = _run_async(send_daily_summary())
+    logger.info("Daily error summary: %s", result)
     return result

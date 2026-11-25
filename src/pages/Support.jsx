@@ -15,7 +15,9 @@ import {
   Ticket,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { CopyButton } from '../components/ui/copy-button';
 import { useLanguage } from '../context/LanguageContext';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 
 const STATUS_LABEL_KEYS = {
   open: 'statusOpen',
@@ -51,6 +53,7 @@ const statusClass = (status) => {
 
 export const Support = () => {
   const { t } = useLanguage();
+  const { confirmActions } = useAccessibility();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tickets, setTickets] = useState([]);
@@ -156,6 +159,7 @@ export const Support = () => {
 
   const handleClose = async () => {
     if (!selectedId) return;
+    if (!confirmDestructive(confirmActions, t('confirmCloseTicket'))) return;
     try {
       await supportApi.update(selectedId, { status: 'closed' });
       toast.success(t('toastTicketClosed'));
@@ -281,6 +285,10 @@ export const Support = () => {
               <>
                 <div className="bg-white dark:bg-card rounded-2xl border border-border/60 p-6 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs text-laro inline-flex items-center gap-1">
+                      {detail.ticket_number}
+                      <CopyButton value={detail.ticket_number} label="ticket number" size={12} />
+                    </span>
                     <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${statusClass(detail.status)}`}>
                       {STATUS_LABEL_KEYS[detail.status] ? t(STATUS_LABEL_KEYS[detail.status]) : detail.status}
                     </span>

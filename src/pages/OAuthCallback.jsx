@@ -7,8 +7,10 @@ import { markOnboardingPending } from '../lib/onboarding';
 import { Loader2, Check, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { toast } from 'sonner';
+import { useLanguage } from '../context/LanguageContext';
 
 export const OAuthCallback = () => {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { provider } = useParams();
@@ -43,7 +45,7 @@ export const OAuthCallback = () => {
       try {
         await googleHealthApi.callback(code, state);
         setStatus('success');
-        toast.success('Google Health connected');
+        toast.success(t('toastGoogleHealthConnected'));
         setTimeout(() => navigate('/settings/security'), 1200);
       } catch (err) {
         console.error('Google Health callback error:', err);
@@ -88,9 +90,9 @@ export const OAuthCallback = () => {
       
       if (is_new) {
         markOnboardingPending(user.id);
-        toast.success('Account created successfully!');
+        toast.success(t('toastAccountCreated'));
       } else {
-        toast.success('Welcome back!');
+        toast.success(t('toastWelcomeBackExcl'));
       }
 
       // Redirect after short delay

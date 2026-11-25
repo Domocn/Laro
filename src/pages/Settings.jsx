@@ -5,9 +5,11 @@ import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useLanguage } from '../context/LanguageContext';
-import { configApi, llmApi, notificationApi, promptsApi, authApi, householdApi, importApi, apiTokensApi, exportApi, preferencesApi } from '../lib/api';
+import { configApi, llmApi, notificationApi, promptsApi, authApi, householdApi, exportApi, preferencesApi } from '../lib/api';
+import { ApiTokensSection } from '../components/settings/ApiTokensSection';
 import { SubscriptionSection } from '../components/SubscriptionSection';
-import { Button } from '../components/ui/button';import { Input } from '../components/ui/input';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import {
   Select,
@@ -47,7 +49,6 @@ import {
   FileText,
   Trash2,
   AlertTriangle,
-  Upload,
   Copy,
   UserPlus,
   Key,
@@ -133,26 +134,14 @@ export const Settings = () => {
   const [generatingCode, setGeneratingCode] = useState(false);
   const [joiningHousehold, setJoiningHousehold] = useState(false);
 
-  // Import
-  const [importFile, setImportFile] = useState(null);
-  const [importing, setImporting] = useState(false);
-
   // Data Export
   const [downloadingData, setDownloadingData] = useState(false);
+  const [exportingRecipes, setExportingRecipes] = useState(false);
 
   // Danger Zone
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
-
-  // API Tokens
-  const [apiTokens, setApiTokens] = useState([]);
-  const [loadingTokens, setLoadingTokens] = useState(false);
-  const [newTokenName, setNewTokenName] = useState('');
-  const [newTokenExpiry, setNewTokenExpiry] = useState('never');
-  const [creatingToken, setCreatingToken] = useState(false);
-  const [newlyCreatedToken, setNewlyCreatedToken] = useState(null);
-  const [showCreateToken, setShowCreateToken] = useState(false);
 
   // Theme — single source: ThemeContext (laro_theme)
   const { theme, setThemeMode } = useTheme();
@@ -263,6 +252,11 @@ export const Settings = () => {
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
+      toast.error(
+        error.response?.data?.detail ||
+          t('toastSettingsLoadFailed') ||
+          'Could not load all settings. Refresh the page or try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -564,29 +558,38 @@ export const Settings = () => {
     toast.success(t('toastJoinCodeCopied'));
   };
 
-  // Import handlers
-  const handleImportFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setImporting(true);
+  const handleExportRecipesJson = async () => {
+    setExportingRecipes(true);
     try {
-      const content = await file.text();
-      let platform = 'json';
-
-      if (file.name.endsWith('.paprikarecipes') || file.name.includes('paprika')) {
-        platform = 'paprika';
-      } else if (file.name.includes('mealie') || file.name.includes('tandoor')) {
-        platform = 'cookmate';
+      const { data } = await exportApi.export({
+        format: 'json',
+        include: ['recipes'],
+      });
+      const downloadPath = data?.download_url || data?.downloadUrl;
+      if (!downloadPath) {
+        throw new Error('Export failed');
       }
-
-      const res = await importApi.fromPlatform(platform, content);
-      toast.success(res.data.message || `Imported ${res.data.imported} recipes!`);
+      const token = localStorage.getItem('token');
+      const response = await fetch(downloadPath, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laro_recipes_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+      toast.success('Recipe JSON downloaded. You can re-import this file later.');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t import those recipes. Please try again. (E-ST014)');
+      toast.error(error.message || "Couldn't export recipes. Please try again.");
     } finally {
-      setImporting(false);
-      e.target.value = '';
+      setExportingRecipes(false);
     }
   };
 
@@ -642,75 +645,6 @@ export const Settings = () => {
       setDeleting(false);
     }
   };
-
-  // API Token handlers
-  const loadApiTokens = async () => {
-    setLoadingTokens(true);
-    try {
-      const res = await apiTokensApi.list();
-      setApiTokens(res.data || []);
-    } catch (error) {
-      console.error('Failed to load API tokens:', error);
-    } finally {
-      setLoadingTokens(false);
-    }
-  };
-
-  const handleCreateToken = async () => {
-    if (!newTokenName.trim()) {
-      toast.error(t('toastEnterTokenName'));
-      return;
-    }
-    setCreatingToken(true);
-    try {
-      const expiryDays = newTokenExpiry === 'never' ? null : parseInt(newTokenExpiry);
-      const res = await apiTokensApi.create({
-        name: newTokenName.trim(),
-        expires_in_days: expiryDays
-      });
-      setNewlyCreatedToken(res.data.token);
-      setNewTokenName('');
-      setNewTokenExpiry('never');
-      await loadApiTokens();
-      toast.success(t('toastTokenCreated'));
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t create that token. Please try again. (E-ST017)');
-    } finally {
-      setCreatingToken(false);
-    }
-  };
-
-  const handleRevokeToken = async (tokenId) => {
-    try {
-      await apiTokensApi.revoke(tokenId);
-      await loadApiTokens();
-      toast.success(t('toastTokenRevoked'));
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t revoke the token. Please try again. (E-ST018)');
-    }
-  };
-
-  const handleDeleteToken = async (tokenId) => {
-    try {
-      await apiTokensApi.delete(tokenId);
-      await loadApiTokens();
-      toast.success(t('toastTokenDeleted'));
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Couldn\'t delete the token. Please try again. (E-ST019)');
-    }
-  };
-
-  const copyToken = (token) => {
-    navigator.clipboard.writeText(token);
-    toast.success(t('toastTokenCopied'));
-  };
-
-  // Load API tokens when user tab becomes active
-  useEffect(() => {
-    if (activeTab === 'user' && apiTokens.length === 0) {
-      loadApiTokens();
-    }
-  }, [activeTab]);
 
   const promptLabels = {
     recipe_extraction: { name: 'Recipe Extraction', description: 'Used when importing recipes from URLs or text' },
@@ -855,6 +789,21 @@ export const Settings = () => {
                 <div>
                   <p className="font-medium text-sm">{t('preferences')}</p>
                   <p className="text-xs text-muted-foreground">{t('prefsLinkDesc')}</p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/recipes/add')}
+              className="w-full p-4 flex items-center justify-between hover:bg-cream-subtle transition-colors text-left"
+              data-testid="settings-link-add-recipe"
+            >
+              <div className="flex items-center gap-3">
+                <Sparkles className="w-5 h-5 text-laro" />
+                <div>
+                  <p className="font-medium text-sm">{t('addRecipe')}</p>
+                  <p className="text-xs text-muted-foreground">{t('addHubSubtitle')}</p>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -1036,220 +985,7 @@ export const Settings = () => {
           </div>
         </motion.section>
 
-        {/* Import Recipe Archive Section */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.16 }}
-          className="bg-white rounded-2xl border border-border/60 overflow-hidden"
-        >
-          <div className="p-4 border-b border-border/60 bg-cream-subtle">
-            <h2 className="font-heading font-semibold flex items-center gap-2">
-              <Upload className="w-5 h-5 text-laro" />
-              {t('importRecipeArchive')}
-            </h2>
-          </div>
-
-          <div className="p-4 space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Import recipes from Mela (.melarecipes), Mealie, Tandoor, or Paprika (.zip) exports.
-            </p>
-
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border/60 rounded-xl cursor-pointer hover:bg-cream-subtle transition-colors">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                {importing ? (
-                  <Loader2 className="w-8 h-8 text-laro animate-spin mb-2" />
-                ) : (
-                  <Upload className="w-8 h-8 text-muted-foreground mb-2" />
-                )}
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-laro">Upload a file</span> or drag and drop
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  .melarecipes (.html), .zip (Mealie, Tandoor, or Paprika export)
-                </p>
-              </div>
-              <input
-                type="file"
-                className="hidden"
-                accept=".json,.zip,.melarecipes,.html"
-                onChange={handleImportFile}
-                disabled={importing}
-              />
-            </label>
-          </div>
-        </motion.section>
-
-        {/* API Tokens Section */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.17 }}
-          className="bg-white dark:bg-card rounded-2xl border border-border/60 overflow-hidden"
-        >
-          <div className="p-4 border-b border-border/60 bg-cream-subtle">
-            <h2 className="font-heading font-semibold flex items-center gap-2">
-              <Key className="w-5 h-5 text-laro" />
-              {t('apiTokens')}
-            </h2>
-          </div>
-
-          <div className="p-4 space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Create API tokens for integrations like Home Assistant. Tokens provide access to your account without sharing your password.
-            </p>
-
-            {/* Newly created token display */}
-            {newlyCreatedToken && (
-              <div className="p-4 bg-laro-light rounded-xl border border-laro/30">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-laro flex-shrink-0 mt-0.5" />
-                  <div className="flex-1 space-y-2">
-                    <p className="font-medium text-laro">{t('saveTokenNow')}</p>
-                    <p className="text-sm text-laro/80">This token will only be shown once. Copy it and store it securely.</p>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 p-2 bg-white rounded-lg text-sm font-mono break-all border">
-                        {newlyCreatedToken}
-                      </code>
-                      <Button variant="outline" size="icon" onClick={() => copyToken(newlyCreatedToken)} className="rounded-lg flex-shrink-0">
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setNewlyCreatedToken(null)}
-                      className="text-laro/70 hover:text-laro"
-                    >
-                      I've saved my token
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Create new token */}
-            {!showCreateToken ? (
-              <Button
-                variant="outline"
-                onClick={() => setShowCreateToken(true)}
-                className="rounded-full"
-              >
-                <Key className="w-4 h-4 mr-2" />
-                {t('createNewToken')}
-              </Button>
-            ) : (
-              <div className="p-4 bg-cream-subtle rounded-xl space-y-3">
-                <div>
-                  <Label htmlFor="token-name" className="mb-2 block text-sm">{t('tokenName')}</Label>
-                  <Input
-                    id="token-name"
-                    placeholder="e.g., Home Assistant"
-                    value={newTokenName}
-                    onChange={(e) => setNewTokenName(e.target.value)}
-                    className="rounded-lg"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="token-expiry" className="mb-2 block text-sm">{t('expiration')}</Label>
-                  <Select value={newTokenExpiry} onValueChange={setNewTokenExpiry}>
-                    <SelectTrigger className="rounded-lg w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="never">Never expires</SelectItem>
-                      <SelectItem value="30">30 days</SelectItem>
-                      <SelectItem value="90">90 days</SelectItem>
-                      <SelectItem value="365">1 year</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowCreateToken(false);
-                      setNewTokenName('');
-                      setNewTokenExpiry('never');
-                    }}
-                    className="rounded-full"
-                  >
-                    {t('cancel')}
-                  </Button>
-                  <Button
-                    onClick={handleCreateToken}
-                    disabled={creatingToken || !newTokenName.trim()}
-                    className="rounded-full bg-laro hover:bg-laro-dark"
-                  >
-                    {creatingToken ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Key className="w-4 h-4 mr-2" />}
-                    {t('createNewToken')}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Existing tokens list */}
-            {loadingTokens ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-laro" />
-              </div>
-            ) : apiTokens.length > 0 ? (
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Your Tokens</Label>
-                <div className="divide-y divide-border/60 border border-border/60 rounded-xl overflow-hidden">
-                  {apiTokens.map((token) => (
-                    <div key={token.id} className="p-3 flex items-center justify-between bg-white dark:bg-card">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm truncate">{token.name}</p>
-                          {token.revoked && (
-                            <span className="px-2 py-0.5 text-xs bg-red-100 text-red-600 rounded">{t('revoked')}</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Created {new Date(token.created_at).toLocaleDateString()}
-                          {token.expires_at && ` · Expires ${new Date(token.expires_at).toLocaleDateString()}`}
-                          {token.last_used_at && ` · Last used ${new Date(token.last_used_at).toLocaleDateString()}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 ml-2">
-                        {!token.revoked && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRevokeToken(token.id)}
-                            className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                          >
-                            Revoke
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteToken(token.id)}
-                          className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No API tokens yet. Create one to integrate with external services.
-              </p>
-            )}
-
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-              <p className="text-xs text-amber-800">
-                <strong>Security tip:</strong> Only create tokens for services you trust. Tokens have full access to your account.
-                Revoke any tokens you no longer need.
-              </p>
-            </div>
-          </div>
-        </motion.section>
+        <ApiTokensSection active={activeTab === 'user'} />
 
         {/* Download My Data Section */}
         <motion.section
@@ -1267,27 +1003,44 @@ export const Settings = () => {
 
           <div className="p-4 space-y-4">
             <p className="text-sm text-muted-foreground">
-              Download a complete copy of all your personal data stored in Laro. This includes your profile, recipes, cookbooks, pantry items, meal plans, and shopping lists.
+              Your recipes are stored as copies, not live bookmarks. Download them anytime.
+              JSON is for re-importing recipes. The ZIP is a full GDPR export (profile, recipes, cookbooks, pantry, meal plans, shopping lists).
             </p>
 
             <div className="p-3 bg-laro-light rounded-xl border border-laro/30">
               <p className="text-sm text-laro">
-                <strong>Your data belongs to you.</strong> This export complies with GDPR Article 20 (Right to Data Portability).
+                <strong>You own this library.</strong> Hosted Laro is not a hostage cookbook.
+                Free plan: 50 recipes (up to 500 until 15 November 2026 if you are leaving a closing app; we do not delete imports), 3 cookbooks, 3 friends, 5 shares / week, 2 household members, 3 lifetime AI uses.
               </p>
             </div>
 
-            <Button
-              onClick={handleDownloadMyData}
-              disabled={downloadingData}
-              className="rounded-full bg-laro hover:bg-laro-dark"
-            >
-              {downloadingData ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <Download className="w-4 h-4 mr-2" />
-              )}
-              {t('downloadMyData')} (.zip)
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={handleExportRecipesJson}
+                disabled={exportingRecipes || downloadingData}
+                variant="outline"
+                className="rounded-full"
+              >
+                {exportingRecipes ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Export recipes (JSON)
+              </Button>
+              <Button
+                onClick={handleDownloadMyData}
+                disabled={downloadingData || exportingRecipes}
+                className="rounded-full bg-laro hover:bg-laro-dark"
+              >
+                {downloadingData ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                {t('downloadMyData')} (.zip)
+              </Button>
+            </div>
           </div>
         </motion.section>
 
@@ -1504,7 +1257,7 @@ export const Settings = () => {
                   <Label className="mb-2 block">Anthropic API Key</Label>
                   <p className="text-sm text-muted-foreground">
                     Set <code className="text-xs bg-muted px-1 rounded">ANTHROPIC_API_KEY</code> on the
-                    server environment — keys are not stored from this UI.
+                    server environment. Keys are not stored from this UI.
                   </p>
                   <p className="text-xs text-muted-foreground mt-2">
                     Get a key at{' '}
@@ -2315,7 +2068,7 @@ export const Settings = () => {
                 <Bug className="w-5 h-5 text-coral" />
                 <div>
                   <p className="font-medium text-sm">Report a problem</p>
-                  <p className="text-xs text-muted-foreground">Open a ticket — we&apos;ll track it with you</p>
+                  <p className="text-xs text-muted-foreground">Open a ticket. We&apos;ll track it with you</p>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -2363,10 +2116,14 @@ export const Settings = () => {
           className="text-center text-sm text-muted-foreground"
         >
           <p>{t('brandName')} v{serverInfo?.version || '1.0.0'}</p>
-          <p className="mt-1">Self-hostable recipe app for families</p>
-          <Link to="/privacy-policy" className="mt-2 inline-block hover:text-laro transition-colors">
+          <p className="mt-2" data-testid="settings-brand-acrostic">{t('brandAcrosticLine')}</p>
+          <a href="/privacy-policy" className="mt-2 inline-block hover:text-laro transition-colors">
             {t('privacyPolicy')}
-          </Link>
+          </a>
+          {' · '}
+          <a href="/terms" className="mt-2 inline-block hover:text-laro transition-colors">
+            Terms of Use
+          </a>
         </motion.section>
       </div>
     </Layout>

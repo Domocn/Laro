@@ -52,7 +52,7 @@ class LaroApiClient:
         # Identifiable UA helps cloud WAF allowlists (laro.food) and debugging.
         self._headers = {
             "Authorization": f"Bearer {token}",
-            "User-Agent": "HomeAssistant-Laro/1.2.1",
+            "User-Agent": "HomeAssistant-Laro/1.5.0",
             "Accept": "application/json",
         }
 
@@ -100,6 +100,14 @@ class LaroApiClient:
         """Get shopping lists."""
         data = await self._request("GET", "/shopping-lists")
         return _as_list(data, "shopping_lists")
+
+    async def update_shopping_item(self, list_id: str, item_id: str, data: dict) -> dict:
+        """Update (e.g. check off or rename) a shopping list item."""
+        return await self._request("PUT", f"/shopping-lists/{list_id}/items/{item_id}", json=data)
+
+    async def delete_shopping_item(self, list_id: str, item_id: str) -> dict:
+        """Delete a shopping list item."""
+        return await self._request("DELETE", f"/shopping-lists/{list_id}/items/{item_id}")
 
     async def create_meal_plan(self, recipe_id: str, date: str, meal_type: str = "dinner") -> dict:
         """Create a meal plan entry."""

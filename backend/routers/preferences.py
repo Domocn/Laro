@@ -19,7 +19,7 @@ class UserPreferences(BaseModel):
     language: Optional[str] = "en-GB"  # en-US, en-GB, es, fr, …
     country: Optional[str] = "GB"  # ISO country code
     defaultServings: Optional[int] = 4
-    measurementUnit: Optional[str] = "metric"  # metric, imperial, both
+    measurementUnit: Optional[str] = "metric"  # as_written, metric, imperial, both
     dietaryRestrictions: Optional[List[str]] = []
     allergens: Optional[List[str]] = []  # Peanuts, Tree Nuts, Milk, Eggs, Wheat, Soy, Fish, Shellfish, Sesame
     dislikedIngredients: Optional[List[str]] = []  # Adult veto list (preference, not allergens)
@@ -53,6 +53,7 @@ class UserPreferences(BaseModel):
     compactView: Optional[bool] = False
     weekStartsOn: Optional[str] = "monday"  # sunday, monday, saturday
     mealPlanNotifications: Optional[bool] = True
+    weeklyPlanEmail: Optional[bool] = False  # Sunday email: next week's plan + calendar file + printable
     shoppingListAutoSort: Optional[bool] = True
     defaultCookingTime: Optional[int] = 30
 
@@ -101,11 +102,16 @@ async def get_preferences(user: dict = Depends(get_current_user)):
     """Get user preferences"""
     prefs = await user_preferences_repository.find_by_user(user["id"])
 
+    from utils.region import locale_fields
+
     if not prefs:
         # Return defaults
-        return UserPreferences().model_dump()
+        defaults = UserPreferences().model_dump()
+        return {**defaults, **locale_fields(defaults.get("country"))}
 
     prefs.pop("user_id", None)
+    # Read-only: how nutrition is shown + which food data is preferred, from the country.
+    prefs.update(locale_fields(prefs.get("country")))
     return prefs
 
 @router.put("")

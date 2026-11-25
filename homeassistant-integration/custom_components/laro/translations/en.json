@@ -15,7 +15,7 @@
       },
       "zeroconf_confirm": {
         "title": "Laro Discovered",
-        "description": "Laro was found at {url}. Enter your API token to connect. Generate a token from Laro Settings > Integrations.",
+        "description": "Laro was found at {url}. Only continue if you recognise this address. Enter your API token to connect. Generate a token from Laro Settings > Integrations.",
         "data": {
           "token": "API Token"
         },
@@ -30,7 +30,9 @@
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "This Laro account is already configured"
+      "already_configured": "This Laro account is already configured",
+      "not_local": "Ignored a Laro discovery from outside your local network",
+      "cannot_connect": "Could not reach the discovered Laro instance"
     }
   },
   "entity": {

@@ -1,6 +1,6 @@
 # Laro
 
-> Self-hostable recipe app for families — organize recipes, plan meals, shop, and cook together.
+> Named for the household hearth. Local first (self-host). Hosted cloud is optional. Local · Archived · Recipes · Organised.
 
 Laro is a kitchen OS for real weeknights: import recipes, build meal plans, generate shopping lists, and share a household cookbook. Available on the web and Android.
 

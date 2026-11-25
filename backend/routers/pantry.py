@@ -15,11 +15,26 @@ from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
 import uuid
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import List, Optional
 from difflib import SequenceMatcher
 
 router = APIRouter(prefix="/pantry", tags=["Pantry"])
+
+
+def _expiry_to_date(value):
+    """pantry.expiry_date is a DATE column; asyncpg rejects plain 'YYYY-MM-DD' strings (500 on add).
+    Accept date / datetime / ISO strings and return a date (or None)."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="expiry_date must be a date like 2026-10-21")
 
 
 # Ingredient synonym mapping for better matching
@@ -213,7 +228,7 @@ async def create_pantry_item(
         "quantity": item.quantity,
         "unit": item.unit,
         "category": item.category or "pantry",
-        "expiry_date": item.expiry_date,
+        "expiry_date": _expiry_to_date(item.expiry_date),
         "notes": item.notes,
         "is_staple": item.is_staple or False,
         "created_at": now,
@@ -221,6 +236,8 @@ async def create_pantry_item(
     }
 
     await pantry_repository.create(item_doc)
+    if item_doc.get("expiry_date"):  # JSON-safe for the response + websocket broadcast
+        item_doc["expiry_date"] = item_doc["expiry_date"].isoformat()
 
     # Log user activity
     await log_action(
@@ -260,13 +277,15 @@ async def create_pantry_items_bulk(
             "quantity": item.quantity,
             "unit": item.unit,
             "category": item.category or "pantry",
-            "expiry_date": item.expiry_date,
+            "expiry_date": _expiry_to_date(item.expiry_date),
             "notes": item.notes,
             "is_staple": item.is_staple or False,
             "created_at": now,
             "updated_at": now
         }
         await pantry_repository.create(item_doc)
+        if item_doc.get("expiry_date"):  # JSON-safe for the response + websocket broadcast
+            item_doc["expiry_date"] = item_doc["expiry_date"].isoformat()
         created_items.append(item_doc)
 
     # Broadcast update
@@ -324,6 +343,8 @@ async def update_pantry_item(
         if value is not None:
             update_data[field] = value
 
+    if "expiry_date" in update_data:
+        update_data["expiry_date"] = _expiry_to_date(update_data["expiry_date"])
     await pantry_repository.update_item(item_id, update_data)
     updated = await pantry_repository.find_by_id(item_id)
 

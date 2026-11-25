@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { cookbooksApi } from '../lib/api';
+import { useBarcodeCamera } from '../components/CheckNumbers';
 import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -36,8 +37,18 @@ const BUY_LINK_LABEL_KEYS = {
   drm_free_search: 'buyDrmFreeSearch',
 };
 
+const EMPTY_FORM = { title: '', author: '', isbn: '', notes: '', publisher: '', year: null, cover_image_url: '' };
+
+// ISBN-10 or ISBN-13 once separators are stripped.
+const cleanIsbn = (value) => String(value || '').replace(/[^0-9Xx]/g, '').toUpperCase();
+const isFullIsbn = (value) => {
+  const v = cleanIsbn(value);
+  return v.length === 13 || v.length === 10;
+};
+
 export const Cookbooks = () => {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const { confirmActions } = useAccessibility();
   const [cookbooks, setCookbooks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +56,7 @@ export const Cookbooks = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCookbook, setEditingCookbook] = useState(null);
-  const [formData, setFormData] = useState({ title: '', author: '', isbn: '', notes: '' });
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [lookingUpISBN, setLookingUpISBN] = useState(false);
 
@@ -118,20 +129,29 @@ export const Cookbooks = () => {
     }
   };
 
-  const handleISBNLookup = async () => {
-    if (!formData.isbn) {
+  const lastLookupRef = useRef('');
+
+  const lookupIsbn = useCallback(async (rawIsbn) => {
+    const isbn = cleanIsbn(rawIsbn);
+    if (!isbn) {
       toast.error(t('toastEnterIsbn'));
       return;
     }
+    lastLookupRef.current = isbn;
     setLookingUpISBN(true);
     try {
-      const res = await cookbooksApi.lookupISBN(formData.isbn);
+      const res = await cookbooksApi.lookupISBN(isbn);
       if (res.data) {
-        setFormData({
-          ...formData,
-          title: res.data.title || formData.title,
-          author: res.data.author || formData.author,
-        });
+        const book = res.data;
+        setFormData((prev) => ({
+          ...prev,
+          isbn: book.isbn || prev.isbn,
+          title: book.title || prev.title,
+          author: book.author || prev.author,
+          publisher: book.publisher || prev.publisher,
+          year: book.year || prev.year,
+          cover_image_url: book.cover_image_url || prev.cover_image_url,
+        }));
         toast.success(t('toastBookInfoFound'));
       } else {
         toast.info(t('toastNoBookFoundIsbn'));
@@ -140,6 +160,29 @@ export const Cookbooks = () => {
       toast.error(error.response?.data?.detail || t('toastLookupIsbnFailed'));
     } finally {
       setLookingUpISBN(false);
+    }
+  }, [t]);
+
+  const handleISBNLookup = () => lookupIsbn(formData.isbn);
+
+  // Typing or pasting a complete ISBN looks the book up straight away.
+  const handleIsbnChange = (value) => {
+    setFormData((prev) => ({ ...prev, isbn: value }));
+    if (isFullIsbn(value) && cleanIsbn(value) !== lastLookupRef.current) {
+      lookupIsbn(value);
+    }
+  };
+
+  const camera = useBarcodeCamera(useCallback((raw) => {
+    setFormData((prev) => ({ ...prev, isbn: raw }));
+    lookupIsbn(raw);
+  }, [lookupIsbn]));
+
+  const closeCreateModal = (open) => {
+    setShowCreateModal(open);
+    if (!open) {
+      camera.stop();
+      lastLookupRef.current = '';
     }
   };
 
@@ -152,8 +195,8 @@ export const Cookbooks = () => {
     try {
       const res = await cookbooksApi.create(formData);
       setCookbooks([res.data, ...cookbooks]);
-      setShowCreateModal(false);
-      setFormData({ title: '', author: '', isbn: '', notes: '' });
+      closeCreateModal(false);
+      setFormData(EMPTY_FORM);
       toast.success(t('toastCookbookAdded'));
     } catch (error) {
       toast.error(error.response?.data?.detail || t('toastCreateCookbookFailed'));
@@ -173,7 +216,7 @@ export const Cookbooks = () => {
       setCookbooks(cookbooks.map(c => c.id === editingCookbook.id ? res.data : c));
       setShowEditModal(false);
       setEditingCookbook(null);
-      setFormData({ title: '', author: '', isbn: '', notes: '' });
+      setFormData(EMPTY_FORM);
       toast.success(t('toastCookbookUpdated'));
     } catch (error) {
       toast.error(error.response?.data?.detail || t('toastUpdateCookbookFailed'));
@@ -200,6 +243,9 @@ export const Cookbooks = () => {
       author: cookbook.author || '',
       isbn: cookbook.isbn || '',
       notes: cookbook.notes || '',
+      publisher: cookbook.publisher || '',
+      year: cookbook.year || null,
+      cover_image_url: cookbook.cover_image_url || '',
     });
     setShowEditModal(true);
   };
@@ -209,8 +255,48 @@ export const Cookbooks = () => {
     return key ? t(key) : link.label;
   };
 
-  const CookbookForm = ({ isEdit = false }) => (
+  // Called as a function, not {renderCookbookForm(false)}: a component defined inside this one
+  // is a new type every render, so React remounted the inputs and dropped focus.
+  const renderCookbookForm = (isEdit = false) => (
     <div className="space-y-4">
+      {!isEdit && camera.supported && (
+        camera.active ? (
+          <div className="space-y-2">
+            <video
+              ref={camera.videoRef}
+              className="w-full max-h-56 rounded-xl bg-black object-cover"
+              muted
+              playsInline
+              aria-label={t('cookbookScanCameraView')}
+            />
+            <Button type="button" variant="outline" className="w-full rounded-xl" onClick={camera.stop}>
+              {t('cancel')}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            className="w-full rounded-xl bg-laro hover:bg-laro-dark"
+            onClick={camera.start}
+            data-testid="cookbook-scan-barcode"
+          >
+            <Barcode className="w-4 h-4 mr-2" />
+            {t('cookbookScanBarcode')}
+          </Button>
+        )
+      )}
+      {camera.error && <p className="text-sm text-red-600">{camera.error}</p>}
+
+      {formData.cover_image_url && (
+        <div className="flex items-center gap-3 rounded-xl bg-laro-light/50 p-3">
+          <img src={formData.cover_image_url} alt="" className="w-12 h-16 rounded object-cover" />
+          <div className="min-w-0">
+            <p className="font-medium line-clamp-2">{formData.title}</p>
+            {formData.author && <p className="text-sm text-muted-foreground">{formData.author}</p>}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
         <Label htmlFor="isbn">{t('isbnOptional')}</Label>
         <div className="flex gap-2">
@@ -218,7 +304,8 @@ export const Cookbooks = () => {
             id="isbn"
             placeholder={t('isbnPlaceholder')}
             value={formData.isbn}
-            onChange={(e) => setFormData({ ...formData, isbn: e.target.value })}
+            onChange={(e) => handleIsbnChange(e.target.value)}
+            inputMode="numeric"
             className="rounded-xl"
           />
           <Button
@@ -290,7 +377,7 @@ export const Cookbooks = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" className="rounded-full" asChild>
-              <Link to="/recipes/quick-add">
+              <Link to="/recipes/add">
                 <FileUp className="w-4 h-4 mr-2" />
                 {t('importPdfCta')}
               </Link>
@@ -298,7 +385,7 @@ export const Cookbooks = () => {
             <Button
               className="rounded-full bg-laro hover:bg-laro-dark"
               onClick={() => {
-                setFormData({ title: '', author: '', isbn: '', notes: '' });
+                setFormData(EMPTY_FORM);
                 setShowCreateModal(true);
               }}
             >
@@ -503,7 +590,17 @@ export const Cookbooks = () => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="bg-white rounded-2xl border border-border/60 overflow-hidden hover:shadow-lg transition-shadow"
+                className="bg-white rounded-2xl border border-border/60 overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                role="link"
+                tabIndex={0}
+                onClick={() => navigate(`/cookbooks/${cookbook.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(`/cookbooks/${cookbook.id}`);
+                  }
+                }}
+                data-testid="cookbook-card"
               >
                 <div className="p-5">
                   <div className="flex items-start justify-between mb-3">
@@ -514,6 +611,8 @@ export const Cookbooks = () => {
                         <BookOpen className="w-6 h-6 text-laro" />
                       )}
                     </div>
+                    {/* Menu clicks must not open the book (portal events still bubble here) */}
+                    <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -534,6 +633,7 @@ export const Cookbooks = () => {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   </div>
                   <h3 className="font-heading font-semibold text-lg mb-1 line-clamp-2">
                     {cookbook.title}
@@ -556,7 +656,7 @@ export const Cookbooks = () => {
         )}
 
         {/* Create Modal */}
-        <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <Dialog open={showCreateModal} onOpenChange={closeCreateModal}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -564,9 +664,9 @@ export const Cookbooks = () => {
                 {t('addCookbook')}
               </DialogTitle>
             </DialogHeader>
-            <CookbookForm />
+            {renderCookbookForm(false)}
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowCreateModal(false)} className="rounded-full">
+              <Button variant="outline" onClick={() => closeCreateModal(false)} className="rounded-full">
                 {t('cancel')}
               </Button>
               <Button onClick={handleCreate} disabled={saving} className="rounded-full bg-laro hover:bg-laro-dark">
@@ -586,7 +686,7 @@ export const Cookbooks = () => {
                 {t('editCookbook')}
               </DialogTitle>
             </DialogHeader>
-            <CookbookForm isEdit />
+            {renderCookbookForm(true)}
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowEditModal(false)} className="rounded-full">
                 {t('cancel')}

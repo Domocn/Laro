@@ -108,7 +108,8 @@ async def validate_oauth_state(state: str | None, expected_provider: str) -> dic
 
     # Verify state is not expired (10 minute max)
     try:
-        created_at = datetime.fromisoformat(state_doc["created_at"])
+        from utils.dates import as_utc
+        created_at = as_utc(state_doc["created_at"])
         # Strip tzinfo for comparison (asyncpg-compatible naive datetimes)
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         created_naive = created_at.replace(tzinfo=None) if created_at.tzinfo else created_at

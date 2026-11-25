@@ -41,6 +41,7 @@ from database.repositories.settings_repository import (
     custom_prompts_repository,
     user_preferences_repository,
     invite_code_repository,
+    promo_code_repository,
     audit_log_repository,
     backup_repository,
     backup_settings_repository,
@@ -113,6 +114,34 @@ def create_token(user_id: str) -> str:
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
+# ---------------------------------------------------------------------------
+# "Last seen" for engagement emails. users.last_login only changes on a password
+# sign-in, so people who stay signed in looked inactive. Updated at most every 30
+# minutes per user per worker; API tokens (Home Assistant polling) do not count.
+# ---------------------------------------------------------------------------
+_LAST_SEEN_EVERY_S = 30 * 60
+_last_seen_cache: dict = {}
+
+
+async def _touch_last_seen(user_id: Optional[str]) -> None:
+    if not user_id:
+        return
+    now = time.time()
+    if now - _last_seen_cache.get(user_id, 0) < _LAST_SEEN_EVERY_S:
+        return
+    _last_seen_cache[user_id] = now
+    try:
+        pool = await get_db()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET last_seen_at = $1 WHERE id = $2",
+                datetime.now(timezone.utc).replace(tzinfo=None),
+                user_id,
+            )
+    except Exception as e:  # never let this break sign-in
+        logger.debug(f"last_seen update skipped for {user_id}: {e}")
+
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     start_time = time.time()
     token = credentials.credentials
@@ -183,6 +212,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             duration_ms = (time.time() - start_time) * 1000
             if _debug_available:
                 Loggers.auth.debug("Supabase JWT validated", user_id=user["id"], duration_ms=f"{duration_ms:.2f}")
+            await _touch_last_seen(user.get("id"))
             return user
         except jwt.ExpiredSignatureError:
             logger.warning("Auth failed: Supabase token expired")
@@ -222,6 +252,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         duration_ms = (time.time() - start_time) * 1000
         if _debug_available:
             Loggers.auth.debug("Laro JWT validated", user_id=user["id"], duration_ms=f"{duration_ms:.2f}")
+        await _touch_last_seen(user.get("id"))
         return user
     except HTTPException:
         raise
@@ -928,6 +959,7 @@ async def call_llm(
     *,
     format_json: bool = False,
     max_tokens: int = 2000,
+    ollama_model_override: Optional[str] = None,
 ) -> str:
     """Call LLM - routes to Ollama, OpenAI, or Claude based on user config.
 
@@ -958,6 +990,8 @@ async def call_llm(
             ollama_model = user_settings.get("ollama_model", ollama_model)
             openai_base_url = user_settings.get("openai_base_url") or None
             openai_model = user_settings.get("openai_model") or openai_model
+    if ollama_model_override:
+        ollama_model = ollama_model_override
 
     # Calculate Cache Key
     key_content = f"{system_prompt}|{user_prompt}|{provider}|json={format_json}|tok={max_tokens}"
@@ -1157,6 +1191,7 @@ __all__ = [
     'custom_prompts_repository',
     'user_preferences_repository',
     'invite_code_repository',
+    'promo_code_repository',
     'audit_log_repository',
     'backup_repository',
     'backup_settings_repository',

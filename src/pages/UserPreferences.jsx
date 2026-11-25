@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { useTheme, ACCENT_COLORS } from '../context/ThemeContext';
-import { useLanguage, LANGUAGES, COUNTRIES, defaultsForCountry } from '../context/LanguageContext';
+import { useLanguage, LANGUAGES, defaultsForCountry } from '../context/LanguageContext';
 import { useAccessibility, ACCESSIBILITY_PRESETS } from '../context/AccessibilityContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -43,6 +43,9 @@ import {
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { MeasurementUnitPicker } from '../components/MeasurementUnitPicker';
+import { CountryPicker } from '../components/CountryPicker';
+import { measurementUnitForCountryChange } from '../lib/region';
 import api, { calendarApi } from '../lib/api';
 import { invalidateUserPreferencesCache } from '../hooks/useUserPreferences';
 
@@ -76,6 +79,7 @@ const DEFAULT_PREFERENCES = {
   compactView: false,
   weekStartsOn: 'monday',
   mealPlanNotifications: true,
+  weeklyPlanEmail: false,
   shoppingListAutoSort: true,
   defaultCookingTime: 30,
 };
@@ -168,8 +172,15 @@ export const UserPreferences = () => {
         }
       }
     } catch (error) {
-      // Use defaults if no preferences saved
-      console.log('Using default preferences');
+      console.log('Using default preferences', error);
+      const status = error.response?.status;
+      if (status && status !== 404) {
+        toast.error(
+          error.response?.data?.detail ||
+            t('toastPreferencesLoadFailed') ||
+            'Could not load your preferences. Showing defaults. Save carefully or refresh.'
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -789,37 +800,31 @@ export const UserPreferences = () => {
           <div className="p-4 border-b border-border/60 bg-cream-subtle dark:bg-muted">
             <h2 className="font-heading font-semibold flex items-center gap-2">
               <Globe className="w-5 h-5 text-laro" />
-              {t('language')}
+              {t('countryAndLanguage')}
             </h2>
           </div>
           <div className="p-4 space-y-4">
-            <div>
-              <Label className="mb-2 block">{t('country')}</Label>
-              <Select
+            <div data-testid="settings-country-row">
+              <Label id="settings-country-label" className="mb-2 block">{t('country')}</Label>
+              <CountryPicker
+                ariaLabelledBy="settings-country-label"
                 value={preferences.country || 'GB'}
-                onValueChange={(value) => {
+                testId="settings-country"
+                onChange={(value) => {
                   const defaults = defaultsForCountry(value);
-                  setPreferences(prev => ({
+                  setPreferences((prev) => ({
                     ...prev,
                     country: value,
-                    language: defaults.language,
-                    measurementUnit: prev.measurementUnit === 'both' ? prev.measurementUnit : defaults.measurementUnit,
+                    // Countries without their own default language keep the current one.
+                    language: defaults.language || prev.language,
+                    // Units follow the country unless you picked something else yourself.
+                    measurementUnit: measurementUnitForCountryChange(prev.measurementUnit, prev.country || 'GB', value),
                   }));
-                  setLanguage(defaults.language);
+                  if (defaults.language) setLanguage(defaults.language);
                   setHasChanges(true);
                 }}
-              >
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="max-h-64">
-                  {Object.entries(COUNTRIES).map(([code, { name, flag }]) => (
-                    <SelectItem key={code} value={code}>
-                      {flag} {name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{t('countrySettingsHint')}</p>
             </div>
             <div>
               <Label className="mb-2 block">{t('appLanguage')}</Label>
@@ -865,38 +870,29 @@ export const UserPreferences = () => {
               {t('cookingPreferences')}
             </h2>
           </div>
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>{t('defaultServings')}</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={preferences.defaultServings}
-                  onChange={(e) => updatePreference('defaultServings', parseInt(e.target.value) || 4)}
-                  className="mt-1 rounded-xl"
-                />
-              </div>
-              <div>
-                <Label>{t('measurementUnits')}</Label>
-                <Select
-                  value={preferences.measurementUnit}
-                  onValueChange={(value) => updatePreference('measurementUnit', value)}
-                >
-                  <SelectTrigger className="mt-1 rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="metric">{t('metricUnits')}</SelectItem>
-                    <SelectItem value="imperial">{t('imperialUnits')}</SelectItem>
-                    <SelectItem value="both">{t('showBoth')}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t('unitsAppliedHint')}
-                </p>
-              </div>
+          <div className="p-4 space-y-5">
+            <div>
+              <Label>{t('defaultServings')}</Label>
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                value={preferences.defaultServings}
+                onChange={(e) => updatePreference('defaultServings', parseInt(e.target.value) || 4)}
+                className="mt-1 rounded-xl max-w-[8rem]"
+              />
+            </div>
+            <div>
+              <Label className="mb-2 block">{t('measurementUnits')}</Label>
+              <MeasurementUnitPicker
+                layout="grid"
+                value={preferences.measurementUnit || 'metric'}
+                onChange={(value) => updatePreference('measurementUnit', value)}
+                testId="settings-measurement-unit-picker"
+              />
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                {t('unitsAppliedHint')}
+              </p>
             </div>
 
             <div>
@@ -1439,6 +1435,18 @@ export const UserPreferences = () => {
                 checked={preferences.mealPlanNotifications}
                 onCheckedChange={(checked) => updatePreference('mealPlanNotifications', checked)}
                 data-testid="pref-meal-plan-notifications"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">{t('weeklyPlanEmail')}</p>
+                <p className="text-sm text-muted-foreground">{t('weeklyPlanEmailHint')}</p>
+              </div>
+              <Switch
+                checked={!!preferences.weeklyPlanEmail}
+                onCheckedChange={(checked) => updatePreference('weeklyPlanEmail', checked)}
+                data-testid="pref-weekly-plan-email"
               />
             </div>
 

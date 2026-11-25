@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { planLabel, recipeLinkForPlan } from '../lib/recipeVersions';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useNavigate } from 'react-router-dom';
 import { recipeApi, mealPlanApi, aiApi, calendarApi, shoppingListApi } from '../lib/api';
 import { getAiQuotaErrorMessage } from '../lib/aiQuota';
 import { useLanguage } from '../context/LanguageContext';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 import { useUserPreferences, weekStartsOnNumber } from '../hooks/useUserPreferences';
 import {
   useLiveRefreshContext,
@@ -77,7 +79,9 @@ import {
   Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, eachDayOfInterval, isSameDay, addDays, parseISO, differenceInCalendarWeeks } from 'date-fns';
+import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, eachDayOfInterval, isSameDay, addDays, differenceInCalendarWeeks } from 'date-fns';
+import { isValidDate, parseLocalDate } from '../lib/dates';
+import { carbsForStyle, carbsLabels, energyStripText, styleFromPreferences } from '../lib/region';
 
 function groupPreviewByAisle(items = []) {
   const groups = new Map();
@@ -104,6 +108,7 @@ const MEAL_TYPE_KEYS = {
 export const MealPlanner = () => {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { confirmActions } = useAccessibility();
   const { preferences } = useUserPreferences();
   const familyMode = wantsFamilyOneMeal(preferences);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -163,6 +168,12 @@ export const MealPlanner = () => {
   const liveRefresh = useLiveRefreshContext();
   const proteinTarget = resolveProteinTarget(preferences);
   const calorieTarget = resolveCalorieTarget(preferences);
+  // Country → labels: "Total carbs" (incl. fibre) for US / CA, kJ for AU / NZ, Calories for US / CA.
+  const nutritionStyle = styleFromPreferences(preferences);
+  const carbTarget =
+    preferences.dailyCarbTarget != null && preferences.dailyCarbTarget !== '' && Number(preferences.dailyCarbTarget) > 0
+      ? Number(preferences.dailyCarbTarget)
+      : null;
   const dinnerHeadcount =
     tonightHeadcount != null
       ? tonightHeadcount
@@ -292,6 +303,7 @@ export const MealPlanner = () => {
   };
 
   const handleDeleteMeal = async (planId) => {
+    if (!confirmDestructive(confirmActions, t('confirmRemoveMeal'))) return;
     // Optimistic remove so stale ghost meals disappear immediately (E-MP003)
     setMealPlans((prev) => prev.filter((p) => p.id !== planId));
     try {
@@ -454,7 +466,7 @@ export const MealPlanner = () => {
         }
         for (const day of plan.plan) {
           const date = day.date
-            ? parseISO(day.date)
+            ? parseLocalDate(day.date)
             : addDays(targetWeekStart, Number(day.day) || 0);
           for (const meal of day.meals || []) {
             if (meal.recipe_id) {
@@ -539,7 +551,7 @@ export const MealPlanner = () => {
       }
       const products = data.plan?.products || [];
       if (!products.length) {
-        toast.error('No meal packs found — add one manually with macros');
+        toast.error('No meal packs found. Add one manually with macros');
         setImportMode('manual');
         setPackDrafts([
           { title: '', calories: '', protein: '', carbs: '', fat: '', kind: 'shake' },
@@ -570,7 +582,7 @@ export const MealPlanner = () => {
       if (data.needs_macros) {
         toast.message('Fill in missing calories / macros, then import');
       } else {
-        toast.success('Macros found online — review and import');
+        toast.success('Macros found online. Review and import');
       }
     } catch (error) {
       toast.error(
@@ -726,7 +738,7 @@ export const MealPlanner = () => {
       let rangeLabel = '';
       if (importedStart) {
         try {
-          const start = parseISO(String(importedStart).slice(0, 10));
+          const start = parseLocalDate(String(importedStart).slice(0, 10));
           const end = addDays(start, 6);
           setCurrentDate(start);
           rangeLabel = ` · ${format(start, 'MMM d')}–${format(end, 'MMM d')}`;
@@ -936,8 +948,8 @@ export const MealPlanner = () => {
 
   const multiWeekTabs = useMemo(() => {
     if (!planHorizon?.anchorStart || !(planHorizon.weeks > 1)) return [];
-    const anchor = parseISO(planHorizon.anchorStart);
-    if (Number.isNaN(anchor.getTime())) return [];
+    const anchor = parseLocalDate(planHorizon.anchorStart);
+    if (!isValidDate(anchor)) return [];
     const anchorWeek = startOfWeek(anchor, { weekStartsOn });
     return Array.from({ length: planHorizon.weeks }, (_, i) => {
       const start = addWeeks(anchorWeek, i);
@@ -953,8 +965,8 @@ export const MealPlanner = () => {
 
   const activeWeekIndex = useMemo(() => {
     if (!planHorizon?.anchorStart) return null;
-    const anchor = parseISO(planHorizon.anchorStart);
-    if (Number.isNaN(anchor.getTime())) return null;
+    const anchor = parseLocalDate(planHorizon.anchorStart);
+    if (!isValidDate(anchor)) return null;
     const anchorWeek = startOfWeek(anchor, { weekStartsOn });
     const idx = differenceInCalendarWeeks(weekStart, anchorWeek, { weekStartsOn });
     if (idx < 0 || idx >= (planHorizon.weeks || 0)) return null;
@@ -981,6 +993,7 @@ export const MealPlanner = () => {
                 variant="outline"
                 size="icon"
                 onClick={() => setCurrentDate(subWeeks(currentDate, 1))}
+                aria-label={t('ariaPreviousWeek')}
                 className="rounded-full shrink-0"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -994,6 +1007,7 @@ export const MealPlanner = () => {
                 variant="outline"
                 size="icon"
                 onClick={() => setCurrentDate(addWeeks(currentDate, 1))}
+                aria-label={t('ariaNextWeek')}
                 className="rounded-full shrink-0"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -1276,12 +1290,26 @@ export const MealPlanner = () => {
                       {calorieTarget != null && (
                         <span className="tabular-nums opacity-90">
                           ·{' '}
-                          {t('dayCalorieStrip', {
-                            current: dayTotals.calories,
-                            target: Math.round(calorieTarget),
-                          })}
+                          {nutritionStyle === 'uk'
+                            ? t('dayCalorieStrip', {
+                              current: dayTotals.calories,
+                              target: Math.round(calorieTarget),
+                            })
+                            : energyStripText(dayTotals.calories, calorieTarget, nutritionStyle)}
                         </span>
                       )}
+                      {carbTarget != null && (() => {
+                        const dayCarbs = carbsForStyle(
+                          { carbs: dayTotals.carbs, carbs_total: dayTotals.carbsTotal },
+                          nutritionStyle
+                        );
+                        const lbl = carbsLabels(nutritionStyle, dayCarbs.isTotal, t);
+                        return (
+                          <span className="tabular-nums opacity-90" data-testid={`day-carbs-${dayKey}`}>
+                            · {dayCarbs.isTotal ? lbl.short : lbl.full} {dayCarbs.value ?? 0}g / {Math.round(carbTarget)}g
+                          </span>
+                        );
+                      })()}
                       {proteinBoost.underTarget && proteinBoost.suggestions.length > 0 && (
                         <button
                           type="button"
@@ -1317,13 +1345,13 @@ export const MealPlanner = () => {
                             role={canOpenRecipe ? 'button' : undefined}
                             tabIndex={canOpenRecipe ? 0 : undefined}
                             onClick={() => {
-                              if (canOpenRecipe) navigate(`/recipes/${meal.recipe_id}`);
+                              if (canOpenRecipe) navigate(recipeLinkForPlan(meal));
                             }}
                             onKeyDown={(e) => {
                               if (!canOpenRecipe) return;
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                navigate(`/recipes/${meal.recipe_id}`);
+                                navigate(recipeLinkForPlan(meal));
                               }
                             }}
                             className={`group relative rounded-xl px-4 py-3.5 transition-colors min-w-0 ${
@@ -1366,7 +1394,7 @@ export const MealPlanner = () => {
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className={`text-sm sm:text-base font-medium leading-snug break-words ${canOpenRecipe ? 'text-foreground underline-offset-2 group-hover:underline' : ''}`}>
-                                  {meal.recipe_title}
+                                  {planLabel(meal.recipe_title, meal, t('mealPlanLowFodmap'))}
                                 </p>
                                 {meal.notes && !adultBoost ? (
                                   <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">
@@ -1706,7 +1734,7 @@ export const MealPlanner = () => {
               <DialogDescription>
                 {importMode === 'macros' || importMode === 'manual'
                   ? macrosFromOnline
-                    ? 'Macros pulled from the product page — edit anything that looks wrong, then import.'
+                    ? 'Macros pulled from the product page. Edit anything that looks wrong, then import.'
                     : 'Enter calories (and protein/carbs/fat if you have them) for each pack.'
                   : 'Fetch Huel (or similar) from a URL, enter macros, or upload a PDF (weekly meal plan or recipes).'}
               </DialogDescription>
@@ -2116,7 +2144,7 @@ export const MealPlanner = () => {
                         ? t(MEAL_TYPE_KEYS[swapMeal.meal_type])
                         : swapMeal.meal_type,
                       date: swapMeal.date
-                        ? format(parseISO(swapMeal.date), 'EEEE, MMM d')
+                        ? format(parseLocalDate(swapMeal.date), 'EEEE, MMM d')
                         : '',
                     })
                   : null}

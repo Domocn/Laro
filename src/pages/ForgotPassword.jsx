@@ -9,6 +9,7 @@ import { Label } from '../components/ui/label';
 import { Mail, ArrowRight, Loader2, Check, ArrowLeft, Key, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '../context/LanguageContext';
+import { BrandLockup } from '../components/BrandAcrostic';
 
 export const ForgotPassword = () => {
   const { t } = useLanguage();
@@ -39,7 +40,7 @@ export const ForgotPassword = () => {
   };
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4">
+    <main id="main-content" tabIndex={-1} className="min-h-screen bg-cream flex items-center justify-center p-4">
       <motion.div 
         className="w-full max-w-md"
         initial={{ opacity: 0, y: 20 }}
@@ -47,13 +48,7 @@ export const ForgotPassword = () => {
         transition={{ duration: 0.5 }}
       >
         {/* Logo */}
-        <Link to="/" className="flex justify-center mb-8">
-          <img
-            src="/laro-banner.png"
-            alt="Laro"
-            className="h-14"
-          />
-        </Link>
+        <BrandLockup className="mb-8" imgClass="h-14" />
 
         {/* Form Card */}
         <div className="bg-white rounded-2xl shadow-card border border-border/60 p-8">
@@ -152,7 +147,7 @@ export const ForgotPassword = () => {
           </p>
         </div>
       </motion.div>
-    </div>
+    </main>
   );
 };
 
@@ -234,13 +229,7 @@ export const ResetPassword = () => {
         transition={{ duration: 0.5 }}
       >
         {/* Logo */}
-        <Link to="/" className="flex justify-center mb-8">
-          <img
-            src="/laro-banner.png"
-            alt="Laro"
-            className="h-14"
-          />
-        </Link>
+        <BrandLockup className="mb-8" imgClass="h-14" />
 
         {/* Form Card */}
         <div className="bg-white rounded-2xl shadow-card border border-border/60 p-8">

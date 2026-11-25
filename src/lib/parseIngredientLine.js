@@ -6,7 +6,13 @@
  * ("pepper" → unit "peppe", name "r") and stole the first word of multi-word
  * names with no quantity ("chinese five spice" → unit "chinese").
  */
+import { parseSectionedLines, sectionedLines } from './ingredientGroups';
 
+/**
+ * Units of measure. These stay a `unit` even when nothing follows them, so
+ * "2 cups" / "2 oz" / "100g" keep a convertible unit and the measurement
+ * preference can still do its job.
+ */
 const MEASURE_UNITS = new Set(
   [
     // metric
@@ -54,15 +60,25 @@ const MEASURE_UNITS = new Set(
     'gallons',
     'gal',
     'fl',
-    // common kitchen counts / measures
-    'clove',
-    'cloves',
+    'cl',
     'pinch',
     'pinches',
     'dash',
     'dashes',
     'drop',
     'drops',
+  ].map((u) => u.toLowerCase())
+);
+
+/**
+ * Count nouns. "4 eggs" is four eggs, not four of an unnamed unit, so when
+ * one of these is the last token on the line it belongs to `name`. With
+ * something after it ("2 cloves garlic") it is still a unit.
+ */
+const COUNT_UNITS = new Set(
+  [
+    'clove',
+    'cloves',
     'sprig',
     'sprigs',
     'bunch',
@@ -104,6 +120,8 @@ const MEASURE_UNITS = new Set(
   ].map((u) => u.toLowerCase())
 );
 
+const ALL_UNITS = new Set([...MEASURE_UNITS, ...COUNT_UNITS]);
+
 /** Size / count words only treated as units when an amount is present (e.g. "1 large egg"). */
 const AMOUNT_SCOPED_UNITS = new Set(
   ['large', 'medium', 'small', 'whole', 'extra-large', 'xl'].map((u) => u.toLowerCase())
@@ -116,7 +134,7 @@ export function isIngredientUnit(token, { hasAmount = false } = {}) {
   if (!token) return false;
   const t = String(token).trim().toLowerCase();
   if (!t) return false;
-  if (MEASURE_UNITS.has(t)) return true;
+  if (ALL_UNITS.has(t)) return true;
   if (hasAmount && AMOUNT_SCOPED_UNITS.has(t)) return true;
   return false;
 }
@@ -166,14 +184,16 @@ export function parseIngredientLine(line = '') {
     return { amount, unit: '', name: '' };
   }
 
-  // "100g mushrooms" / "250ml water" (unit glued to amount)
+  // First token is a known unit: "100g mushrooms", "250ml water", "pinch salt",
+  // "1 large egg".
   const glued = rest.match(/^([a-zA-Z]+)\b\s*(.*)$/);
   if (glued && isIngredientUnit(glued[1], { hasAmount: Boolean(amount) })) {
-    return {
-      amount,
-      unit: glued[1],
-      name: (glued[2] || '').trim(),
-    };
+    const trailing = (glued[2] || '').trim();
+    // A trailing count noun is the ingredient itself ("4 eggs"); a trailing
+    // unit of measure is still a unit ("2 cups"), so metric conversion works.
+    if (trailing || !COUNT_UNITS.has(glued[1].toLowerCase())) {
+      return { amount, unit: glued[1], name: trailing };
+    }
   }
 
   // No amount and first token isn't a known unit → entire line is the name
@@ -186,25 +206,18 @@ export function parseIngredientLine(line = '') {
   return { amount, unit: '', name: rest };
 }
 
+/** One ingredient per line; sections become a "Sauce:" line above their ingredients. */
 export function ingredientsToText(ingredients = []) {
-  return (ingredients || [])
-    .map((ing) => {
-      if (typeof ing === 'string') return ing;
-      const fixed = normalizeIngredient(ing);
-      const amt =
-        fixed.amount != null && fixed.amount !== '' ? `${fixed.amount}` : '';
-      const unit = fixed.unit ? ` ${fixed.unit}` : '';
-      const name = fixed.name || '';
-      return `${amt}${unit} ${name}`.trim();
-    })
-    .filter(Boolean)
-    .join('\n');
+  return sectionedLines(ingredients, (ing) => {
+    const fixed = normalizeIngredient(ing);
+    const amt =
+      fixed.amount != null && fixed.amount !== '' ? `${fixed.amount}` : '';
+    const unit = fixed.unit ? ` ${fixed.unit}` : '';
+    const name = fixed.name || '';
+    return `${amt}${unit} ${name}`.trim();
+  }).join('\n');
 }
 
 export function textToIngredients(text = '') {
-  return String(text || '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => parseIngredientLine(line));
+  return parseSectionedLines(String(text || '').split('\n'), (line) => parseIngredientLine(line));
 }

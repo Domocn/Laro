@@ -1,9 +1,29 @@
-const CACHE_NAME = 'laro-v2';
+// Bump CACHE_NAME whenever the app shell changes so clients drop stale HTML/JS.
+const CACHE_NAME = 'laro-v9';
+// Bump API_CACHE_NAME when API caching strategy changes (forces clients to drop stale lists).
+const API_CACHE_NAME = 'laro-api-v5';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
+  '/share-target.html',
 ];
+
+// API endpoints that can be cached for offline use (match real FastAPI mounts).
+// Do NOT cache /recipes or /meal-plans — stale SW entries made deleted recipes
+// reappear under All after a successful DELETE.
+const CACHEABLE_API_PATTERNS = [
+  '/api/shopping-lists',
+  '/api/pantry',
+  '/api/households',
+  '/api/categories',
+  // legacy mistaken paths (keep harmless)
+  '/api/v1/shopping-lists',
+  '/api/v1/pantry',
+  '/api/v1/households',
+  '/api/v1/categories',
+];
+
+// Cache duration in milliseconds (5 minutes for API data)
+const API_CACHE_MAX_AGE = 5 * 60 * 1000;
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
@@ -18,11 +38,12 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
+  const currentCaches = [CACHE_NAME, API_CACHE_NAME];
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => !currentCaches.includes(name))
           .map((name) => caches.delete(name))
       );
     })
@@ -30,13 +51,69 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Message handler for cache control from the app
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'CLEAR_API_CACHE') {
+    event.waitUntil(
+      caches.delete(API_CACHE_NAME).then(() => {
+        console.log('Laro SW: API cache cleared');
+        event.ports[0]?.postMessage({ success: true });
+      })
+    );
+  }
+
+  if (event.data && event.data.type === 'INVALIDATE_PATTERN') {
+    const pattern = event.data.pattern;
+    event.waitUntil(
+      caches.open(API_CACHE_NAME).then(async (cache) => {
+        const keys = await cache.keys();
+        const toDelete = keys.filter(req => req.url.includes(pattern));
+        await Promise.all(toDelete.map(req => cache.delete(req)));
+        console.log('Laro SW: Invalidated', toDelete.length, 'cached entries for', pattern);
+        event.ports[0]?.postMessage({ success: true, count: toDelete.length });
+      })
+    );
+  }
+});
+
+// Check if URL matches cacheable API patterns
+function isCacheableApi(url) {
+  return CACHEABLE_API_PATTERNS.some(pattern => url.includes(pattern));
+}
+
 // Fetch event - network first, fallback to cache
 self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
-  // Skip API requests - always go to network
-  if (event.request.url.includes('/api/')) {
+  const url = event.request.url;
+
+  // Handle cacheable API requests with stale-while-revalidate
+  if (url.includes('/api/') && isCacheableApi(url)) {
+    event.respondWith(handleApiRequest(event.request));
+    return;
+  }
+
+  // Skip non-cacheable API requests - always go to network
+  if (url.includes('/api/')) {
+    return;
+  }
+
+  // Navigations / HTML must always hit the network so deploys are not stuck
+  // behind a cached index.html that points at old hashed bundles.
+  const accept = event.request.headers.get('accept') || '';
+  const isHtmlNav =
+    event.request.mode === 'navigate' ||
+    accept.includes('text/html') ||
+    url.endsWith('/') ||
+    url.endsWith('/index.html');
+
+  if (isHtmlNav) {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        caches.match(event.request).then((cached) => cached || new Response('Offline', { status: 503 }))
+      )
+    );
     return;
   }
 
@@ -45,14 +122,14 @@ self.addEventListener('fetch', (event) => {
       .then((response) => {
         // Clone the response before caching
         const responseClone = response.clone();
-        
-        // Cache successful responses
-        if (response.status === 200) {
+
+        // Cache hashed static assets only (not HTML)
+        if (response.status === 200 && url.includes('/static/')) {
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseClone);
           });
         }
-        
+
         return response;
       })
       .catch(() => {
@@ -61,61 +138,90 @@ self.addEventListener('fetch', (event) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          // Return offline page for navigation requests
-          if (event.request.mode === 'navigate') {
-            return caches.match('/');
-          }
           return new Response('Offline', { status: 503 });
         });
       })
   );
 });
 
+// Network-first for API lists. Stale-while-revalidate hid freshly imported
+// recipes / meal plans behind a cached empty [] for up to API_CACHE_MAX_AGE.
+async function handleApiRequest(request) {
+  const cache = await caches.open(API_CACHE_NAME);
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const responseToCache = response.clone();
+      const headers = new Headers(responseToCache.headers);
+      headers.set('x-sw-cached-at', Date.now().toString());
+      const cachedBody = await responseToCache.blob();
+      await cache.put(
+        request,
+        new Response(cachedBody, {
+          status: responseToCache.status,
+          statusText: responseToCache.statusText,
+          headers,
+        })
+      );
+    }
+    return response;
+  } catch (error) {
+    console.log('Laro SW: Network request failed, using cache', error);
+    const cachedResponse = await cache.match(request);
+    if (cachedResponse) {
+      const cachedAt = parseInt(cachedResponse.headers.get('x-sw-cached-at') || '0', 10);
+      const age = Date.now() - cachedAt;
+      // Only serve offline cache if it is reasonably fresh
+      if (!cachedAt || age < API_CACHE_MAX_AGE * 12) {
+        return cachedResponse;
+      }
+    }
+    return new Response(JSON.stringify({ error: 'Offline and no cached data' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
 // Handle push notifications
 self.addEventListener('push', (event) => {
   console.log('Laro: Push notification received');
-  
-  let data = {
+
+  let payload = {
     title: 'Laro',
     body: 'You have a new notification',
-    icon: '/icons/icon-192x192.svg',
-    badge: '/icons/icon-72x72.svg',
-    url: '/'
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-72x72.png',
+    url: '/',
   };
 
   if (event.data) {
-    const data = event.data.json();
-    const options = {
-      body: data.body,
-      icon: '/icons/icon-192x192.png',
-      badge: '/icons/icon-72x72.png',
-      vibrate: [100, 50, 100],
-      data: {
-        url: data.url || '/',
-      },
-    };
-    event.waitUntil(
-      self.registration.showNotification(data.title || 'Laro', options)
-    );
+    try {
+      payload = { ...payload, ...event.data.json() };
+    } catch (e) {
+      payload.body = event.data.text() || payload.body;
+    }
   }
 
   const options = {
-    body: data.body,
-    icon: data.icon || '/icons/icon-192x192.svg',
-    badge: data.badge || '/icons/icon-72x72.svg',
+    body: payload.body,
+    icon: payload.icon || '/icons/icon-192x192.png',
+    badge: payload.badge || '/icons/icon-72x72.png',
     vibrate: [100, 50, 100],
-    tag: data.tag || 'laro-notification',
+    tag: payload.tag || 'laro-notification',
     renotify: true,
-    requireInteraction: data.requireInteraction || false,
+    requireInteraction: payload.requireInteraction || false,
     data: {
-      url: data.url || '/',
-      timestamp: Date.now()
+      url: payload.url || '/',
+      timestamp: Date.now(),
+      ...(payload.data || {}),
     },
-    actions: data.actions || []
+    actions: payload.actions || [],
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(payload.title || 'Laro', options)
   );
 });
 

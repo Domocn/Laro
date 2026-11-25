@@ -379,9 +379,8 @@ async def join_with_code(data: JoinHouseholdRequest, request: Request, user: dic
 
     # Check if code is expired
     if household.get("join_code_expires"):
-        expires = datetime.fromisoformat(household["join_code_expires"].replace('Z', '+00:00'))
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
+        from utils.dates import as_utc
+        expires = as_utc(household["join_code_expires"])
         if datetime.now(timezone.utc) > expires:
             raise HTTPException(status_code=400, detail="Join code has expired")
 

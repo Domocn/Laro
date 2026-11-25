@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class RecipeRepository(BaseRepository):
     """Repository for recipe operations"""
 
-    JSON_FIELDS = ["ingredients", "instructions", "tags", "dietary_tags"]
+    JSON_FIELDS = ["ingredients", "instructions", "tags", "dietary_tags", "ingredient_macros", "adaptations"]
 
     def __init__(self):
         super().__init__("recipes")
@@ -70,8 +70,6 @@ class RecipeRepository(BaseRepository):
                 await conn.execute(
                     "DELETE FROM meal_plans WHERE recipe_id = $1", recipe_id
                 )
-                # Optional table: a missing relation must not abort this transaction
-                # (Postgres aborts the whole TX after UndefinedTableError).
                 await conn.execute("SAVEPOINT optional_nutrition_logs")
                 try:
                     await conn.execute(
@@ -89,6 +87,8 @@ class RecipeRepository(BaseRepository):
                         exc,
                     )
                     await conn.execute("ROLLBACK TO SAVEPOINT optional_nutrition_logs")
+                else:
+                    await conn.execute("RELEASE SAVEPOINT optional_nutrition_logs")
                 result = await conn.execute(
                     "DELETE FROM recipes WHERE id = $1", recipe_id
                 )
@@ -225,14 +225,14 @@ class RecipeRepository(BaseRepository):
         rowcount = int(result.split()[-1]) if result else 0
         return rowcount
 
-    async def find_by_cookbook(self, cookbook_id: str, limit: int = 100) -> List[dict]:
+    async def find_by_cookbook(self, cookbook_id: str, limit: int = 2000) -> List[dict]:
         """Find all recipes from a specific cookbook"""
         pool = await self._get_db()
 
         query = """
             SELECT * FROM recipes
             WHERE cookbook_id = $1
-            ORDER BY cookbook_page ASC NULLS LAST, created_at DESC
+            ORDER BY cookbook_page ASC NULLS LAST, lower(title) ASC
             LIMIT $2
         """
 
@@ -243,6 +243,19 @@ class RecipeRepository(BaseRepository):
         results = rows_to_dicts(rows)
 
         return [self._deserialize_json_fields(r, self.JSON_FIELDS) for r in results]
+
+    async def count_by_cookbooks(self, cookbook_ids: List[str]) -> Dict[str, int]:
+        """Recipe count per cookbook id (ids with no recipes are left out)."""
+        if not cookbook_ids:
+            return {}
+        pool = await self._get_db()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT cookbook_id, COUNT(*) AS n FROM recipes "
+                "WHERE cookbook_id = ANY($1::varchar[]) GROUP BY cookbook_id",
+                cookbook_ids,
+            )
+        return {r["cookbook_id"]: r["n"] for r in rows}
 
     async def find_all_for_user(
         self,

@@ -3,8 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { useTheme } from '../context/ThemeContext';
-import { useLanguage } from '../context/LanguageContext';
 import { SkipToContent } from './SkipToContent';
+import { useLanguage } from '../context/LanguageContext';
 import { configApi } from '../lib/api';
 import { Button } from './ui/button';
 import {
@@ -15,16 +15,12 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import {
-  ChefHat,
   Home,
   UtensilsCrossed,
   CalendarDays,
   ShoppingCart,
   Refrigerator,
   LogOut,
-  Plus,
-  Camera,
-  Link as LinkIcon,
   Settings,
   Sparkles,
   Moon,
@@ -51,7 +47,7 @@ const NAV_ITEMS = [
 ];
 
 export const Layout = ({ children, wide = false, reading = false }) => {
-  const { user, household, logout, isAdmin } = useAuth();
+  const { user, household, logout, isAdmin, previewFree, setPreviewFree } = useAuth();
   const accessibility = useAccessibility();
   const { theme, setThemeMode } = useTheme();
   const { t } = useLanguage();
@@ -90,12 +86,24 @@ export const Layout = ({ children, wide = false, reading = false }) => {
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-16 md:h-[72px]">
             {/* Logo */}
-            <Link to="/dashboard" className="flex items-center group" data-testid="logo-link">
+            {/* Icon + live text wordmark: the old photo banner went blurry at header size */}
+            <Link
+              to="/dashboard"
+              className="flex items-center gap-2.5 group transition-opacity duration-200 hover:opacity-90"
+              data-testid="logo-link"
+              aria-label={`${t('brandName')}: ${t('brandAcrosticLine')}`}
+            >
               <img
-                src="/laro-banner.png"
-                alt="Laro"
-                className="h-11 sm:h-12 transition-opacity duration-200 group-hover:opacity-90"
+                src="/icons/icon-192x192.png"
+                alt=""
+                className="h-9 w-9 rounded-[10px] shadow-sm"
               />
+              <span className="flex flex-col leading-none">
+                <span className="font-extrabold text-[26px] tracking-[-0.03em] text-[#4f7a5c]">laro</span>
+                <span className="hidden lg:block text-[10px] text-muted-foreground tracking-wide mt-[3px]">
+                  {t('brandAcrosticLine')}
+                </span>
+              </span>
             </Link>
 
             {/* Navigation */}
@@ -126,40 +134,6 @@ export const Layout = ({ children, wide = false, reading = false }) => {
 
             {/* Actions */}
             <div className="flex items-center gap-1.5 sm:gap-2">
-              {/* Add Recipe Dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    size="sm" 
-                    className="rounded-full bg-laro hover:bg-laro-dark border border-laro shadow-soft icon-with-label h-9 px-4 active:scale-[0.95] transition-transform duration-200"
-                    data-testid="add-recipe-trigger"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span className={`icon-label ml-1 ${accessibility.iconLabels ? 'inline' : 'hidden sm:inline'}`}>
-                      {t('add')}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={() => navigate('/recipes/quick-add')} data-testid="add-recipe-quick">
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    {t('pasteAndGo')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate('/recipes/new')} data-testid="add-recipe-manual">
-                    <Plus className="w-4 h-4 mr-2" />
-                    {t('createManually')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate('/recipes/import')} data-testid="add-recipe-import">
-                    <LinkIcon className="w-4 h-4 mr-2" />
-                    {t('importFromUrl')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate('/recipes/store-meal')} data-testid="add-recipe-store-meal">
-                    <Camera className="w-4 h-4 mr-2" />
-                    {t('storeMealTitle')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
               {/* Accessibility Quick Toggle */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -278,6 +252,7 @@ export const Layout = ({ children, wide = false, reading = false }) => {
                     size="icon" 
                     className="rounded-full w-10 h-10 bg-laro-light/80 ring-1 ring-laro/15 hover:bg-laro-light"
                     data-testid="user-menu-trigger"
+                    aria-label={t('ariaAccountMenu')}
                     data-tour="nav-settings"
                   >
                     <User className="w-5 h-5 text-laro-dark" />
@@ -404,6 +379,18 @@ export const Layout = ({ children, wide = false, reading = false }) => {
       >
         {children}
       </main>
+
+      {/* Exit chip — only while the owner test view is active (enabled from Admin) */}
+      {previewFree && (
+        <button
+          type="button"
+          onClick={() => setPreviewFree(false)}
+          className="fixed z-50 bottom-4 left-4 px-3 py-2 rounded-full shadow-lg text-sm font-medium print:hidden bg-amber-500 text-white hover:bg-amber-600"
+          title="You are previewing the app as a Free user. Click to exit"
+        >
+          👁 Previewing as Free · Exit
+        </button>
+      )}
     </div>
   );
 };

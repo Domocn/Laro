@@ -5,7 +5,7 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F8FAF9",
-  "theme_color": "#7BC89C",
+  "theme_color": "#00754A",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -57,61 +57,7 @@
       "purpose": "maskable any"
     }
   ],
-  "categories": [
-    "food",
-    "lifestyle",
-    "utilities"
-  ],
-  "shortcuts": [
-    {
-      "name": "Import Recipe",
-      "short_name": "Import",
-      "description": "Import a recipe from a link or share",
-      "url": "/#/recipes/import",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "Add Recipe",
-      "short_name": "Add",
-      "description": "Create a new recipe",
-      "url": "/#/recipes/new",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "Meal Planner",
-      "short_name": "Meals",
-      "description": "Plan your weekly meals",
-      "url": "/#/meal-planner",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "My Fridge",
-      "short_name": "Fridge",
-      "description": "Find recipes by ingredients",
-      "url": "/#/fridge",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    }
-  ],
+  "categories": ["food", "lifestyle", "utilities"],
   "share_target": {
     "action": "/share-target.html",
     "method": "GET",
@@ -121,5 +67,35 @@
       "text": "text",
       "url": "url"
     }
-  }
+  },
+  "shortcuts": [
+    {
+      "name": "Import Recipe",
+      "short_name": "Import",
+      "description": "Import a recipe from a link or share",
+      "url": "/#/recipes/import",
+      "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Add Recipe",
+      "short_name": "Add",
+      "description": "Create a new recipe",
+      "url": "/#/recipes/new",
+      "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Meal Planner",
+      "short_name": "Meals",
+      "description": "Plan your weekly meals",
+      "url": "/#/meal-planner",
+      "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "My Fridge",
+      "short_name": "Fridge",
+      "description": "Find recipes by ingredients",
+      "url": "/#/fridge",
+      "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }]
+    }
+  ]
 }

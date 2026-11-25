@@ -188,3 +188,33 @@ describe('resolveProteinTarget', () => {
     expect(recipeProteinGrams({ nutrition_protein: 22 })).toBe(22);
   });
 });
+
+describe('rollupDayNutrition carbs', () => {
+  const meals = [
+    { id: '1', recipe_id: 'a', entry_type: 'recipe' },
+    { id: '2', recipe_id: 'b', entry_type: 'recipe' },
+  ];
+  it('sums UK carbs and total carbs when every meal knows its total', () => {
+    const recipes = [
+      { id: 'a', nutrition: { protein: 30, calories: 500, carbs: 40, carbs_total: 46 } },
+      { id: 'b', nutrition: { protein: 20, calories: 300, carbs: 20, carbs_total: 23 } },
+    ];
+    const totals = rollupDayNutrition(meals, recipes);
+    expect(totals.carbs).toBe(60);
+    expect(totals.carbsTotal).toBe(69);
+  });
+  it('drops the total (never a partial sum) when a meal with carbs lacks it', () => {
+    const recipes = [
+      { id: 'a', nutrition: { protein: 30, calories: 500, carbs: 40, carbs_total: 46 } },
+      { id: 'b', nutrition: { protein: 20, calories: 300, carbs: 20 } },
+    ];
+    expect(rollupDayNutrition(meals, recipes).carbsTotal).toBeNull();
+  });
+  it('a carb-free meal without a total still counts as 0', () => {
+    const recipes = [
+      { id: 'a', nutrition: { protein: 30, calories: 500, carbs: 40, carbs_total: 46 } },
+      { id: 'b', nutrition: { protein: 20, calories: 300, carbs: 0 } },
+    ];
+    expect(rollupDayNutrition(meals, recipes).carbsTotal).toBe(46);
+  });
+});

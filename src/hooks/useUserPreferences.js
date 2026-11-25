@@ -4,9 +4,25 @@ import { preferencesApi } from '../lib/api';
 /** Module cache so Settings, Meal Planner, Recipes, etc. share one fetch. */
 let cache = null;
 let inflight = null;
+const listeners = new Set();
+
+function notifyPreferences() {
+  listeners.forEach((fn) => {
+    try {
+      fn(cache || {});
+    } catch {
+      /* ignore */
+    }
+  });
+}
 
 export function invalidateUserPreferencesCache() {
   cache = null;
+}
+
+export function patchUserPreferencesCache(partial) {
+  cache = { ...(cache || {}), ...partial };
+  notifyPreferences();
 }
 
 /**
@@ -71,8 +87,10 @@ export function useUserPreferences() {
         if (!cancelled) setLoading(false);
       }
     })();
+    listeners.add(setPreferences);
     return () => {
       cancelled = true;
+      listeners.delete(setPreferences);
     };
   }, []);
 

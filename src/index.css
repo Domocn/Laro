@@ -216,6 +216,22 @@
 .dark .text-purple-600,
 .dark .text-purple-700 { color: #c4b5fd; }
 
+/* Marketing surfaces use the fixed brand hexes. On the dark canvas
+   #006241 and #00754A sit at roughly 1.9:1 — near-invisible — so lift them
+   to the same accent-derived shades the app uses everywhere else. */
+.dark .text-laro-brand {
+    color: hsl(var(--primary));
+}
+.dark .text-teal {
+    color: hsl(var(--primary));
+}
+.dark .text-coral {
+    color: hsl(var(--destructive));
+}
+.dark .text-tangerine {
+    color: hsl(var(--chart-3));
+}
+
 /* Tinted borders on dark surfaces */
 .dark .border-amber-200,
 .dark .border-amber-300,
@@ -227,6 +243,41 @@
 .dark .border-orange-200,
 .dark .border-orange-300 { border-color: rgba(253, 186, 116, 0.5); }
 .dark .border-blue-200 { border-color: rgba(147, 197, 253, 0.5); }
+
+/* =============================================
+   Toasts (sonner)
+   Colours come from the theme tokens so a toast is legible in light and
+   dark instead of being pinned to white. The class is applied per-toast
+   via <Toaster toastOptions={{ className: 'laro-toast' }}>.
+   ============================================= */
+.laro-toast {
+    background: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: 0.75rem;
+    box-shadow: var(--card-shadow);
+    font-family: theme('fontFamily.sans');
+}
+
+.laro-toast [data-title] {
+    color: hsl(var(--popover-foreground));
+    font-weight: 600;
+}
+
+.laro-toast [data-description] {
+    color: hsl(var(--muted-foreground));
+}
+
+.laro-toast [data-close-button] {
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    border-left: 1px solid hsl(var(--border));
+}
+
+.laro-toast [data-close-button]:hover {
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+}
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
@@ -857,11 +908,16 @@ button.size-9 {
     min-width: unset;
 }
 
-input[type="checkbox"],
-input[type="radio"],
-button[role="checkbox"],
-button[role="radio"],
+/* Radix Switch is a button; 44px min-height stretches the track and misaligns the thumb */
 button[role="switch"] {
+    min-height: unset;
+    min-width: unset;
+}
+
+/* Native controls only. Do not size button[role=radio] — labelled pickers
+   (measurements, etc.) would collapse to 24px and overlap neighbouring text. */
+input[type="checkbox"],
+input[type="radio"] {
     min-height: 24px;
     min-width: 24px;
     width: 24px;

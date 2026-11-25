@@ -357,7 +357,7 @@ export const NutritionCalculator = ({
                     </div>
                   )}
                   <p className="text-[11px] text-muted-foreground">
-                    UK FSA guidance for meal planning — not personalised medical advice.
+                    UK FSA guidance for meal planning, not personalised medical advice.
                   </p>
 
                   {/* Unknown Ingredients */}

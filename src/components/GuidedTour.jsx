@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Button } from './ui/button';
 import { isPublicRecipeViewPath } from '../lib/publicRecipeView';
+import { isQuietLegalPath } from '../lib/legalPaths';
 import { guidedTourKey, notifyFindAgainOnce, requestAppTour } from '../lib/onboarding';
 import { toast } from 'sonner';
 import {
@@ -20,6 +21,8 @@ import {
   Sparkles,
   Download,
 } from 'lucide-react';
+import { usePopupTurn } from '../lib/popupQueue';
+import { getSeen, markSeen } from '../lib/uiSeen';
 
 /**
  * Real product tour: navigates through live app screens with coach-mark copy.
@@ -44,11 +47,11 @@ const TOUR_STEPS = [
   },
   {
     id: 'import',
-    path: '/recipes/import',
+    path: '/recipes/add',
     icon: Download,
     titleKey: 'tourImportTitle',
     bodyKey: 'tourImportBody',
-    target: null,
+    target: '[data-testid="add-recipe-hub"]',
   },
   {
     id: 'meal',
@@ -144,7 +147,10 @@ export function GuidedTour() {
   const [stepIndex, setStepIndex] = useState(0);
 
   const finish = useCallback(() => {
-    if (user?.id) localStorage.setItem(guidedTourKey(user.id), 'done');
+    if (user?.id) {
+      localStorage.setItem(guidedTourKey(user.id), 'done');
+      markSeen(user.id, 'tour', 'done');
+    }
     setActive(false);
     setStepIndex(0);
     const msg = t('onboardingFindAgainToast');
@@ -166,13 +172,27 @@ export function GuidedTour() {
     if (!user?.id) return;
     const status = localStorage.getItem(guidedTourKey(user.id));
     if (status === 'pending') {
-      // Delay so onboarding dialog can close first
-      const timer = setTimeout(begin, 600);
-      return () => clearTimeout(timer);
+      let cancelled = false;
+      let timer;
+      // Once per ACCOUNT: skip the automatic tour if this account has already had it.
+      getSeen(user.id).then((seen) => {
+        if (cancelled) return;
+        if (seen.tour) {
+          localStorage.setItem(guidedTourKey(user.id), 'done');
+          return;
+        }
+        // Delay so onboarding dialog can close first
+        timer = setTimeout(begin, 600);
+      });
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
     }
     // Abandoned mid-tour (refresh / new tab) — never trap returning users
     if (status === 'in_progress') {
       localStorage.setItem(guidedTourKey(user.id), 'done');
+      markSeen(user.id, 'tour', 'abandoned');
       setActive(false);
     }
   }, [user?.id, begin]);
@@ -188,8 +208,10 @@ export function GuidedTour() {
   // Do not force-redirect when the user navigates away — Next/Back still move on purpose.
 
   const spotlight = useSpotlightRect(step?.target, active && !!step?.target);
+  const wantsTour = active && !!step && !isPublicRecipeViewPath(location.pathname) && !isQuietLegalPath(location.pathname);
+  const myTurn = usePopupTurn('guided-tour', wantsTour);
 
-  if (!active || !step || isPublicRecipeViewPath(location.pathname)) return null;
+  if (!myTurn) return null;
 
   const Icon = step.icon;
   const isLast = stepIndex === TOUR_STEPS.length - 1;

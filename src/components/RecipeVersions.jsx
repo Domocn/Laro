@@ -180,6 +180,15 @@ export const RecipeVersions = ({ recipeId, currentVersion, onRestore }) => {
                       <div 
                         className="flex-1 cursor-pointer"
                         onClick={() => toggleVersionSelection(version.version)}
+                        role="checkbox"
+                        tabIndex={0}
+                        aria-checked={selectedVersions.includes(version.version)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleVersionSelection(version.version);
+                          }
+                        }}
                       >
                         <div className="flex items-center gap-2">
                           <span className="font-medium">Version {version.version}</span>

@@ -7,7 +7,7 @@ from dependencies import (
     get_current_user, hash_password, verify_password, create_token,
     user_repository, session_repository, login_attempt_repository,
     totp_secret_repository, oauth_account_repository, system_settings_repository,
-    invite_code_repository, custom_prompts_repository, llm_settings_repository,
+    invite_code_repository, promo_code_repository, custom_prompts_repository, llm_settings_repository,
     ip_allowlist_repository, ip_blocklist_repository, household_repository,
     recipe_repository, user_preferences_repository, meal_plan_repository,
     shopping_list_repository,
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Import activity logger
 from utils.activity_logger import log_user_activity
 from utils.subscription import user_subscription_fields
+from services.link_tracking import signup_source_for
 
 
 def _subscription_user_fields(user: dict) -> dict:
@@ -69,6 +70,7 @@ class UserCreateExtended(BaseModel):
     referral_code: Optional[str] = None  # Friend code → 2-week Pro trial
     language: Optional[str] = None  # en-US, en-GB, es, …
     country: Optional[str] = None  # ISO country code
+    signup_source: Optional[str] = None  # Where the first visit came from (instagram, code:CIRCLEUP, …)
 
     @field_validator("name")
     @classmethod
@@ -280,19 +282,38 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         None, hash_password, user.password
     )
 
-    # Handle referral code — new user gets a 2-week Pro trial immediately.
-    # Referrer is rewarded (another 2 weeks) only when the referred user subscribes.
+    # Handle referral / promo code — new user gets a Pro trial immediately.
+    # A friend code gives REFERRAL_TRIAL_DAYS; an admin promo code gives its own
+    # trial_days (and may credit a referrer). Friend codes contain '#', promo
+    # codes never do. Referrer is rewarded (another 2 weeks) only when the
+    # referred user subscribes.
     from utils.subscription import REFERRAL_TRIAL_DAYS
 
     referred_by = None
     referral_trial_end = None
-    if user.referral_code:
-        referrer = await user_repository.find_by_friend_code(user.referral_code.strip().upper())
+    trial_days = None
+    signup_promo_code = None
+    code = (user.referral_code or "").strip().upper()
+    if code:
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        referrer = None
+        promo = None
+        if "#" not in code:
+            promo = await promo_code_repository.claim(code, now_utc)
+        if promo:
+            signup_promo_code = promo["code"]
+            trial_days = int(promo.get("trial_days") or REFERRAL_TRIAL_DAYS)
+            if promo.get("referrer_user_id"):
+                referrer = await user_repository.find_by_id(promo["referrer_user_id"])
+        else:
+            referrer = await user_repository.find_by_friend_code(code)
+            if referrer and referrer.get("id") != user_id:
+                trial_days = REFERRAL_TRIAL_DAYS
+        if trial_days:
+            referral_trial_end = now_utc + timedelta(days=trial_days)
+
         if referrer and referrer.get("id") != user_id:
             referred_by = referrer["id"]
-            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-
-            referral_trial_end = now_utc + timedelta(days=REFERRAL_TRIAL_DAYS)
 
             pending_rewards = referrer.get("pending_referral_rewards", [])
             if isinstance(pending_rewards, str):
@@ -341,6 +362,8 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         "allergies": [],
         "referred_by": referred_by,
         "referral_trial_end": referral_trial_end,
+        "signup_promo_code": signup_promo_code,
+        "signup_source": signup_source_for(user.signup_source, request.headers.get("User-Agent", "")),
         "referral_count": 0,
         "created_at": now,
         "last_login": now,
@@ -352,7 +375,7 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
     if referral_trial_end:
         user_doc["subscription_status"] = "trial"
         user_doc["subscription_expires"] = referral_trial_end
-        user_doc["subscription_source"] = "referral"
+        user_doc["subscription_source"] = "promo" if signup_promo_code else "referral"
     # When outbound email isn't configured, auto-verify so registration
     # isn't a dead end (no verification mail can ever arrive).
     email_ready = is_email_configured()
@@ -427,6 +450,7 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
                 "email_verified": False,
                 "has_referral_trial": bool(referral_trial_end),
                 "referral_trial_end": referral_trial_end.isoformat() if referral_trial_end else None,
+                "trial_days": trial_days,
             }
         }
 
@@ -439,6 +463,7 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         "email_verified": True,
         "referral_trial_end": referral_trial_end.isoformat() if referral_trial_end else None,
         "has_referral_trial": bool(referral_trial_end),
+        "trial_days": trial_days,
         "referral_count": 0,
         **_subscription_user_fields(user_doc),
     }
@@ -446,7 +471,7 @@ async def register(user: UserCreateExtended, request: Request, background_tasks:
         "token": token,
         "requires_verification": False,
         "message": (
-            f"Account created — {REFERRAL_TRIAL_DAYS}-day Pro trial started"
+            f"Account created — {trial_days}-day Pro trial started"
             if referral_trial_end
             else "Account created"
         ),

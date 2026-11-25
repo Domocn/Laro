@@ -23,7 +23,6 @@ import {
   ArrowLeft,
   Check,
   X,
-  Globe,
   Sun,
   Moon,
   Scale,
@@ -34,16 +33,19 @@ import {
   Target,
 } from 'lucide-react';
 import api, { authApi, preferencesApi } from '../lib/api';
-import { useLanguage, COUNTRIES, defaultsForCountry } from '../context/LanguageContext';
+import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { startGuidedTour } from './GuidedTour';
 import { onboardingKey, notifyFindAgainOnce } from '../lib/onboarding';
 import { isPublicRecipeViewPath } from '../lib/publicRecipeView';
+import { isQuietLegalPath } from '../lib/legalPaths';
 import { toast } from 'sonner';
 import { OnboardingInvite } from './onboarding/OnboardingInvite';
+import { usePopupTurn } from '../lib/popupQueue';
+import { getSeen, markSeen } from '../lib/uiSeen';
 
 function isPublicSharePath(pathname = '') {
-  return isPublicRecipeViewPath(pathname);
+  return isPublicRecipeViewPath(pathname) || isQuietLegalPath(pathname);
 }
 
 const PRESET_LABEL_KEYS = {
@@ -137,6 +139,7 @@ export const UserOnboarding = () => {
   // Soft invite first — full wizard only if the user opts in (less blocking).
   const [inviteOpen, setInviteOpen] = useState(false);
   const [open, setOpen] = useState(false);
+  const myTurn = usePopupTurn('onboarding', inviteOpen || open);
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedPreset, setSelectedPreset] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -167,11 +170,24 @@ export const UserOnboarding = () => {
     if (!user) return;
     if (isPublicSharePath(location.pathname)) return;
     if (localStorage.getItem(onboardingKey(user.id)) !== 'pending') return;
-    const timer = setTimeout(() => {
-      setCurrentStep(0);
-      setInviteOpen(true);
-    }, 500);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    let timer;
+    // Once per ACCOUNT: if this account already did onboarding (any device), don't show it again.
+    getSeen(user.id).then((seen) => {
+      if (cancelled) return;
+      if (seen.onboarding) {
+        localStorage.setItem(onboardingKey(user.id), 'completed');
+        return;
+      }
+      timer = setTimeout(() => {
+        setCurrentStep(0);
+        setInviteOpen(true);
+      }, 500);
+    });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [user, location.pathname]);
 
   useEffect(() => {
@@ -188,6 +204,7 @@ export const UserOnboarding = () => {
   const handleSkip = () => {
     if (user?.id) {
       localStorage.setItem(onboardingKey(user.id), 'skipped');
+      markSeen(user.id, 'onboarding', 'skipped');
     }
     setInviteOpen(false);
     setOpen(false);
@@ -199,6 +216,19 @@ export const UserOnboarding = () => {
     setInviteOpen(false);
     setCurrentStep(0);
     setOpen(true);
+    // Country was chosen at sign-up (or in Settings): start from the saved units so the wizard
+    // doesn't put a US account back on metric.
+    preferencesApi
+      .get()
+      .then((res) => {
+        const saved = res?.data || {};
+        setPreferences((prev) => ({
+          ...prev,
+          ...(saved.country ? { country: saved.country } : {}),
+          ...(saved.measurementUnit ? { measurementUnit: saved.measurementUnit } : {}),
+        }));
+      })
+      .catch(() => {});
   };
 
   const savePreferences = async () => {
@@ -215,8 +245,9 @@ export const UserOnboarding = () => {
           ? 2200
           : null
         : Number(preferences.dailyCalorieTarget);
+    const { country: _country, ...rest } = preferences; // country is set at sign-up / in Settings only
     const payload = {
-      ...preferences,
+      ...rest,
       language,
       theme,
       hasChildren: !!preferences.hasChildren,
@@ -253,7 +284,10 @@ export const UserOnboarding = () => {
     } catch (error) {
       console.error('Failed to save preferences:', error);
     } finally {
-      if (user?.id) localStorage.setItem(onboardingKey(user.id), 'completed');
+      if (user?.id) {
+        localStorage.setItem(onboardingKey(user.id), 'completed');
+        markSeen(user.id, 'onboarding', 'completed');
+      }
       setOpen(false);
       setInviteOpen(false);
       setSaving(false);
@@ -264,7 +298,7 @@ export const UserOnboarding = () => {
         localStorage.setItem(`laro_guided_tour_${user?.id}`, 'done');
         const msg = t('onboardingFindAgainToast');
         if (notifyFindAgainOnce(msg)) toast.message(msg);
-        navigate('/recipes/import');
+        navigate('/recipes/add');
       } else {
         const msg = t('onboardingFindAgainToast');
         if (notifyFindAgainOnce(msg)) toast.message(msg);
@@ -313,7 +347,7 @@ export const UserOnboarding = () => {
 
   return (
     <>
-      {inviteOpen && !open && (
+      {inviteOpen && !open && myTurn && (
         <OnboardingInvite
           userName={user?.name?.split(' ')[0]}
           t={t}
@@ -323,7 +357,7 @@ export const UserOnboarding = () => {
       )}
 
     <Dialog
-      open={open}
+      open={open && myTurn}
       onOpenChange={(v) => {
         if (!v && open) handleSkip();
         else setOpen(v);
@@ -441,37 +475,6 @@ export const UserOnboarding = () => {
                 </div>
 
                 <div>
-                  <Label className="mb-2 block flex items-center gap-2">
-                    <Globe className="w-4 h-4" />
-                    {t('country')}
-                  </Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto pr-1">
-                    {Object.entries(COUNTRIES).map(([code, { name, flag }]) => (
-                      <button
-                        key={code}
-                        type="button"
-                        onClick={() => {
-                          const defaults = defaultsForCountry(code);
-                          setPreferences((prev) => ({
-                            ...prev,
-                            country: code,
-                            measurementUnit: defaults.measurementUnit,
-                            language: defaults.language,
-                          }));
-                          setLanguage(defaults.language);
-                        }}
-                        className={`flex items-center gap-2 p-2 rounded-xl border-2 text-left ${
-                          preferences.country === code ? 'border-laro bg-laro/10' : 'border-border/60'
-                        }`}
-                      >
-                        <span className="text-lg" aria-hidden="true">{flag}</span>
-                        <span className="text-xs font-medium truncate">{name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
                   <Label className="mb-2 block">{t('language')}</Label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                     {Object.entries(languages).map(([code, { name, flag }]) => (
@@ -498,8 +501,9 @@ export const UserOnboarding = () => {
                     <Scale className="w-4 h-4" />
                     {t('measurementUnits')}
                   </Label>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     {[
+                      { id: 'as_written', label: t('unitsAsWritten'), desc: t('unitsAsWrittenDesc') },
                       { id: 'metric', label: t('metric'), desc: t('metricDesc') },
                       { id: 'imperial', label: t('imperial'), desc: t('imperialDesc') },
                     ].map(({ id, label, desc }) => (

@@ -10,16 +10,19 @@ import { toast } from 'sonner';
 import api, { oauthApi } from '../lib/api';
 import {
   LANGUAGES,
-  COUNTRIES,
   detectBrowserLocale,
   defaultsForCountry,
 } from '../lib/locales';
 import { useLanguage } from '../context/LanguageContext';
 import { markOnboardingPending } from '../lib/onboarding';
+import { BrandLockup } from '../components/BrandAcrostic';
+import { CountryPicker } from '../components/CountryPicker';
 
 function resolvePostAuthRedirect(fallback = '/dashboard') {
   try {
-    const params = new URLSearchParams(window.location.search);
+    // HashRouter: ProtectedRoute sends users to #/login?next=..., so the query lives in the hash.
+    const hashQuery = (window.location.hash.split('?')[1]) || '';
+    const params = new URLSearchParams(hashQuery || window.location.search);
     const next = params.get('next') || sessionStorage.getItem('laro_post_login_redirect');
     if (next && next.startsWith('/') && !next.startsWith('//')) {
       sessionStorage.removeItem('laro_post_login_redirect');
@@ -75,9 +78,7 @@ const EmailVerification = ({ email, onResend, onBack, loading }) => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <Link to="/" className="flex justify-center mb-8">
-          <img src="/laro-banner.png" alt="Laro" className="h-12" />
-        </Link>
+        <BrandLockup className="mb-8" />
 
         <div className="bg-card/95 rounded-[12px] shadow-card border-0 p-8 text-center backdrop-blur-sm">
           <div className="w-16 h-16 bg-laro/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -168,13 +169,16 @@ const OAuthButtons = ({ dividerTextKey = 'or' }) => {
 
       <div className="mt-4 flex flex-col gap-3">
         {oauthStatus.google && (
+          // Google sign-in is switched off for now: button shown, disabled, under a "Coming soon" cover.
+          <div className="relative">
           <Button
             type="button"
             variant="outline"
-            className="w-full rounded-full h-12 border-border/60 focus-visible:ring-2 focus-visible:ring-laro focus-visible:ring-offset-2"
-            onClick={() => handleOAuth('google')}
-            disabled={oauthLoading !== null}
-            aria-label={t('continueWithGoogle')}
+            className="w-full rounded-full h-12 border-border/60 opacity-50"
+            disabled
+            aria-disabled="true"
+            aria-label={t('googleSignInComingSoon')}
+            tabIndex={-1}
           >
             {oauthLoading === 'google' ? (
               <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />
@@ -190,6 +194,12 @@ const OAuthButtons = ({ dividerTextKey = 'or' }) => {
               </>
             )}
           </Button>
+          <div className="absolute inset-0 flex items-center justify-center rounded-full bg-card/60 pointer-events-none" aria-hidden="true">
+            <span className="rounded-full bg-laro px-3 py-1 text-xs font-semibold text-white shadow-sm">
+              {t('comingSoon')}
+            </span>
+          </div>
+          </div>
         )}
 
         {oauthStatus.github && (
@@ -285,7 +295,7 @@ export const Login = () => {
   }
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4 relative overflow-hidden">
+    <main id="main-content" tabIndex={-1} className="min-h-screen bg-cream flex items-center justify-center p-4 relative overflow-hidden">
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -301,13 +311,7 @@ export const Login = () => {
         transition={{ duration: 0.5 }}
       >
         {/* Logo */}
-        <Link to="/" className="flex justify-center mb-8">
-          <img
-            src="/laro-banner.png"
-            alt="Laro"
-            className="h-12"
-          />
-        </Link>
+        <BrandLockup className="mb-8" />
 
         {/* Form Card */}
         <div className="bg-card/95 rounded-[12px] shadow-card border-0 p-8 backdrop-blur-sm">
@@ -420,13 +424,17 @@ export const Login = () => {
             </Link>
           </p>
           <p className="text-center text-xs text-muted-foreground mt-4">
-            <Link to="/privacy-policy" className="hover:text-laro">
+            <a href="/privacy-policy" className="hover:text-laro">
               {t('privacyPolicy')}
-            </Link>
+            </a>
+            {' · '}
+            <a href="/terms" className="hover:text-laro">
+              {t('termsOfUse')}
+            </a>
           </p>
         </div>
       </motion.div>
-    </div>
+    </main>
   );
 };
 
@@ -439,7 +447,8 @@ export const Register = () => {
   const [referralCode, setReferralCode] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [showInviteCode, setShowInviteCode] = useState(false);
-  const [country, setCountry] = useState(detected.country);
+  // UK preselected: the country decides food data + nutrition labels (changeable in Settings).
+  const [country, setCountry] = useState('GB');
   const [language, setLanguageLocal] = useState(uiLanguage || detected.language);
   const [requiresVerification, setRequiresVerification] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState('');
@@ -468,8 +477,11 @@ export const Register = () => {
   const handleCountryChange = (code) => {
     setCountry(code);
     const defaults = defaultsForCountry(code);
-    setLanguageLocal(defaults.language);
-    setLanguage(defaults.language);
+    // Countries without their own default language keep the one already chosen.
+    if (defaults.language) {
+      setLanguageLocal(defaults.language);
+      setLanguage(defaults.language);
+    }
   };
 
   const passwordChecks = [
@@ -500,19 +512,27 @@ export const Register = () => {
         markOnboardingPending(result.user.id);
       }
 
+      // Promo codes can carry their own trial length; friend codes are 2 weeks.
+      const trialDays = result?.user?.trial_days;
+      const customTrial = trialDays && trialDays !== 14;
+
       if (result?.requires_verification) {
         setRequiresVerification(true);
         setVerificationEmail(result.email || email);
         toast.success(
           result?.user?.has_referral_trial
-            ? t('toastAccountCreatedVerifyReferral')
+            ? (customTrial
+              ? t('toastAccountCreatedVerifyTrialDays', { days: trialDays })
+              : t('toastAccountCreatedVerifyReferral'))
             : t('toastAccountCreatedVerify')
         );
         setLoading(false);
         return;
       }
 
-      if (result?.user?.has_referral_trial || result?.user?.is_pro) {
+      if (result?.user?.has_referral_trial && customTrial) {
+        toast.success(t('toastAccountCreatedTrialDays', { days: trialDays }));
+      } else if (result?.user?.has_referral_trial || result?.user?.is_pro) {
         toast.success(t('toastAccountCreatedReferral'));
       } else {
         toast.success(t('toastAccountCreated'));
@@ -549,7 +569,7 @@ export const Register = () => {
   }
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center p-4 relative overflow-hidden">
+    <main id="main-content" tabIndex={-1} className="min-h-screen bg-cream flex items-center justify-center p-4 relative overflow-hidden">
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -565,13 +585,7 @@ export const Register = () => {
         transition={{ duration: 0.5 }}
       >
         {/* Logo */}
-        <Link to="/" className="flex justify-center mb-8">
-          <img
-            src="/laro-banner.png"
-            alt="Laro"
-            className="h-12"
-          />
-        </Link>
+        <BrandLockup className="mb-8" />
 
         {/* Form Card */}
         <div className="bg-card/95 rounded-[12px] shadow-card border-0 p-8 backdrop-blur-sm">
@@ -621,25 +635,19 @@ export const Register = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t('country')}</Label>
-                <Select value={country} onValueChange={handleCountryChange}>
-                  <SelectTrigger className="rounded-xl bg-cream-subtle border-transparent" data-testid="register-country">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-64">
-                    {Object.entries(COUNTRIES).map(([code, { name, flag }]) => (
-                      <SelectItem key={code} value={code}>
-                        <span className="flex items-center gap-2">
-                          <span aria-hidden="true">{flag}</span>
-                          <span>{name}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label id="register-country-label" htmlFor="register-country">{t('countryQuestion')}</Label>
+              <CountryPicker
+                id="register-country"
+                ariaLabelledBy="register-country-label"
+                value={country}
+                onChange={handleCountryChange}
+                testId="register-country"
+              />
+              <p className="text-xs text-muted-foreground leading-relaxed">{t('countrySignupHint')}</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5" aria-hidden="true" />
@@ -705,7 +713,7 @@ export const Register = () => {
               )}
             </div>
 
-            {/* Friend referral code → 2-week Pro trial */}
+            {/* Friend referral code → 2-week Pro trial; promo code → its own trial */}
             <div className="space-y-2">
               <Label htmlFor="referralCode" className="flex items-center gap-1.5">
                 <Gift className="w-3.5 h-3.5 text-laro" aria-hidden="true" />
@@ -781,12 +789,16 @@ export const Register = () => {
 
           <p className="text-center text-xs text-muted-foreground mt-4">
             {t('agreePrivacyPrefix')}{' '}
-            <Link to="/privacy-policy" className="text-laro hover:underline">
+            <a href="/privacy-policy" className="text-laro hover:underline">
               {t('privacyPolicy')}
-            </Link>
+            </a>
+            {' and '}
+            <a href="/terms" className="text-laro hover:underline">
+              {t('termsOfUse')}
+            </a>
           </p>
         </div>
       </motion.div>
-    </div>
+    </main>
   );
 };

@@ -8,10 +8,14 @@ from config import settings
 from dependencies import get_current_user
 from utils.subscription import FREE_RECIPE_LIMIT
 from utils.free_limits import (
+    CLOSING_APP_MIGRATION_UNTIL,
+    CLOSING_APP_RECIPE_ALLOWANCE,
     FREE_FRIEND_LIMIT,
     FREE_SHARE_WEEKLY,
     FREE_COOKBOOK_LIMIT,
     FREE_HOUSEHOLD_MEMBERS,
+    closing_app_recipe_limit,
+    closing_app_window_open,
     friend_limit,
     share_weekly_limit,
     cookbook_limit,
@@ -47,6 +51,10 @@ async def get_catalog(user: dict = Depends(get_current_user)):
         },
         "limits": {
             "recipes": recipe_limit(user),
+            "recipes_add": closing_app_recipe_limit(user),
+            "closing_app_window_open": closing_app_window_open(),
+            "closing_app_allowance": CLOSING_APP_RECIPE_ALLOWANCE,
+            "closing_app_until": CLOSING_APP_MIGRATION_UNTIL.date().isoformat(),
             "friends": friend_limit(user),
             "shares_weekly": share_weekly_limit(user),
             "cookbooks": cookbook_limit(user),
@@ -86,6 +94,10 @@ async def get_balance(user: dict = Depends(get_current_user)):
         "household_bonus_members": int(user.get("household_bonus_members") or 0),
         "limits": {
             "recipes": recipe_limit(user),
+            "recipes_add": closing_app_recipe_limit(user),
+            "closing_app_window_open": closing_app_window_open(),
+            "closing_app_allowance": CLOSING_APP_RECIPE_ALLOWANCE,
+            "closing_app_until": CLOSING_APP_MIGRATION_UNTIL.date().isoformat(),
             "friends": friend_limit(user),
             "shares_weekly": share_weekly_limit(user),
             "cookbooks": cookbook_limit(user),

@@ -1,5 +1,5 @@
 // Bump CACHE_NAME whenever the app shell changes so clients drop stale HTML/JS.
-const CACHE_NAME = 'laro-v9';
+const CACHE_NAME = 'laro-v20';
 // Bump API_CACHE_NAME when API caching strategy changes (forces clients to drop stale lists).
 const API_CACHE_NAME = 'laro-api-v6';
 const STATIC_ASSETS = [
@@ -229,13 +229,20 @@ self.addEventListener('notificationclick', (event) => {
   console.log('Laro: Notification clicked');
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || '/';
+  const toHashRoute = (url) => {
+    if (!url) return '/#/';
+    if (url.startsWith('/#') || url.includes('#')) return url;
+    if (url.startsWith('/')) return '/#' + url;
+    return url;
+  };
+
+  const urlToOpen = toHashRoute(event.notification.data?.url || '/');
 
   // Handle action buttons
   if (event.action) {
     switch (event.action) {
       case 'view-meal':
-        event.waitUntil(clients.openWindow('/meal-planner'));
+        event.waitUntil(clients.openWindow('/#/meal-planner'));
         return;
       case 'view-recipe':
         event.waitUntil(clients.openWindow(urlToOpen));

@@ -23,6 +23,7 @@ import { Button } from '../components/ui/button';
 import api, { sharingApi } from '../lib/api';
 import { toast } from 'sonner';
 import { IngredientSubstituteButton } from '../components/IngredientSubstituteButton';
+import { groupedRows, groupHeading } from '../lib/ingredientGroups';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -79,10 +80,10 @@ export const SharedRecipe = () => {
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
-      toast.success('Link copied to clipboard!');
+      toast.success(t('toastLinkCopied'));
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      toast.error('Couldn\'t copy the link. Please try again. (E-SR001)');
+      toast.error(t('toastCopyLinkFailed'));
     }
   };
 
@@ -230,8 +231,11 @@ ${allInstructions || 'No instructions listed'}`;
       {/* Minimal Header - Only visible on scroll or full view */}
       <header className="bg-white/80 dark:bg-card/80 backdrop-blur-md border-b border-border/40 sticky top-0 z-40 print:hidden">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/" className="flex items-center hover:opacity-80 transition-opacity">
-            <img src="/laro-banner.png" alt="Laro" className="h-9" />
+          <Link to="/" className="flex flex-col hover:opacity-80 transition-opacity">
+            <img src="/laro-banner.png" alt={`${t('brandName')}: ${t('brandAcrosticLine')}`} className="h-9" />
+            <span className="text-[10px] text-muted-foreground mt-0.5 hidden sm:block">
+              {t('brandAcrosticLine')}
+            </span>
           </Link>
 
           <div className="flex items-center gap-2">
@@ -442,25 +446,31 @@ ${allInstructions || 'No instructions listed'}`;
                       Ingredients
                     </h2>
                     <ul className="space-y-2">
-                      {recipe.ingredients?.map((ingredient, index) => {
+                      {groupedRows(recipe.ingredients).map(({ ing: ingredient, index, group, name: cleanName, groupStart }, pos) => {
                         const label =
                           typeof ingredient === 'string'
-                            ? ingredient
+                            ? cleanName
                             : [
                                 ingredient.amount,
                                 ingredient.unit,
-                                ingredient.text || ingredient.name,
+                                ingredient.text || cleanName,
                               ]
                                 .filter(Boolean)
                                 .join(' ');
                         const name =
                           typeof ingredient === 'string'
-                            ? ingredient
-                            : ingredient.name || ingredient.text || '';
+                            ? cleanName
+                            : cleanName || ingredient.text || '';
                         return (
-                        <li key={`ingredient-${index}`} className="flex items-start gap-3 text-sm">
+                        <React.Fragment key={`ingredient-${index}`}>
+                        {groupStart && (
+                          <li className="pt-2 text-sm font-semibold text-laro list-none" data-testid="ingredient-group">
+                            {groupHeading(group, t)}
+                          </li>
+                        )}
+                        <li className="flex items-start gap-3 text-sm">
                           <span className="w-5 h-5 bg-cream-subtle dark:bg-muted rounded flex-shrink-0 flex items-center justify-center text-xs font-medium">
-                            {index + 1}
+                            {pos + 1}
                           </span>
                           <span className="flex-1 min-w-0 pt-0.5">{label}</span>
                           <IngredientSubstituteButton
@@ -471,6 +481,7 @@ ${allInstructions || 'No instructions listed'}`;
                             recipeContext={recipe}
                           />
                         </li>
+                        </React.Fragment>
                         );
                       })}
                     </ul>

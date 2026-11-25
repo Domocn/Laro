@@ -8,9 +8,12 @@ import {
   formatCookTimer,
   ingredientsForStep,
 } from '../lib/cookModeSteps';
+import { groupedRows, groupHeading } from '../lib/ingredientGroups';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useUserPreferences } from '../hooks/useUserPreferences';
+import { styleFromPreferences } from '../lib/region';
+import { temperaturesForStyle } from '../lib/temperature';
 import { Button } from './ui/button';
 import { CookingAIAssistant, AIAssistantButton } from './CookingAIAssistant';
 import { VoiceCookingControls } from './VoiceCooking';
@@ -33,11 +36,13 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCookCast } from '../hooks/useCookCast';
+import { CheckNumbers } from './CheckNumbers';
+import { readSkipCheck } from '../lib/checkNumbers';
 import { useCookMediaSession } from '../hooks/useCookMediaSession';
 
 const QUICK_TIMER_MINUTES = [1, 5, 10, 15, 20];
 
-export const CookMode = ({ recipe, onClose }) => {
+export const CookMode = ({ recipe, onClose, versionName = '', lowFodmap = false }) => {
   const { t } = useLanguage();
   const { preferences } = useUserPreferences();
   const measurementUnit = preferences.measurement_unit || preferences.measurementUnit || 'metric';
@@ -50,6 +55,10 @@ export const CookMode = ({ recipe, onClose }) => {
     focusMode,
   } = useAccessibility();
   const [currentStep, setCurrentStep] = useState(0);
+  // "Check the numbers" first (skippable; remembered per recipe). Totals the cook checked for
+  // this cook go to the meal log / Google Health with the finished session.
+  const [checkingNumbers, setCheckingNumbers] = useState(() => !readSkipCheck(recipe?.id));
+  const [nutritionOverride, setNutritionOverride] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const [showFeedback, setShowFeedback] = useState(false);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
@@ -61,9 +70,12 @@ export const CookMode = ({ recipe, onClose }) => {
   const wakeLockRef = useRef(null);
   const timerIntervalRef = useRef({});
 
+  // US accounts read oven temperatures in °F (other countries: text as written).
+  const nutritionStyle = styleFromPreferences(preferences);
   const steps = useMemo(
-    () => normalizeCookStepsWithAmounts(recipe?.instructions, recipe?.ingredients, measurementUnit),
-    [recipe?.instructions, recipe?.ingredients, measurementUnit]
+    () => normalizeCookStepsWithAmounts(recipe?.instructions, recipe?.ingredients, measurementUnit)
+      .map((step) => temperaturesForStyle(step, nutritionStyle)),
+    [recipe?.instructions, recipe?.ingredients, measurementUnit, nutritionStyle]
   );
   const coverUrl = useMemo(
     () => getImageUrl(recipe?.image_url, recipe),
@@ -96,7 +108,7 @@ export const CookMode = ({ recipe, onClose }) => {
     steps,
     stepIndex: currentStep,
     timerLabel: castTimerLabel,
-    enabled: !showFeedback,
+    enabled: !showFeedback && !checkingNumbers,
   });
 
   useCookMediaSession({
@@ -117,7 +129,7 @@ export const CookMode = ({ recipe, onClose }) => {
         setCurrentStep((s) => Math.max(s - 1, 0));
       }
     },
-    enabled: !showFeedback && totalSteps > 0,
+    enabled: !showFeedback && !checkingNumbers && totalSteps > 0,
   });
 
   const handleCastClick = async () => {
@@ -275,9 +287,9 @@ export const CookMode = ({ recipe, onClose }) => {
     try {
       const note = cookNote.trim();
       if (sessionId) {
-        await cookingApi.completeSession(sessionId, feedback, note);
-      } else if (note) {
-        await cookingApi.markCooked(recipe.id, { notes: note, feedback });
+        await cookingApi.completeSession(sessionId, feedback, note, nutritionOverride);
+      } else if (note || nutritionOverride) {
+        await cookingApi.markCooked(recipe.id, { notes: note, feedback, nutritionOverride });
       } else if (feedback) {
         await cookingApi.submitFeedback(recipe.id, feedback);
       }
@@ -288,25 +300,27 @@ export const CookMode = ({ recipe, onClose }) => {
         meh: t('feedbackMeh'),
       };
       toast.success(note ? `${messages[feedback]}${t('feedbackNoteSavedSuffix')}` : messages[feedback]);
+      backToRecipe();
     } catch (err) {
       console.error('Failed to submit feedback:', err);
+      toast.error(t('toastCookFeedbackFailed') || 'Could not save cook feedback. Try again.');
     }
-    backToRecipe();
   };
 
   const handleSkipWithNote = async () => {
     try {
       const note = cookNote.trim();
       if (sessionId) {
-        await cookingApi.completeSession(sessionId, null, note);
-      } else if (note) {
-        await cookingApi.markCooked(recipe.id, { notes: note });
+        await cookingApi.completeSession(sessionId, null, note, nutritionOverride);
+      } else if (note || nutritionOverride) {
+        await cookingApi.markCooked(recipe.id, { notes: note, nutritionOverride });
       }
       toast.success(note ? t('cookedNoteSaved') : t('niceWorkShort'));
+      backToRecipe();
     } catch (err) {
       console.error('Failed to complete cook session:', err);
+      toast.error(t('toastCookCompleteFailed') || 'Could not save cook session. Try again.');
     }
-    backToRecipe();
   };
 
   const detectedSeconds = parseTimeFromStep(currentInstruction);
@@ -321,6 +335,22 @@ export const CookMode = ({ recipe, onClose }) => {
     center: { opacity: 1, y: 0, scale: 1 },
     exit: (dir) => ({ opacity: 0, y: dir > 0 ? -14 : 14, scale: 0.985 }),
   };
+
+  if (checkingNumbers) {
+    return (
+      <CheckNumbers
+        recipe={recipe}
+        versionName={versionName}
+        lowFodmap={lowFodmap}
+        mode="cook"
+        onStart={(override) => {
+          setNutritionOverride(override);
+          setCheckingNumbers(false);
+        }}
+        onSkip={() => setCheckingNumbers(false)}
+      />
+    );
+  }
 
   return (
     <AnimatePresence>
@@ -418,16 +448,24 @@ export const CookMode = ({ recipe, onClose }) => {
                   {t('ingredients')} · {recipe.ingredients?.length || 0}
                 </p>
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-                  {recipe.ingredients?.map((ing, i) => (
-                    <div
-                      key={i}
-                      className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm"
-                    >
-                      <span className="text-laro font-medium">
-                        {[ing.amount, ing.unit].filter(Boolean).join(' ')}
-                      </span>
-                      <span className="text-white/85 ml-1.5">{ing.name}</span>
-                    </div>
+                  {/* Ungrouped first, then each section ("For the sauce") before its ingredients */}
+                  {groupedRows(recipe.ingredients).map(({ ing, index: i, group, name, groupStart }) => (
+                    <React.Fragment key={i}>
+                      {groupStart && (
+                        <span
+                          className="shrink-0 self-center pl-2 text-xs font-semibold uppercase tracking-wider text-white/60"
+                          data-testid="cook-mode-ingredient-group"
+                        >
+                          {groupHeading(group, t)}
+                        </span>
+                      )}
+                      <div className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                        <span className="text-laro font-medium">
+                          {typeof ing === 'string' ? '' : [ing.amount, ing.unit].filter(Boolean).join(' ')}
+                        </span>
+                        <span className="text-white/85 ml-1.5">{name}</span>
+                      </div>
+                    </React.Fragment>
                   ))}
                 </div>
               </div>

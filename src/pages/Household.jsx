@@ -58,6 +58,7 @@ export const Household = () => {
       setPendingInvites(res.data?.invites || []);
     } catch (error) {
       console.error('Failed to load household invites:', error);
+      toast.error(error.response?.data?.detail || t('toastHouseholdInvitesFailed') || 'Could not load invites.');
     }
   };
 
@@ -67,6 +68,7 @@ export const Household = () => {
       setMembers(res.data);
     } catch (error) {
       console.error('Failed to load members:', error);
+      toast.error(error.response?.data?.detail || t('toastHouseholdMembersFailed') || 'Could not load household members.');
     } finally {
       setLoading(false);
     }

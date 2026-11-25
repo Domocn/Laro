@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '../components/ui/button';
@@ -25,14 +25,6 @@ export const Landing = () => {
   const navigate = useNavigate();
   const [showWalkthrough, setShowWalkthrough] = useState(false);
 
-  useEffect(() => {
-    const hasSeenWalkthrough = localStorage.getItem('laro_walkthrough_seen');
-    if (!hasSeenWalkthrough) {
-      const timer = setTimeout(() => setShowWalkthrough(true), 500);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
   const handleWalkthroughComplete = () => {
     setShowWalkthrough(false);
     navigate('/register');
@@ -52,14 +44,14 @@ export const Landing = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background overflow-hidden">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       <header className="absolute top-0 inset-x-0 z-20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-5">
-          <div className="flex items-center justify-between h-14 px-3 sm:px-4 rounded-[12px] bg-cream/80 backdrop-blur-md border border-black/[0.06] shadow-nav">
+          <div className="flex items-center justify-between h-14 px-3 sm:px-4 rounded-[12px] bg-cream/80 backdrop-blur-md border border-foreground/10 shadow-nav">
             <Link to="/" className="flex items-center shrink-0" aria-label={t('laroHome')}>
               <img
                 src="/laro-banner.png"
-                alt="Laro"
+                alt={`${t('brandName')}: ${t('brandAcrosticLine')}`}
                 className="h-8 sm:h-9"
               />
             </Link>
@@ -75,11 +67,11 @@ export const Landing = () => {
               </Link>
               <Link to="/register">
                 <Button
-                  variant="black"
-                  className="rounded-full h-9 px-4 text-sm"
+                  variant="outline"
+                  className="rounded-full h-9 px-3.5 text-sm"
                   data-testid="register-btn"
                 >
-                  {t('startFree')}
+                  {t('headerCloudOptional')}
                 </Button>
               </Link>
             </div>
@@ -87,57 +79,103 @@ export const Landing = () => {
         </div>
       </header>
 
-      {/* Hero: brand + one promise */}
-      <section className="relative min-h-[100svh] flex items-end sm:items-center">
-        {/* High-res photo (was 400px and pixelated on retina — especially the iPad in the old stock) */}
+      {/* The global SkipToContent link targets #main-content, which Layout
+          provides for signed-in pages. The landing page is outside Layout, so
+          it needs its own <main> or the skip link is a dead anchor here. */}
+      <main id="main-content" tabIndex={-1} className="focus:outline-none">
+      {/* Hero: photo on its own on phones so CTAs never sit on the pan */}
+      <section className="relative bg-cream sm:min-h-[100svh] sm:flex sm:items-center">
+        <div className="relative h-[38vh] min-h-[200px] max-h-[280px] sm:hidden">
+          <img
+            src="/images/hero-kitchen.jpg"
+            alt=""
+            aria-hidden="true"
+            fetchPriority="high"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover object-center"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-cream" />
+        </div>
         <img
           src="/images/hero-kitchen.jpg"
           alt=""
           aria-hidden="true"
-          fetchPriority="high"
           decoding="async"
-          className="absolute inset-0 h-full w-full object-cover object-center scale-[1.02]"
+          width="1600"
+          height="900"
+          className="hidden sm:block absolute inset-0 h-full w-full object-cover object-center scale-[1.02]"
         />
         <div
-          className="absolute inset-0"
+          className="hidden sm:block absolute inset-0"
           style={{
             background:
-              'linear-gradient(115deg, rgba(242,240,235,0.97) 0%, rgba(242,240,235,0.90) 38%, rgba(242,240,235,0.35) 68%, rgba(30,57,50,0.22) 100%)',
+              'linear-gradient(115deg, rgba(242,240,235,0.97) 0%, rgba(242,240,235,0.92) 42%, rgba(242,240,235,0.55) 68%, rgba(30,57,50,0.22) 100%)',
           }}
           aria-hidden="true"
         />
 
-        <div className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-16 sm:py-28">
+        <div className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12 sm:pt-28 sm:pb-28">
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
             className="max-w-xl"
           >
-            <p className="font-accent text-laro-brand text-2xl sm:text-3xl font-semibold tracking-tighter mb-4">
+            <p className="font-accent text-laro-brand text-2xl sm:text-3xl font-semibold tracking-tighter mb-1">
               {t('brandName')}
             </p>
+            <p className="text-sm text-foreground/55 mb-3 tracking-tight" data-testid="brand-origin">
+              {t('brandAcrosticLine')}
+            </p>
+            <Link
+              to="/recipes/migrate"
+              data-testid="landing-mealime-migrate"
+              className="inline-flex mb-4 rounded-full bg-amber-100 text-amber-950 text-sm font-medium px-3 py-1.5 hover:bg-amber-200"
+            >
+              {t('mealimeClosesBanner')}
+            </Link>
             <h1 className="font-heading text-4xl sm:text-5xl lg:text-[3.65rem] font-semibold text-laro-brand leading-[1.15] tracking-tighter">
               {t('heroHeadline')}
             </h1>
             <p className="mt-5 text-lg text-foreground/70 max-w-md leading-relaxed tracking-tight">
               {t('heroSubcopy')}
             </p>
-            <div className="mt-9 flex flex-wrap items-center gap-3">
-              <Link to="/register">
+            <div className="mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
+              <a
+                href="https://github.com/Domocn/Laro"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="sm:inline-flex"
+              >
                 <Button
                   size="lg"
-                  className="rounded-full px-8 h-12 text-[15px]"
+                  className="w-full sm:w-auto rounded-full px-8 h-12 text-[15px]"
+                  data-testid="hero-self-host"
+                >
+                  {t('selfHostOnGithub')}
+                </Button>
+              </a>
+              <Link to="/register" className="sm:inline-flex">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full sm:w-auto rounded-full px-8 h-12 text-[15px] bg-cream border-laro text-laro hover:bg-cream-subtle"
                   data-testid="hero-get-started"
                 >
                   {t('startCookingCalmer')}
-                  <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
+              </Link>
+              <Link
+                to="/recipes/migrate"
+                data-testid="hero-mealime-migrate"
+                className="inline-flex items-center justify-center px-2 py-2 text-sm font-medium text-foreground/70 underline-offset-4 hover:underline"
+              >
+                {t('bringMealimeRecipes')}
               </Link>
               <button
                 type="button"
                 onClick={() => setShowWalkthrough(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-laro tracking-tight hover:text-laro-dark transition-colors"
+                className="inline-flex items-center justify-center gap-2 px-2 py-2 text-sm font-medium text-foreground/70 hover:text-laro-dark transition-colors"
               >
                 <Play className="w-4 h-4" />
                 {t('seeHowItWorks')}
@@ -148,10 +186,10 @@ export const Landing = () => {
       </section>
 
       {/* Trust strip: ceramic band */}
-      <section className="relative bg-cream-subtle border-y border-black/[0.06]">
+      <section className="relative bg-cream-subtle border-y border-foreground/10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
           <ul className="grid grid-cols-1 sm:grid-cols-3">
-            <li className="px-0 sm:px-8 sm:pl-0 py-5 sm:py-1 text-center sm:text-left border-b sm:border-b-0 sm:border-r border-[#cfd8d2]">
+            <li className="px-0 sm:px-8 sm:pl-0 py-5 sm:py-1 text-center sm:text-left border-b sm:border-b-0 sm:border-r border-foreground/15">
               <p className="font-heading text-[13px] font-semibold text-laro-dark tracking-[0.08em] uppercase">
                 {t('trustYourRecipes')}
               </p>
@@ -159,7 +197,7 @@ export const Landing = () => {
                 {t('trustYourRecipesDesc')}
               </p>
             </li>
-            <li className="px-0 sm:px-8 py-5 sm:py-1 text-center sm:text-left border-b sm:border-b-0 sm:border-r border-[#cfd8d2]">
+            <li className="px-0 sm:px-8 py-5 sm:py-1 text-center sm:text-left border-b sm:border-b-0 sm:border-r border-foreground/15">
               <p className="font-heading text-[13px] font-semibold text-laro-dark tracking-[0.08em] uppercase">
                 {t('trustPrivate')}
               </p>
@@ -190,7 +228,7 @@ export const Landing = () => {
               viewport={{ once: true, margin: '-80px' }}
               transition={{ duration: 0.45 }}
             >
-              <Focus className="w-8 h-8 text-teal mb-4" aria-hidden="true" />
+              <Focus className="w-8 h-8 text-laro mb-4" aria-hidden="true" />
               <h2 className="font-heading text-3xl sm:text-4xl font-semibold text-foreground tracking-tighter leading-tight">
                 {t('designedForWeeknights')}
               </h2>
@@ -208,6 +246,8 @@ export const Landing = () => {
               <img
                 src="/images/dish-plated.jpg"
                 alt="A calm finished home-cooked dish"
+                width="1200"
+                height="900"
                 className="w-full h-full object-cover"
                 loading="lazy"
                 decoding="async"
@@ -231,6 +271,8 @@ export const Landing = () => {
               <img
                 src="/images/hero-kitchen.jpg"
                 alt="Cooking at the hob with focus"
+                width="1200"
+                height="900"
                 className="w-full h-full object-cover"
                 loading="lazy"
                 decoding="async"
@@ -283,6 +325,8 @@ export const Landing = () => {
               <img
                 src="/images/produce-fresh.jpg"
                 alt="Simple ingredients already at home"
+                width="1200"
+                height="900"
                 className="w-full h-full object-cover"
                 loading="lazy"
                 decoding="async"
@@ -306,6 +350,8 @@ export const Landing = () => {
               <img
                 src="/images/pantry-ingredients.jpg"
                 alt="Phone-ready kitchen ingredients"
+                width="1200"
+                height="900"
                 className="w-full h-full object-cover"
                 loading="lazy"
                 decoding="async"
@@ -318,7 +364,7 @@ export const Landing = () => {
               transition={{ duration: 0.45 }}
               className="order-1 lg:order-2"
             >
-              <Smartphone className="w-8 h-8 text-teal mb-4" aria-hidden="true" />
+              <Smartphone className="w-8 h-8 text-laro mb-4" aria-hidden="true" />
               <h2 className="font-heading text-3xl sm:text-4xl font-bold text-foreground leading-tight">
                 {t('webAndPhone')}
               </h2>
@@ -424,7 +470,7 @@ export const Landing = () => {
       </section>
 
       {/* Offer / close the sale */}
-      <section className="py-20 sm:py-24 border-t border-black/[0.06] bg-cream">
+      <section className="py-20 sm:py-24 border-t border-foreground/10 bg-cream">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <Server className="w-7 h-7 text-laro mx-auto mb-5" aria-hidden="true" />
           <h2 className="font-heading text-2xl sm:text-3xl font-semibold text-laro-brand tracking-tighter">
@@ -434,24 +480,25 @@ export const Landing = () => {
             {t('freeToStartBody')}
           </p>
           <div className="mt-9 flex flex-wrap justify-center gap-3">
-            <Link to="/register">
-              <Button className="rounded-full px-7 h-11" data-testid="cta-get-started">
-                {t('createFreeKitchen')}
-              </Button>
-            </Link>
             <a
               href="https://github.com/Domocn/Laro"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <Button variant="outline" className="rounded-full px-7 h-11">
+              <Button className="rounded-full px-7 h-11" data-testid="cta-self-host">
                 <Github className="w-4 h-4 mr-2" />
                 {t('selfHostOnGithub')}
               </Button>
             </a>
+            <Link to="/register">
+              <Button variant="outline" className="rounded-full px-7 h-11" data-testid="cta-get-started">
+                {t('createFreeKitchen')}
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
+      </main>
 
       <footer className="bg-laro-house text-white/70">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
@@ -460,13 +507,16 @@ export const Landing = () => {
               <img src="/laro-icon.png" alt="" className="w-7 h-7 rounded-md" />
               <div>
                 <p className="font-heading text-[#f4f6f4] font-semibold tracking-tight leading-none">{t('brandName')}</p>
-                <p className="mt-1 text-xs text-[#8fa898]">{t('brandPromise')}</p>
+                <p className="mt-1 text-xs text-[#8fa898]">{t('brandAcrosticLine')}</p>
               </div>
             </div>
             <nav className="flex flex-wrap items-center justify-center sm:justify-end gap-x-6 gap-y-2 text-sm">
-              <Link to="/privacy-policy" className="hover:text-[#f4f6f4] transition-colors">
+              <a href="/privacy-policy" className="hover:text-[#f4f6f4] transition-colors">
                 {t('privacy')}
-              </Link>
+              </a>
+              <a href="/terms" className="hover:text-[#f4f6f4] transition-colors">
+                Terms
+              </a>
               <a
                 href="https://play.google.com/store/apps/details?id=com.laro.app"
                 target="_blank"

@@ -318,8 +318,6 @@ async def seed_test_recipes(user: dict = Depends(get_current_user)):
             "household_id": user.get("household_id"),
             "created_at": now,
             "updated_at": now,
-            "is_favorite": False,
-            "times_cooked": 0,
             "current_version": 1,
             **recipe_data
         }

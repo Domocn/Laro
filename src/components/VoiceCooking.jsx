@@ -308,7 +308,7 @@ export const VoiceCookingControls = ({
           handsFreeRef.current = false;
           setNeedsGesture(false);
           setHandsFreePreference(false);
-          toast.error('Microphone permission denied — allow mic for hands-free');
+          toast.error('Microphone permission denied. Allow mic for hands-free');
           return;
         }
         setIsListening(false);
@@ -360,7 +360,7 @@ export const VoiceCookingControls = ({
     handsFreeRef.current = true;
     setHandsFreePreference(true);
     setNeedsGesture(false);
-    toast.success('Hands-free on — say “Next”, “Back”, or “Repeat”');
+    toast.success('Hands-free on. Say “Next”, “Back”, or “Repeat”');
     startListening({ continuous: true });
   }, [startListening]);
 
@@ -414,7 +414,7 @@ export const VoiceCookingControls = ({
                   Tap to start hands-free
                 </div>
                 <p className="text-xs text-white/70 mt-1">
-                  Then say “Next”, “Back”, or “Repeat” — keep this phone nearby (screen can stay on).
+                  Then say “Next”, “Back”, or “Repeat”. Keep this phone nearby (screen can stay on).
                 </p>
               </button>
             ) : (
@@ -425,7 +425,7 @@ export const VoiceCookingControls = ({
                 <div className="min-w-0">
                   <div className="font-medium text-sm flex items-center gap-2">
                     <span className="inline-block h-2 w-2 rounded-full bg-laro animate-pulse" />
-                    Listening — say “Next”
+                    Listening: say “Next”
                   </div>
                   <p className="text-xs text-white/65 truncate">Also: Back · Repeat · Start timer</p>
                 </div>
@@ -517,7 +517,7 @@ export const VoiceCookingControls = ({
               <li>Say <span className="text-laro">“Next”</span>, <span className="text-laro">“Back”</span>, or <span className="text-laro">“Repeat”</span>.</li>
             </ol>
             <p className="text-xs text-gray-500 mt-2">
-              Google Home speakers can’t hear Laro commands — use this phone’s mic. Nest Hub / Chromecast can show the steps if Cast is set up.
+              Google Home speakers can’t hear Laro commands. Use this phone’s mic. Nest Hub / Chromecast can show the steps if Cast is set up.
             </p>
           </motion.div>
         )}

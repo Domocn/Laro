@@ -1,0 +1,26 @@
+# The web build context is the repo root, so keep it to what the app needs.
+.git
+.github
+node_modules
+dist
+build
+coverage
+
+# Not part of the web bundle
+android
+backend
+custom_components
+homeassistant-integration
+laro-home-assistant-addon
+deploy
+docker
+screenshots
+docs
+scripts
+secrets
+*.md
+
+# Local secrets / env
+.env
+.env.*
+!.env.example

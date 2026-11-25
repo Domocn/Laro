@@ -252,7 +252,7 @@ export const ImportRecipe = () => {
       toast.error(t('toastChoosePdf'));
       return;
     }
-    if (pdfFile.size > 12_000_000) {
+    if (pdfFile.size > 95_000_000) {
       toast.error(t('toastPdfTooLarge'));
       return;
     }
@@ -476,11 +476,11 @@ export const ImportRecipe = () => {
       </AlertDialog>
       <div className="max-w-3xl mx-auto" data-testid="import-recipe">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/recipes/add')}
           className="inline-flex items-center text-muted-foreground hover:text-foreground mb-6"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          {t('back')}
+          {t('backToAddRecipe')}
         </button>
 
         <motion.div

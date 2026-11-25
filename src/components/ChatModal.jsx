@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { ChatMarkdown } from './ChatMarkdown';
 import { useChat } from '../context/ChatContext';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 import { useTheme } from '../context/ThemeContext';
 import {
   DropdownMenu,
@@ -33,7 +34,7 @@ import {
 } from './ui/dropdown-menu';
 
 const WELCOME =
-  "Hi! I'm Laro, your cooking assistant. Ask about recipes, techniques, substitutions, or meal ideas — I only answer food and cooking questions. For anything else, I'll point you to Google.";
+  "Hi! I'm Laro, your cooking assistant. Ask about recipes, techniques, substitutions, or meal ideas. I only answer food and cooking questions. For anything else, I'll point you to Google.";
 
 const GENERIC_SUGGESTIONS = [
   'What can I make with chicken and rice?',
@@ -75,6 +76,7 @@ const recipeSuggestions = (title) => {
 };
 
 export const ChatModal = ({ isOpen, onClose }) => {
+  const { confirmActions } = useAccessibility();
   const navigate = useNavigate();
   const { recipeContext } = useChat();
   const { reducedMotion } = useTheme();
@@ -208,6 +210,7 @@ export const ChatModal = ({ isOpen, onClose }) => {
 
   const deleteSession = async (id, e) => {
     e?.stopPropagation?.();
+    if (!confirmDestructive(confirmActions, 'Delete this chat? This cannot be undone.')) return;
     try {
       await aiApi.deleteChatSession(id);
       setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -218,17 +221,40 @@ export const ChatModal = ({ isOpen, onClose }) => {
     }
   };
 
-  const reportBug = async () => {
-    if (!sessionId) {
-      toast.error('Send a message first so there is a transcript to report');
-      return;
+  const buildReportTranscript = useCallback(
+    () =>
+      messages
+        .filter((m) => m?.content)
+        .map((m) => ({
+          role: m.role || 'assistant',
+          content: String(m.content),
+        })),
+    [messages]
+  );
+
+  const ensureChatSessionId = useCallback(async () => {
+    if (sessionId) return sessionId;
+    const res = await aiApi.createChatSession();
+    const id = res.data?.id;
+    if (!id) throw new Error('Could not start a chat session');
+    setSessionId(id);
+    if (recipeContext?.title && sessionTitle === 'New chat') {
+      setSessionTitle(`Chat: ${recipeContext.title}`.slice(0, 80));
     }
+    return id;
+  }, [sessionId, recipeContext?.title, sessionTitle]);
+
+  const reportBug = async () => {
     setReporting(true);
     try {
-      const res = await aiApi.reportChatSession(sessionId, {
-        subject: `AI chat bug: ${sessionTitle || 'conversation'}`,
+      const id = await ensureChatSessionId();
+      const res = await aiApi.reportChatSession(id, {
+        subject: `AI chat bug: ${sessionTitle || recipeContext?.title || 'conversation'}`,
         details: 'Reported from chat UI',
         platform: 'web',
+        transcript: buildReportTranscript(),
+        recipe_id: recipeContext?.id || undefined,
+        recipe_title: recipeContext?.title || undefined,
       });
       const ticket =
         res.data?.ticket?.ticket_number || res.data?.ticket?.id || null;
@@ -454,14 +480,11 @@ export const ChatModal = ({ isOpen, onClose }) => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuItem
-                          onClick={startFresh}
-                          disabled={messages.length <= 1}
-                        >
+                        <DropdownMenuItem onClick={startFresh}>
                           <RefreshCw className="w-4 h-4" />
                           Clear chat
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={reportBug} disabled={!sessionId || reporting}>
+                        <DropdownMenuItem onClick={reportBug} disabled={reporting}>
                           {reporting ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
@@ -517,7 +540,7 @@ export const ChatModal = ({ isOpen, onClose }) => {
                 )}
                 {!sessionsLoading && sessions.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-8 px-4">
-                    No saved chats yet. Ask a cooking question and it will appear here — only for your account.
+                    No saved chats yet. Ask a cooking question and it will appear here (only for your account).
                   </p>
                 )}
                 {!sessionsLoading &&

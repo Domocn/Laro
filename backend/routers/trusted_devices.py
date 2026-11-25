@@ -62,10 +62,9 @@ async def is_device_trusted(user_id: str, device_token: str) -> bool:
         return False
 
     # Check expiration
-    expires_at = datetime.fromisoformat(device["expires_at"].replace("Z", "+00:00"))
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(timezone.utc):
+    from utils.dates import as_utc
+    expires_at = as_utc(device.get("expires_at"))
+    if expires_at is None or expires_at < datetime.now(timezone.utc):
         # Device trust expired
         await trusted_device_repository.update_device(device["id"], {"is_active": 0})
         return False
@@ -139,10 +138,9 @@ async def list_trusted_devices(user: dict = Depends(get_current_user)):
     for device in devices:
         if not device.get("is_active"):
             continue
-        expires_at = datetime.fromisoformat(device["expires_at"].replace("Z", "+00:00"))
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        if expires_at > now:
+        from utils.dates import as_utc
+        expires_at = as_utc(device.get("expires_at"))
+        if expires_at and expires_at > now:
             device["days_remaining"] = (expires_at - now).days
             # Remove sensitive field
             device.pop("token_hash", None)

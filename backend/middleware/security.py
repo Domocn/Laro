@@ -157,8 +157,9 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
     """
 
     # Cookbook photo batches (base64 JSON) routinely exceed 10MB before client
-    # compression; 25MB covers ~15–20 downscaled pages with headroom.
-    MAX_CONTENT_LENGTH = 25 * 1024 * 1024  # 25MB
+    # compression, and recipe/meal-plan PDFs can be 25MB+; 50MB gives headroom
+    # for large PDF imports and multi-page photo batches.
+    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB (PDFs up to 95MB; Cloudflare caps requests at 100MB)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         client_ip = request.client.host if request.client else "unknown"

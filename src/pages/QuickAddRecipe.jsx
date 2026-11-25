@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { aiApi, recipeApi, importApi, cookbooksApi } from '../lib/api';
@@ -20,7 +20,8 @@ import {
   ClipboardPaste,
   FileJson,
   Image as ImageIcon,
-  FileType
+  FileType,
+  CloudDownload
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '../context/LanguageContext';
@@ -30,11 +31,17 @@ import { VetoReplacementBanner } from '../components/VetoReplacementBanner';
 export const QuickAddRecipe = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('paste');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(
+    ['paste', 'url', 'photo', 'pdf', 'import'].includes(tabParam) ? tabParam : 'paste'
+  );
   
   // Paste text state
   const [pasteText, setPasteText] = useState('');
   const [pasteLoading, setPasteLoading] = useState(false);
+  const [pasteImportId, setPasteImportId] = useState(null);
+  const pasteAbortRef = React.useRef(null);
   
   // URL state
   const [url, setUrl] = useState('');
@@ -49,6 +56,9 @@ export const QuickAddRecipe = () => {
   const [imageLoading, setImageLoading] = useState(false);
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [driveUrl, setDriveUrl] = useState('');
+  const [driveJob, setDriveJob] = useState(null); // { job_id, status, message, part, parts, recipe_count }
+  const driveBusy = Boolean(driveJob) && !['done', 'failed'].includes(driveJob.status);
   const [pdfRecipes, setPdfRecipes] = useState(null); // multi-recipe preview (PDF or photos)
   const [pdfSkipped, setPdfSkipped] = useState([]);
   const [multiRecipeSource, setMultiRecipeSource] = useState(null); // 'pdf' | 'photo' | null
@@ -87,7 +97,7 @@ export const QuickAddRecipe = () => {
           {cookbooks.map((c) => (
             <option key={c.id} value={c.id}>
               {c.title}
-              {c.author ? ` — ${c.author}` : ''}
+              {c.author ? ` (${c.author})` : ''}
             </option>
           ))}
         </select>
@@ -112,23 +122,49 @@ export const QuickAddRecipe = () => {
       toast.error(t('toastPasteRecipe'));
       return;
     }
-    
+
+    const controller = new AbortController();
+    pasteAbortRef.current = controller;
     setPasteLoading(true);
+    setPasteImportId(null);
     try {
-      const res = await aiApi.importText(pasteText);
+      const res = await aiApi.importText(pasteText, {
+        signal: controller.signal,
+        onStarted: (id) => setPasteImportId(id),
+      });
       // API returns { status, recipe, ... } — same unwrap as URL import
       setExtractedRecipe(res.data?.recipe || res.data);
       toast.success(t('toastRecipeParsed'));
     } catch (error) {
-      toast.error(
-        getAiQuotaErrorMessage(
-          error,
-          t('toastParseRecipeFailed')
-        )
-      );
+      if (error?.code === 'IMPORT_CANCELLED' || controller.signal.aborted) {
+        toast.message(t('toastImportCancelledByUser'));
+      } else {
+        toast.error(
+          getAiQuotaErrorMessage(
+            error,
+            t('toastParseRecipeFailed')
+          )
+        );
+      }
     } finally {
+      pasteAbortRef.current = null;
+      setPasteImportId(null);
       setPasteLoading(false);
     }
+  };
+
+  const handlePasteCancel = async () => {
+    pasteAbortRef.current?.abort();
+    if (pasteImportId) {
+      try {
+        await aiApi.cancelImport(pasteImportId);
+      } catch (_) {
+        /* best-effort */
+      }
+    }
+    setPasteLoading(false);
+    setPasteImportId(null);
+    toast.message(t('toastImportCancelledByUser'));
   };
 
   const handleUrlSubmit = async () => {
@@ -277,12 +313,43 @@ export const QuickAddRecipe = () => {
     }
   };
 
+  // Big cookbooks: the server downloads from Google Drive and imports in the background.
+  useEffect(() => {
+    if (!driveJob?.job_id || ['done', 'failed'].includes(driveJob.status)) return undefined;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await aiApi.getImportJob(driveJob.job_id);
+        setDriveJob({ ...res.data, job_id: driveJob.job_id });
+        if (res.data.status === 'done') toast.success(res.data.message);
+        if (res.data.status === 'failed') toast.error(res.data.message);
+      } catch (error) {
+        setDriveJob({ ...driveJob, status: 'failed', message: getAiQuotaErrorMessage(error, t('driveImportLost')) });
+      }
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [driveJob]);
+
+  const handleDriveSubmit = async () => {
+    if (!driveUrl.trim() || driveBusy) return;
+    setDriveJob({ status: 'queued', message: t('driveImportStarting') }); // disables the button straight away
+    try {
+      const res = await aiApi.importPdfFromDrive({
+        url: driveUrl.trim(),
+        cookbook_id: selectedCookbookId || null,
+      });
+      setDriveJob(res.data);
+    } catch (error) {
+      setDriveJob(null);
+      toast.error(getAiQuotaErrorMessage(error, t('driveImportFailed')));
+    }
+  };
+
   const handlePdfSubmit = async () => {
     if (!pdfFile) {
       toast.error(t('toastChoosePdf'));
       return;
     }
-    if (pdfFile.size > 12_000_000) {
+    if (pdfFile.size > 95_000_000) {
       toast.error(t('toastPdfTooLarge'));
       return;
     }
@@ -362,6 +429,7 @@ export const QuickAddRecipe = () => {
       instructions: recipe.instructions || [],
       image_url: recipe.image_url || '',
       ...(recipe.nutrition ? { nutrition: recipe.nutrition } : {}),
+      ...(recipe.adaptations ? { adaptations: recipe.adaptations } : {}),
       ...(cookbookId
         ? {
             cookbook_id: cookbookId,
@@ -447,11 +515,11 @@ export const QuickAddRecipe = () => {
     <Layout>
       <div className="max-w-3xl mx-auto" data-testid="quick-add-recipe">
         <Link 
-          to="/recipes" 
+          to="/recipes/add" 
           className="inline-flex items-center text-muted-foreground hover:text-foreground mb-6"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          {t('backToRecipes')}
+          {t('backToAddRecipe')}
         </Link>
 
         <motion.div
@@ -532,6 +600,17 @@ export const QuickAddRecipe = () => {
                     </>
                   )}
                 </Button>
+                {pasteLoading ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handlePasteCancel}
+                    className="w-full rounded-full h-11"
+                    data-testid="cancel-parse-recipe-btn"
+                  >
+                    {t('cancelImport')}
+                  </Button>
+                ) : null}
               </TabsContent>
 
               {/* URL Tab */}
@@ -640,6 +719,70 @@ export const QuickAddRecipe = () => {
                     </>
                   )}
                 </Button>
+
+                <div className="pt-4 border-t border-border space-y-2" data-testid="drive-import">
+                  <Label className="block">{t('driveImportLabel')}</Label>
+                  <p className="text-xs text-muted-foreground">{t('driveImportHint')}</p>
+                  <Input
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://drive.google.com/file/d/…"
+                    value={driveUrl}
+                    onChange={(e) => setDriveUrl(e.target.value)}
+                    disabled={driveBusy}
+                    className="rounded-xl"
+                    data-testid="drive-url-input"
+                  />
+                  <Button
+                    onClick={handleDriveSubmit}
+                    disabled={driveBusy || !driveUrl.trim()}
+                    variant="outline"
+                    className="w-full rounded-full h-12"
+                    data-testid="drive-import-btn"
+                  >
+                    {driveBusy ? (
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                    ) : (
+                      <CloudDownload className="w-5 h-5 mr-2" />
+                    )}
+                    {t('driveImportCta')}
+                  </Button>
+                  {driveJob && (
+                    <div
+                      className={`rounded-xl p-3 text-sm ${driveJob.status === 'failed' ? 'bg-destructive/10 text-destructive' : 'bg-muted'}`}
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <p>{driveJob.message}</p>
+                      {driveJob.status === 'importing' && driveJob.parts > 0 && (
+                        <div className="mt-2 h-2 rounded-full bg-background overflow-hidden">
+                          <div
+                            className="h-full bg-laro transition-all"
+                            style={{ width: `${Math.round((driveJob.part / driveJob.parts) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                      {driveJob.status === 'done' && driveJob.versions_found?.length > 0 && (
+                        <div className="mt-2" data-testid="drive-versions-found">
+                          <p className="font-medium">{t('driveImportVersionsFound')}</p>
+                          <ul className="list-disc pl-5">
+                            {driveJob.versions_found.map((v, i) => (
+                              <li key={`${v.recipe}-${i}`}>
+                                {t('driveImportVersionCount', { recipe: v.recipe, n: (v.versions?.length || 0) + 1 })}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {driveJob.status === 'done' && driveJob.recipe_count > 0 && (
+                        <Link to="/recipes?review=1" className="inline-block mt-2 font-semibold text-laro underline">
+                          {t('driveImportSeeRecipes')}
+                        </Link>
+                      )}
+                      {driveBusy && <p className="text-xs text-muted-foreground mt-1">{t('driveImportCanLeave')}</p>}
+                    </div>
+                  )}
+                </div>
               </TabsContent>
 
               {/* Import Tab */}

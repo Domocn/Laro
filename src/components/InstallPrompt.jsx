@@ -3,10 +3,13 @@ import { useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Download, X } from 'lucide-react';
 import { isPublicRecipeViewPath } from '../lib/publicRecipeView';
+import { isQuietLegalPath } from '../lib/legalPaths';
+import { usePopupTurn } from '../lib/popupQueue';
 
 export const InstallPrompt = () => {
   const location = useLocation();
   const onPublicRecipe = isPublicRecipeViewPath(location.pathname);
+  const onLegal = isQuietLegalPath(location.pathname);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -48,7 +51,8 @@ export const InstallPrompt = () => {
     };
   }, []);
 
-  if (onPublicRecipe || isInstalled || !showPrompt) return null;
+  const myTurn = usePopupTurn('install-prompt', showPrompt && !onPublicRecipe && !onLegal && !isInstalled);
+  if (!myTurn) return null;
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;

@@ -5,6 +5,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { User, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { usePopupTurn } from '../lib/popupQueue';
 
 export const NameUpdateModal = () => {
   const { nameUpdateRequired, updateName } = useAuth();
@@ -12,7 +13,8 @@ export const NameUpdateModal = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  if (!nameUpdateRequired) return null;
+  const myTurn = usePopupTurn('name-update', !!nameUpdateRequired);
+  if (!myTurn) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();

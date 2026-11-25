@@ -166,12 +166,12 @@ export const ImportFromPlatform = () => {
         >
           <Button
             variant="ghost"
-            onClick={() => navigate('/recipes')}
+            onClick={() => navigate('/recipes/add')}
             className="mb-4"
             data-testid="back-to-recipes-btn"
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Recipes
+            Back to Add Recipe
           </Button>
           
           <h1 className="text-3xl font-bold text-laro-800 flex items-center gap-3">

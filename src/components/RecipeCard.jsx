@@ -4,6 +4,7 @@ import { Clock, Users, Heart } from 'lucide-react';
 import { getImageUrl, formatTime } from '../lib/utils';
 import { Badge } from './ui/badge';
 import { Checkbox } from './ui/checkbox';
+import { useLanguage } from '../context/LanguageContext';
 
 export const RecipeCard = memo(({
   recipe,
@@ -12,6 +13,7 @@ export const RecipeCard = memo(({
   selectable = true,
   onToggleSelect,
 }) => {
+  const { t } = useLanguage();
   const totalTime = (recipe.prep_time || 0) + (recipe.cook_time || 0);
 
   const card = (
@@ -48,8 +50,9 @@ export const RecipeCard = memo(({
           >
             <Checkbox
               checked={selected}
-              onCheckedChange={() => onToggleSelect?.(recipe.id)}
-              aria-label={`Select ${recipe.title}`}
+              // Toggling is handled by the wrapper's onClick (the checkbox click bubbles up);
+              // handling it here too toggled twice and cancelled out.
+              aria-label={t('selectRecipeAria', { title: recipe.title })}
               className="bg-white/95 border-border shadow-sm dark:bg-white dark:text-[#1E3932] dark:shadow-md"
               data-testid={`recipe-select-${recipe.id}`}
             />
@@ -65,7 +68,7 @@ export const RecipeCard = memo(({
         </Badge>
         {(recipe.tags || []).some((t) => String(t).toLowerCase() === 'needs-review') && (
           <Badge className="absolute top-3 right-3 bg-amber-500 text-white border-0">
-            Review
+            {t('needsReviewBadge')}
           </Badge>
         )}
       </div>
@@ -93,7 +96,7 @@ export const RecipeCard = memo(({
           {recipe.servings > 0 && (
             <span className="flex items-center gap-1.5">
               <Users className="w-4 h-4" />
-              {recipe.servings} servings
+              {t('cardServings', { n: recipe.servings })}
             </span>
           )}
         </div>

@@ -3,6 +3,7 @@ Email Service - Handles all email notifications
 Supports SMTP and Resend API
 """
 import os
+import asyncio
 import smtplib
 import logging
 from email.mime.text import MIMEText
@@ -21,6 +22,17 @@ SMTP_USER = os.environ.get("SMTP_USER")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
 SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", "noreply@laro.food")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+
+# Support / two-way ticket email.
+# SUPPORT_FROM_EMAIL is the user-visible support address (the app sends from app@laro.food).
+SUPPORT_FROM_EMAIL = os.environ.get("SUPPORT_FROM_EMAIL", "app@laro.food").strip()
+# Domain that receives inbound ticket mail via Resend Receiving. If the apex MX is
+# handled elsewhere (e.g. Cloudflare), point Reply-To at a subdomain here instead.
+# Empty = use the SUPPORT_FROM_EMAIL domain.
+SUPPORT_INBOUND_DOMAIN = os.environ.get("SUPPORT_INBOUND_DOMAIN", "").strip().lower()
+# Email the owner(s) in LARO_OWNER_EMAILS when a ticket is created or a reply arrives.
+SUPPORT_NOTIFY_OWNERS = os.environ.get("SUPPORT_NOTIFY_OWNERS", "true").lower() == "true"
+
 APP_NAME = "Laro"
 APP_URL = os.environ.get("OAUTH_REDIRECT_BASE_URL", "http://localhost:3001")
 # Logo URL for emails
@@ -74,7 +86,14 @@ def is_email_configured() -> bool:
     return False
 
 
-async def send_email(to: str, subject: str, html_body: str, text_body: str = None) -> bool:
+async def send_email(
+    to: str,
+    subject: str,
+    html_body: str,
+    text_body: str = None,
+    reply_to: Optional[str] = None,
+    from_email: Optional[str] = None,
+) -> bool:
     """Send an email using configured provider"""
     if not is_email_configured():
         logger.info(f"Email not configured - would send to {to}: {subject}")
@@ -82,16 +101,31 @@ async def send_email(to: str, subject: str, html_body: str, text_body: str = Non
 
     try:
         if RESEND_API_KEY:
-            return await send_via_resend(to, subject, html_body)
+            return await send_via_resend(to, subject, html_body, reply_to=reply_to, from_email=from_email)
         else:
-            return await send_via_smtp(to, subject, html_body, text_body)
+            return await send_via_smtp(to, subject, html_body, text_body, reply_to=reply_to, from_email=from_email)
     except Exception as e:
         logger.error(f"Error sending email to {to}: {e}", exc_info=True)
         return False
 
 
-async def send_via_resend(to: str, subject: str, html_body: str) -> bool:
+async def send_via_resend(
+    to: str,
+    subject: str,
+    html_body: str,
+    reply_to: Optional[str] = None,
+    from_email: Optional[str] = None,
+) -> bool:
     """Send email via Resend API"""
+    sender = (from_email or SMTP_FROM_EMAIL).strip()
+    payload = {
+        "from": f"{APP_NAME} <{sender}>",
+        "to": [to],
+        "subject": subject,
+        "html": html_body,
+    }
+    if reply_to:
+        payload["reply_to"] = [reply_to]
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://api.resend.com/emails",
@@ -99,22 +133,27 @@ async def send_via_resend(to: str, subject: str, html_body: str) -> bool:
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json"
             },
-            json={
-                "from": f"{APP_NAME} <{SMTP_FROM_EMAIL}>",
-                "to": [to],
-                "subject": subject,
-                "html": html_body
-            }
+            json=payload,
         )
         return response.status_code == 200
 
 
-async def send_via_smtp(to: str, subject: str, html_body: str, text_body: str = None) -> bool:
+async def send_via_smtp(
+    to: str,
+    subject: str,
+    html_body: str,
+    text_body: str = None,
+    reply_to: Optional[str] = None,
+    from_email: Optional[str] = None,
+) -> bool:
     """Send email via SMTP"""
+    sender = (from_email or SMTP_FROM_EMAIL).strip()
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = f"{APP_NAME} <{SMTP_FROM_EMAIL}>"
+    msg["From"] = f"{APP_NAME} <{sender}>"
     msg["To"] = to
+    if reply_to:
+        msg["Reply-To"] = reply_to
 
     if text_body:
         msg.attach(MIMEText(text_body, "plain"))
@@ -123,9 +162,93 @@ async def send_via_smtp(to: str, subject: str, html_body: str, text_body: str = 
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
         server.starttls()
         server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(SMTP_FROM_EMAIL, to, msg.as_string())
+        server.sendmail(sender, to, msg.as_string())
 
     return True
+
+
+# =============================================================================
+# SUPPORT / TWO-WAY TICKET EMAIL
+# =============================================================================
+
+def support_mail_domain() -> str:
+    """Domain of the user-visible support From address."""
+    if "@" in SUPPORT_FROM_EMAIL:
+        return SUPPORT_FROM_EMAIL.split("@", 1)[1].strip().lower()
+    return "laro.food"
+
+
+def support_local_part() -> str:
+    """Local part of the support From address (e.g. 'app' for app@laro.food)."""
+    if "@" in SUPPORT_FROM_EMAIL:
+        return SUPPORT_FROM_EMAIL.split("@", 1)[0].strip().lower()
+    return "app"
+
+
+def support_inbound_domain() -> str:
+    """Domain that receives inbound ticket mail (Resend Receiving MX)."""
+    return SUPPORT_INBOUND_DOMAIN or support_mail_domain()
+
+
+def support_reply_to_for_ticket(ticket_number: str) -> str:
+    """Plus-address so inbound replies route back to the right ticket.
+
+    e.g. app+LARO-AB12CD@inbound.laro.food
+    """
+    token = (ticket_number or "").strip().upper()
+    return f"{support_local_part()}+{token}@{support_inbound_domain()}"
+
+
+async def send_support_email(
+    to: str,
+    subject: str,
+    html_body: str,
+    ticket_number: Optional[str] = None,
+    reply_to: Optional[str] = None,
+) -> bool:
+    """User-facing support mail: From the support address, Reply-To the ticket alias."""
+    rt = reply_to or (
+        support_reply_to_for_ticket(ticket_number) if ticket_number else SUPPORT_FROM_EMAIL
+    )
+    return await send_email(
+        to,
+        subject,
+        html_body,
+        reply_to=rt,
+        from_email=SUPPORT_FROM_EMAIL,
+    )
+
+
+async def fetch_resend_received_email(email_id: str) -> Optional[dict]:
+    """Load a received message (body/headers/recipients) from the Resend Receiving API.
+
+    Inbound mail can lag the webhook: the email.received event may fire before the
+    body is queryable. Retry a few times until text/html is present so replies are
+    never dropped as empty. Returns the last response even if still body-less.
+    """
+    if not RESEND_API_KEY or not email_id:
+        return None
+    last = None
+    for attempt in range(5):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"https://api.resend.com/emails/receiving/{email_id}",
+                    headers={"Authorization": f"Bearer {RESEND_API_KEY}"},
+                )
+            if response.status_code == 200:
+                last = response.json()
+                if last.get("text") or last.get("html"):
+                    return last
+                # 200 but body not populated yet — still being processed.
+            elif response.status_code not in (404, 425):
+                logger.warning(
+                    "Resend receiving fetch (%s): %s", response.status_code, response.text[:200]
+                )
+        except Exception as e:
+            logger.warning("Resend receiving fetch attempt %s failed: %s", attempt, e)
+        await asyncio.sleep(1.0 + attempt)
+    return last
 
 
 # =============================================================================

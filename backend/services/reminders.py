@@ -129,18 +129,19 @@ async def process_meal_reminders(now: Optional[datetime] = None) -> Dict[str, in
                 stats["skipped"] += 1
                 continue
 
-            lead = int(user.get("lead_minutes") or 30)
-            # Web Settings uses "minutes before meal"; dinner defaults to 18:00.
-            # Mobile stores an absolute dinner clock in reminder_time (HH:MM).
+            # Canonical reminder_time is minutes-before-meal (web INTEGER, mobile
+            # VARCHAR that may still hold a legacy HH:MM dinner clock).
+            from utils.reminder_time import coerce_lead_minutes
+
             if user.get("web_enabled"):
-                dinner_h, dinner_m = DEFAULT_MEAL_HOURS["dinner"]
+                lead = coerce_lead_minutes(user.get("lead_minutes"), 30)
             else:
-                dinner_h, dinner_m = _parse_hhmm(
-                    user.get("dinner_time"), DEFAULT_MEAL_HOURS["dinner"]
+                lead = coerce_lead_minutes(
+                    user.get("dinner_time"),
+                    coerce_lead_minutes(user.get("lead_minutes"), 30),
                 )
 
             meal_hours = dict(DEFAULT_MEAL_HOURS)
-            meal_hours["dinner"] = (dinner_h, dinner_m)
 
             for meal_type, (hh, mm) in meal_hours.items():
                 if meal_type == "snack":

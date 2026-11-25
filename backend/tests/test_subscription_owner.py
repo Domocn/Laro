@@ -10,9 +10,9 @@ from utils.subscription import (
 
 
 def test_owner_email_is_forever_pro(monkeypatch):
-    monkeypatch.setenv("LARO_OWNER_EMAILS", "cowandom79@gmail.com")
+    monkeypatch.setenv("LARO_OWNER_EMAILS", "owner@example.com")
     user = {
-        "email": "cowandom79@gmail.com",
+        "email": "owner@example.com",
         "role": "user",
         "subscription_status": "free",
     }
@@ -75,9 +75,9 @@ def test_active_trial():
 
 
 def test_user_subscription_fields_owner_seamless(monkeypatch):
-    monkeypatch.setenv("LARO_OWNER_EMAILS", "cowandom79@gmail.com")
+    monkeypatch.setenv("LARO_OWNER_EMAILS", "owner@example.com")
     fields = user_subscription_fields({
-        "email": "cowandom79@gmail.com",
+        "email": "owner@example.com",
         "role": "user",
         "subscription_status": "free",
     })

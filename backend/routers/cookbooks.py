@@ -10,8 +10,10 @@ from models import (
     CookbookBuyLink,
     CookbookBuySearchResult,
     CookbookBuySearchResponse,
+    RecipeResponse,
 )
 from dependencies import get_current_user, cookbook_repository, recipe_repository
+from utils.recipe_fields import prepare_recipe_for_response
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
 import asyncio
@@ -321,7 +323,8 @@ async def get_cookbooks(
             household_id=user.get("household_id")
         )
 
-    return [CookbookResponse(**c) for c in cookbooks]
+    counts = await recipe_repository.count_by_cookbooks([c["id"] for c in cookbooks])
+    return [CookbookResponse(**{**c, "recipe_count": counts.get(c["id"], 0)}) for c in cookbooks]
 
 
 @router.post("", response_model=CookbookResponse)
@@ -779,11 +782,15 @@ async def get_cookbook_recipes(
         if not user.get("household_id") or cookbook.get("household_id") != user["household_id"]:
             raise HTTPException(status_code=403, detail="Not authorized to view this cookbook")
 
-    # Get recipes linked to this cookbook
-    recipes = await recipe_repository.find_by_cookbook(cookbook_id)
+    # Get recipes linked to this cookbook, shaped like GET /recipes
+    favorites = user.get("favorites", [])
+    recipes = []
+    for r in await recipe_repository.find_by_cookbook(cookbook_id):
+        r["is_favorite"] = r["id"] in favorites
+        recipes.append(RecipeResponse(**prepare_recipe_for_response(r, estimate_missing_nutrition=False)))
 
     return {
-        "cookbook": CookbookResponse(**cookbook),
+        "cookbook": CookbookResponse(**{**cookbook, "recipe_count": len(recipes)}),
         "recipes": recipes,
         "recipe_count": len(recipes)
     }

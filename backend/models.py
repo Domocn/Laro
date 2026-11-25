@@ -1,7 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Any, List, Optional, Union
-from datetime import date as date_cls
-from datetime import datetime
+from datetime import datetime, date as date_cls
 import re
 
 _BLOCKED_NAMES = [
@@ -104,8 +103,10 @@ class Ingredient(BaseModel):
     name: str = ""
     amount: str = ""
     unit: Optional[str] = ""
+    # Section heading ("Sauce" -> "For the sauce"); "" = ungrouped (utils/ingredient_groups.py)
+    group: Optional[str] = ""
 
-    @field_validator("name", "amount", "unit", mode="before")
+    @field_validator("name", "amount", "unit", "group", mode="before")
     @classmethod
     def coerce_null_strings(cls, v):
         # PDF / AI imports sometimes store amount/unit as JSON null.
@@ -115,7 +116,9 @@ class Ingredient(BaseModel):
 class NutritionInfo(BaseModel):
     calories: Optional[int] = None
     protein: Optional[int] = None
-    carbs: Optional[int] = None
+    carbs: Optional[int] = None  # available carbohydrate (UK label basis, fibre excluded)
+    # Total carbohydrate incl. fibre (US label basis); from line macros when every line knows it
+    carbs_total: Optional[int] = None
     fat: Optional[int] = None
     fiber: Optional[int] = None
     sugar: Optional[int] = None
@@ -140,9 +143,12 @@ class RecipeCreate(BaseModel):
     nutrition: Optional[NutritionInfo] = None
     cookbook_id: Optional[str] = None
     cookbook_page: Optional[int] = None
+    video_url: Optional[str] = None
     source_type: Optional[str] = None
     source_url: Optional[str] = None
     source_author: Optional[str] = None
+    # {"low_fodmap": {"swaps": [{"from": "garlic", "to": "garlic-infused oil"}], "notes": "..."}}
+    adaptations: Optional[dict] = None
 
 class RecipeResponse(BaseModel):
     id: str
@@ -156,6 +162,7 @@ class RecipeResponse(BaseModel):
     category: str
     tags: List[str]
     image_url: str
+    video_url: Optional[str] = None
     author_id: str
     household_id: Optional[str]
     created_at: str
@@ -170,6 +177,9 @@ class RecipeResponse(BaseModel):
     source_type: Optional[str] = None
     source_url: Optional[str] = None
     source_author: Optional[str] = None
+    cookbook_id: Optional[str] = None
+    cookbook_page: Optional[int] = None
+    adaptations: Optional[dict] = None
 
     @field_validator('created_at', 'updated_at', 'last_cooked_at', mode='before')
     @classmethod
@@ -180,14 +190,15 @@ class RecipeResponse(BaseModel):
 
 # User Recipe Rating Models
 class UserRatingCreate(BaseModel):
-    rating: int = Field(..., ge=1, le=5)
+    # Optional so a personal note can be saved without inventing a star rating.
+    rating: Optional[int] = Field(None, ge=1, le=5)
     personal_notes: Optional[str] = ""
 
 class UserRatingResponse(BaseModel):
     id: str
     user_id: str
     recipe_id: str
-    rating: int
+    rating: Optional[int] = None
     personal_notes: str
     created_at: str
     updated_at: str
@@ -212,6 +223,8 @@ class MealPlanCreate(BaseModel):
     notes: Optional[str] = ""
     adult_boost: Optional[str] = ""  # short “For adults: …” upgrade tip
     entry_type: Optional[str] = "recipe"  # recipe | note | leftover
+    recipe_version: Optional[str] = None  # named version from recipe.adaptations.versions; None = Original
+    low_fodmap: Optional[bool] = False  # cook / shop with the recipe's Low FODMAP swaps
 
 class MealPlanUpdate(BaseModel):
     date: Optional[str] = None
@@ -221,6 +234,8 @@ class MealPlanUpdate(BaseModel):
     notes: Optional[str] = None
     adult_boost: Optional[str] = None
     entry_type: Optional[str] = None  # recipe | note | leftover
+    recipe_version: Optional[str] = None
+    low_fodmap: Optional[bool] = None
 
 class MealPlanResponse(BaseModel):
     id: str
@@ -231,6 +246,8 @@ class MealPlanResponse(BaseModel):
     notes: str = ""
     adult_boost: Optional[str] = ""
     entry_type: Optional[str] = "recipe"
+    recipe_version: Optional[str] = None
+    low_fodmap: bool = False
     household_id: str
     created_at: str
 
@@ -242,7 +259,6 @@ class MealPlanResponse(BaseModel):
     @field_validator("date", mode="before")
     @classmethod
     def convert_plan_date(cls, v):
-        # Planner UI matches YYYY-MM-DD; a datetime isoformat hides meals on the calendar.
         if v is None:
             return v
         if isinstance(v, datetime):
@@ -434,14 +450,34 @@ class CookSessionCreate(BaseModel):
     recipe_id: str
     started_at: Optional[str] = None
 
+def _validated_override(value):
+    """Per-serving {calories, protein, carbs, fat[, fiber, sugar]} the user checked for this cook
+    ("Check the numbers"); used for the meal log + Health Connect / Google Health."""
+    from services.confirmed_lines import validate_override
+
+    return validate_override(value)
+
+
 class CookSessionComplete(BaseModel):
     feedback: Optional[str] = None  # 'yes', 'no', 'meh'
     notes: Optional[str] = None  # personal cook note ("kids loved it")
+    nutrition_override: Optional[dict] = None  # per serving, checked for this cook only
+
+    @field_validator("nutrition_override")
+    @classmethod
+    def _check_override(cls, v):
+        return _validated_override(v)
 
 class MarkCookedRequest(BaseModel):
     """Mark a recipe as cooked without full cook-mode session."""
     notes: Optional[str] = None
     feedback: Optional[str] = None  # 'yes', 'no', 'meh'
+    nutrition_override: Optional[dict] = None  # per serving, checked for this cook only
+
+    @field_validator("nutrition_override")
+    @classmethod
+    def _check_override(cls, v):
+        return _validated_override(v)
 
 
 # Cookbook Models
@@ -499,6 +535,7 @@ class CookbookResponse(BaseModel):
     year: Optional[int] = None
     cover_image_url: Optional[str] = None
     notes: Optional[str] = None
+    recipe_count: int = 0
     created_at: str
     updated_at: str
 
@@ -581,7 +618,7 @@ class PantryItemResponse(BaseModel):
     @field_validator('created_at', 'updated_at', 'expiry_date', mode='before')
     @classmethod
     def convert_datetime_to_string(cls, v):
-        if isinstance(v, datetime):
+        if isinstance(v, (datetime, date_cls)):  # expiry_date comes back from Postgres as a date
             return v.isoformat()
         return v
 
@@ -689,8 +726,17 @@ class RecreateStoreMealRequest(BaseModel):
 
 
 # Enhanced Grocery List Models
+class RecipeSelection(BaseModel):
+    """One recipe as planned: which named version, and whether Low FODMAP swaps apply."""
+    recipe_id: str
+    recipe_version: Optional[str] = None
+    low_fodmap: Optional[bool] = False
+
+
 class GroceryGenerateRequest(BaseModel):
     recipe_ids: List[str]
+    # Optional per-recipe version / Low FODMAP choices; recipes without one use the Original.
+    selections: Optional[List[RecipeSelection]] = None
     exclude_pantry: Optional[bool] = True  # Mark / skip items user already has
     combine_quantities: Optional[bool] = True  # Combine same ingredients
     assign_aisles: Optional[bool] = True
@@ -732,7 +778,7 @@ class FromMealPlanResponse(BaseModel):
 class MobileNotificationSettingsUpdate(BaseModel):
     fcm_token: Optional[str] = None
     apns_token: Optional[str] = None
-    reminder_time: Optional[str] = None  # HH:MM format
+    reminder_time: Optional[Union[int, str]] = None  # minutes before meal (legacy HH:MM accepted)
 
     # Master toggles
     push_enabled: Optional[bool] = None

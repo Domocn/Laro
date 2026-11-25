@@ -20,6 +20,8 @@ import {
   Trash2, 
   Upload, 
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
   Loader2,
   GripVertical,
   X
@@ -27,9 +29,28 @@ import {
 import { toast } from 'sonner';
 import { useLanguage } from '../context/LanguageContext';
 import { VetoReplacementBanner } from '../components/VetoReplacementBanner';
-import { normalizeIngredient } from '../lib/parseIngredientLine';
+import { normalizeIngredient, parseIngredientLine } from '../lib/parseIngredientLine';
+import { buildAdaptations } from '../lib/fodmap';
+import {
+  MAX_VERSIONS,
+  getPageNotes,
+  newVersionRow,
+  rowsToVersions,
+  versionsToRows,
+  withPageNotes,
+  withVersions,
+} from '../lib/recipeVersions';
+import {
+  addEditorSection,
+  fromEditorSections,
+  groupHeading,
+  moveEditorSection,
+  removeEditorSection,
+  renameEditorSection,
+  toEditorSections,
+} from '../lib/ingredientGroups';
 
-const emptyIngredient = { name: '', amount: '', unit: '' };
+const emptyIngredient = { name: '', amount: '', unit: '', sectionId: null };
 
 export const RecipeForm = () => {
   const { t } = useLanguage();
@@ -48,10 +69,24 @@ export const RecipeForm = () => {
   const [prepTime, setPrepTime] = useState('');
   const [cookTime, setCookTime] = useState('');
   const [servings, setServings] = useState('4');
-  const [tags, setTags] = useState('');
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState('');
+  const [allTags, setAllTags] = useState([]); // existing tags across the library, for suggestions
+  const [tagFocused, setTagFocused] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
+  // Ingredient rows carry a sectionId; sections ("For the sauce") are [{ id, name }] in order.
   const [ingredients, setIngredients] = useState([{ ...emptyIngredient }]);
+  const [sections, setSections] = useState([]);
   const [instructions, setInstructions] = useState(['']);
+  // Optional Low FODMAP adaptation (recipe.adaptations.low_fodmap)
+  const [fodmapSwaps, setFodmapSwaps] = useState([]);
+  const [fodmapNotes, setFodmapNotes] = useState('');
+  const [fodmapOpen, setFodmapOpen] = useState(false);
+  // Named versions (recipe.adaptations.versions) + cookbook "Notes & tips" (adaptations.page_notes)
+  const [versionRows, setVersionRows] = useState([]);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [pageNotesText, setPageNotesText] = useState('');
+  const adaptationsRef = useRef(null);
 
   useEffect(() => {
     if (isEditing) {
@@ -69,6 +104,45 @@ export const RecipeForm = () => {
       .catch(() => {});
   }, [id]);
 
+  // Load existing tags across the user's recipes for add-tag suggestions.
+  useEffect(() => {
+    let cancelled = false;
+    recipeApi
+      .getAll()
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : (res.data?.recipes || []);
+        const seen = new Map(); // lowercase -> canonical form (most common casing)
+        const count = new Map();
+        list.forEach((r) => (r.tags || []).forEach((raw) => {
+          const t = String(raw || '').trim();
+          if (!t) return;
+          const k = t.toLowerCase();
+          count.set(t, (count.get(t) || 0) + 1);
+          if (!seen.has(k) || count.get(t) > count.get(seen.get(k))) seen.set(k, t);
+        }));
+        if (!cancelled) setAllTags([...seen.values()].sort((a, b) => a.localeCompare(b)));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Add a tag, snapping to an existing tag's casing so near-duplicates aren't created.
+  const commitTag = (raw) => {
+    const v = String(raw || '').trim();
+    if (!v) return;
+    const existing = allTags.find((t) => t.toLowerCase() === v.toLowerCase());
+    const value = existing || v;
+    setTags((prev) => (prev.some((t) => t.toLowerCase() === value.toLowerCase()) ? prev : [...prev, value]));
+    setTagInput('');
+  };
+
+  const tagSuggestions = tagInput.trim()
+    ? allTags
+        .filter((t) => t.toLowerCase().includes(tagInput.trim().toLowerCase())
+          && !tags.some((x) => x.toLowerCase() === t.toLowerCase()))
+        .slice(0, 8)
+    : [];
+
   // Grow instruction textareas to fit imported / loaded step text
   useEffect(() => {
     const root = document.querySelector('[data-testid="instructions-inputs"]');
@@ -78,6 +152,9 @@ export const RecipeForm = () => {
       el.style.height = `${el.scrollHeight}px`;
     });
   }, [instructions, loading]);
+
+  // Fields the form doesn't edit but must round-trip so saving doesn't wipe them.
+  const preservedRef = useRef({});
 
   const loadRecipe = async () => {
     setLoading(true);
@@ -90,14 +167,26 @@ export const RecipeForm = () => {
       setPrepTime(recipe.prep_time?.toString() || '');
       setCookTime(recipe.cook_time?.toString() || '');
       setServings(recipe.servings?.toString() || '4');
-      setTags(recipe.tags?.join(', ') || '');
+      setTags(Array.isArray(recipe.tags) ? recipe.tags.filter(Boolean) : []);
       setImageUrl(recipe.image_url || '');
-      setIngredients(
-        recipe.ingredients.length
-          ? recipe.ingredients.map((ing) => normalizeIngredient(ing))
-          : [{ ...emptyIngredient }]
-      );
-      setInstructions(recipe.instructions.length ? recipe.instructions : ['']);
+      preservedRef.current = {
+        nutrition: recipe.nutrition ?? null,
+        dietary_tags: Array.isArray(recipe.dietary_tags) ? recipe.dietary_tags : [],
+        difficulty: recipe.difficulty ?? null,
+      };
+      const editor = toEditorSections((recipe.ingredients || []).map((ing) => normalizeIngredient(ing)));
+      setIngredients(editor.rows.length ? editor.rows : [{ ...emptyIngredient }]);
+      setSections(editor.sections);
+      setInstructions(recipe.instructions?.length ? recipe.instructions : ['']);
+      adaptationsRef.current = recipe.adaptations || null;
+      const lf = recipe.adaptations?.low_fodmap;
+      setFodmapSwaps(Array.isArray(lf?.swaps) ? lf.swaps.map((sw) => ({ from: sw.from || '', to: sw.to || '' })) : []);
+      setFodmapNotes(lf?.notes || '');
+      setFodmapOpen(!!(lf?.swaps?.length || lf?.notes));
+      const rows = versionsToRows(recipe);
+      setVersionRows(rows);
+      setVersionsOpen(rows.length > 0);
+      setPageNotesText(getPageNotes(recipe).join('\n'));
     } catch (error) {
       toast.error(error.response?.data?.detail || t('toastLoadRecipeFailed'));
       navigate('/recipes');
@@ -114,7 +203,7 @@ export const RecipeForm = () => {
       return;
     }
     
-    const filteredIngredients = ingredients
+    const filteredIngredients = fromEditorSections({ rows: ingredients, sections })
       .map((ing) => normalizeIngredient(ing))
       .filter((i) => i.name.trim());
     if (filteredIngredients.length === 0) {
@@ -137,11 +226,24 @@ export const RecipeForm = () => {
       prep_time: parseInt(prepTime) || 0,
       cook_time: parseInt(cookTime) || 0,
       servings: parseInt(servings) || 4,
-      tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
+      tags: [...tags, tagInput]
+        .map(tag => (tag || '').trim())
+        .filter(Boolean)
+        .filter((t, i, a) => a.findIndex(x => x.toLowerCase() === t.toLowerCase()) === i),
       image_url: imageUrl,
       ingredients: filteredIngredients,
       instructions: filteredInstructions,
+      ...(isEditing ? preservedRef.current : {}),
     };
+    const adaptations = withPageNotes(
+      withVersions(
+        buildAdaptations(adaptationsRef.current, fodmapSwaps, fodmapNotes),
+        rowsToVersions(versionRows, parseIngredientLine),
+      ),
+      pageNotesText,
+    );
+    // Always send on edit so clearing the section removes it; only send on create when filled in.
+    if (isEditing || adaptations) recipeData.adaptations = adaptations;
 
     try {
       if (isEditing) {
@@ -183,8 +285,25 @@ export const RecipeForm = () => {
     }
   };
 
-  const addIngredient = () => {
-    setIngredients([...ingredients, { ...emptyIngredient }]);
+  const addIngredient = (sectionId = null) => {
+    setIngredients([...ingredients, { ...emptyIngredient, sectionId }]);
+  };
+
+  const applySections = (next) => {
+    setIngredients(next.rows);
+    setSections(next.sections);
+  };
+
+  const addSection = () => {
+    const next = addEditorSection({ rows: ingredients, sections }, emptyIngredient);
+    applySections(next);
+    const id = next.sections[next.sections.length - 1].id;
+    setTimeout(() => document.getElementById(`section-name-${id}`)?.focus(), 0);
+  };
+
+  const removeSection = (id) => {
+    applySections(removeEditorSection({ rows: ingredients, sections }, id));
+    toast(t('ingredientSectionRemoved'));
   };
 
   const removeIngredient = (index) => {
@@ -253,6 +372,16 @@ export const RecipeForm = () => {
               <div 
                 className="relative aspect-video rounded-xl border-2 border-dashed border-border bg-cream-subtle overflow-hidden cursor-pointer hover:border-laro transition-colors"
                 onClick={() => isEditing && fileInputRef.current?.click()}
+                role={isEditing ? 'button' : undefined}
+                tabIndex={isEditing ? 0 : undefined}
+                aria-label={isEditing ? t('recipeImageLabel') : undefined}
+                onKeyDown={(e) => {
+                  if (!isEditing || e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
                 {imageUrl ? (
                   <img 
@@ -366,14 +495,63 @@ export const RecipeForm = () => {
               </div>
 
               <div className="md:col-span-2">
-                <Label htmlFor="tags">{t('tagsCommaSeparated')}</Label>
-                <Input
-                  id="tags"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                  placeholder={t('tagsPlaceholderExample')}
-                  className="mt-1 rounded-xl"
-                />
+                <Label htmlFor="tag-input">{t('tags') || 'Tags'}</Label>
+                <div className="relative">
+                  <div
+                    className="mt-1 flex flex-wrap gap-2 items-center rounded-xl border border-input bg-background p-2 min-h-[44px] focus-within:ring-2 focus-within:ring-laro/40 cursor-text"
+                    onClick={() => document.getElementById('tag-input')?.focus()}
+                  >
+                    {tags.map((tag, i) => (
+                      <span
+                        key={`${tag}-${i}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-laro/10 text-laro px-2.5 py-1 text-sm"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${tag}`}
+                          onClick={(e) => { e.stopPropagation(); setTags(tags.filter((_, j) => j !== i)); }}
+                          className="hover:text-red-500"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      id="tag-input"
+                      value={tagInput}
+                      autoComplete="off"
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onFocus={() => setTagFocused(true)}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
+                          e.preventDefault();
+                          commitTag(tagInput);
+                        } else if (e.key === 'Backspace' && !tagInput && tags.length) {
+                          setTags(tags.slice(0, -1));
+                        }
+                      }}
+                      onBlur={() => { commitTag(tagInput); setTimeout(() => setTagFocused(false), 150); }}
+                      placeholder={tags.length ? '' : (t('tagsPlaceholderExample') || 'Add a tag…')}
+                      className="flex-1 min-w-[120px] bg-transparent outline-none text-sm px-1 py-1"
+                    />
+                  </div>
+                  {tagFocused && tagSuggestions.length > 0 && (
+                    <div className="absolute z-20 left-0 right-0 mt-1 max-h-52 overflow-auto rounded-xl border border-input bg-white dark:bg-card shadow-lg">
+                      {tagSuggestions.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onMouseDown={(e) => { e.preventDefault(); commitTag(s); }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-laro/10"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Type to search your tags · Enter or comma to add · click × to remove</p>
               </div>
             </div>
 
@@ -385,7 +563,7 @@ export const RecipeForm = () => {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={addIngredient}
+                  onClick={() => addIngredient()}
                   className="rounded-full"
                 >
                   <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
@@ -393,13 +571,16 @@ export const RecipeForm = () => {
                 </Button>
               </div>
               <div className="space-y-2" data-testid="ingredients-inputs">
-                {ingredients.map((ing, idx) => (
-                  <div key={idx} className="flex flex-wrap gap-2 items-center">
+                {(() => {
+                  const sectionIds = new Set(sections.map((s) => s.id));
+                  const row = (ing, idx) => (
+                  <div key={idx} className="flex flex-wrap gap-2 items-center" data-testid="ingredient-row">
                     <Input
                       value={ing.amount}
                       onChange={(e) => updateIngredient(idx, 'amount', e.target.value)}
                       placeholder={t('amountPlaceholder')}
-                      className="w-20 shrink-0 rounded-xl"
+                      className="w-32 sm:w-36 shrink-0 rounded-xl"
+                      title={ing.amount || undefined}
                     />
                     <Input
                       value={ing.unit}
@@ -425,7 +606,110 @@ export const RecipeForm = () => {
                       <X className="w-4 h-4" aria-hidden="true" />
                     </Button>
                   </div>
-                ))}
+                  );
+                  const indexed = ingredients.map((ing, idx) => ({ ing, idx }));
+                  return (
+                    <>
+                      {indexed.filter(({ ing }) => !sectionIds.has(ing.sectionId)).map(({ ing, idx }) => row(ing, idx))}
+                      {/* Sections: ungrouped ingredients above, then each named part of the dish */}
+                      {sections.map((section, sIdx) => {
+                        const label = section.name.trim() || t('ingredientSectionUnnamed');
+                        const rows = indexed.filter(({ ing }) => ing.sectionId === section.id);
+                        return (
+                          <div
+                            key={section.id}
+                            role="group"
+                            aria-labelledby={`section-name-label-${section.id}`}
+                            className="mt-4 rounded-xl border border-input bg-cream-subtle/50 dark:bg-muted/40 p-3 space-y-2"
+                            data-testid="ingredient-section"
+                          >
+                            <Label id={`section-name-label-${section.id}`} htmlFor={`section-name-${section.id}`} className="text-sm">
+                              {t('ingredientSectionNameLabel')}
+                            </Label>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <Input
+                                id={`section-name-${section.id}`}
+                                value={section.name}
+                                onChange={(e) => applySections(renameEditorSection({ rows: ingredients, sections }, section.id, e.target.value))}
+                                placeholder={t('ingredientSectionNamePlaceholder')}
+                                className="min-w-[10rem] flex-1 rounded-xl font-semibold h-11"
+                                maxLength={80}
+                                data-testid="ingredient-section-name"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-11 w-11 shrink-0 rounded-xl"
+                                disabled={sIdx === 0}
+                                onClick={() => applySections(moveEditorSection({ rows: ingredients, sections }, section.id, -1))}
+                                aria-label={t('ingredientSectionMoveUp', { name: label })}
+                                title={t('ingredientSectionMoveUp', { name: label })}
+                              >
+                                <ArrowUp className="w-4 h-4" aria-hidden="true" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-11 w-11 shrink-0 rounded-xl"
+                                disabled={sIdx === sections.length - 1}
+                                onClick={() => applySections(moveEditorSection({ rows: ingredients, sections }, section.id, 1))}
+                                aria-label={t('ingredientSectionMoveDown', { name: label })}
+                                title={t('ingredientSectionMoveDown', { name: label })}
+                              >
+                                <ArrowDown className="w-4 h-4" aria-hidden="true" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-11 shrink-0 rounded-xl text-muted-foreground hover:text-destructive"
+                                onClick={() => removeSection(section.id)}
+                                aria-label={t('ingredientSectionRemoveAria', { name: label })}
+                                data-testid="ingredient-section-remove"
+                              >
+                                <Trash2 className="w-4 h-4 mr-1" aria-hidden="true" />
+                                {t('ingredientSectionRemove')}
+                              </Button>
+                            </div>
+                            {section.name.trim() && (
+                              <p className="text-xs text-muted-foreground">
+                                {t('ingredientSectionPreview', { heading: groupHeading(section.name.trim(), t) })}
+                              </p>
+                            )}
+                            {rows.length === 0 && (
+                              <p className="text-sm text-muted-foreground">{t('ingredientSectionEmpty')}</p>
+                            )}
+                            {rows.map(({ ing, idx }) => row(ing, idx))}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => addIngredient(section.id)}
+                              className="h-11 rounded-full"
+                              data-testid="ingredient-section-add-ingredient"
+                            >
+                              <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
+                              {t('ingredientSectionAddIngredient')}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addSection}
+                  className="h-11 rounded-full"
+                  data-testid="add-ingredient-section"
+                >
+                  <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
+                  {t('ingredientSectionAdd')}
+                </Button>
+                <p className="text-xs text-muted-foreground flex-1 min-w-[12rem]">{t('ingredientSectionHint')}</p>
               </div>
               <VetoReplacementBanner
                 className="mt-3"
@@ -483,6 +767,171 @@ export const RecipeForm = () => {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Low FODMAP adaptation (optional) */}
+            <details
+              className="rounded-xl border border-input px-4 py-3"
+              open={fodmapOpen}
+              onToggle={(e) => setFodmapOpen(e.currentTarget.open)}
+              data-testid="fodmap-edit"
+            >
+              <summary className="cursor-pointer font-medium text-sm">{t('fodmapSectionTitle')}</summary>
+              <p className="text-xs text-muted-foreground mt-2">{t('fodmapSectionHint')}</p>
+              <div className="space-y-2 mt-3">
+                {fodmapSwaps.map((sw, idx) => (
+                  <div key={idx} className="flex flex-wrap gap-2 items-center">
+                    <Input
+                      value={sw.from}
+                      onChange={(e) => setFodmapSwaps((prev) => prev.map((x, i) => (i === idx ? { ...x, from: e.target.value } : x)))}
+                      placeholder={t('fodmapSwapFromPlaceholder')}
+                      aria-label={t('fodmapSwapFrom')}
+                      className="min-w-[8rem] flex-1 rounded-xl"
+                    />
+                    <span aria-hidden="true" className="text-muted-foreground">→</span>
+                    <Input
+                      value={sw.to}
+                      onChange={(e) => setFodmapSwaps((prev) => prev.map((x, i) => (i === idx ? { ...x, to: e.target.value } : x)))}
+                      placeholder={t('fodmapSwapToPlaceholder')}
+                      aria-label={t('fodmapSwapTo')}
+                      className="min-w-[8rem] flex-1 rounded-xl"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setFodmapSwaps((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      aria-label={t('fodmapRemoveSwap')}
+                    >
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFodmapSwaps((prev) => [...prev, { from: '', to: '' }])}
+                  className="rounded-full"
+                >
+                  <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
+                  {t('fodmapAddSwap')}
+                </Button>
+              </div>
+              <div className="mt-3">
+                <Label htmlFor="fodmap-notes">{t('fodmapNotesLabel')}</Label>
+                <Textarea
+                  id="fodmap-notes"
+                  value={fodmapNotes}
+                  onChange={(e) => setFodmapNotes(e.target.value)}
+                  placeholder={t('fodmapNotesPlaceholder')}
+                  className="mt-1 rounded-xl"
+                  rows={2}
+                />
+              </div>
+            </details>
+
+            {/* Named versions (optional): same dish, different ingredients / steps */}
+            <details
+              className="rounded-xl border border-input px-4 py-3"
+              open={versionsOpen}
+              onToggle={(e) => setVersionsOpen(e.currentTarget.open)}
+              data-testid="versions-edit"
+            >
+              <summary className="cursor-pointer font-medium text-sm">{t('versionsSectionTitle')}</summary>
+              <p className="text-xs text-muted-foreground mt-2">{t('versionsSectionHint')}</p>
+              <div className="space-y-4 mt-3">
+                {versionRows.map((row, idx) => {
+                  const update = (patch) => setVersionRows((prev) => prev.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
+                  return (
+                    <div key={idx} className="rounded-xl bg-cream-subtle dark:bg-muted p-3 space-y-2">
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          value={row.name}
+                          onChange={(e) => update({ name: e.target.value })}
+                          placeholder={t('versionNamePlaceholder')}
+                          aria-label={t('versionNameLabel')}
+                          className="flex-1 rounded-xl"
+                          maxLength={80}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setVersionRows((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-muted-foreground hover:text-destructive shrink-0"
+                          aria-label={t('versionRemove', { name: row.name || t('versionNameLabel') })}
+                        >
+                          <X className="w-4 h-4" aria-hidden="true" />
+                        </Button>
+                      </div>
+                      <Label htmlFor={`version-ings-${idx}`} className="text-xs">{t('versionIngredientsLabel')}</Label>
+                      <Textarea
+                        id={`version-ings-${idx}`}
+                        value={row.ingredientsText}
+                        onChange={(e) => update({ ingredientsText: e.target.value })}
+                        className="rounded-xl font-mono text-sm"
+                        rows={5}
+                      />
+                      <Label htmlFor={`version-steps-${idx}`} className="text-xs">{t('versionStepsLabel')}</Label>
+                      <Textarea
+                        id={`version-steps-${idx}`}
+                        value={row.instructionsText}
+                        onChange={(e) => update({ instructionsText: e.target.value })}
+                        className="rounded-xl text-sm"
+                        rows={5}
+                      />
+                      <Input
+                        value={row.notes}
+                        onChange={(e) => update({ notes: e.target.value })}
+                        placeholder={t('versionNotesPlaceholder')}
+                        aria-label={t('versionNotesLabel')}
+                        className="rounded-xl"
+                      />
+                    </div>
+                  );
+                })}
+                {versionRows.length < MAX_VERSIONS && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setVersionRows((prev) => [
+                        ...prev,
+                        {
+                          ...newVersionRow(
+                            '',
+                            fromEditorSections({ rows: ingredients, sections }).filter((i) => String(i?.name || '').trim()),
+                            instructions.filter((s) => String(s || '').trim()),
+                          ),
+                          name: '',
+                        },
+                      ])
+                    }
+                    className="rounded-full"
+                  >
+                    <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
+                    {t('versionAdd')}
+                  </Button>
+                )}
+              </div>
+            </details>
+
+            {/* Notes & tips (timing, storage, to serve, …) */}
+            <div>
+              <Label htmlFor="page-notes">{t('pageNotesTitle')}</Label>
+              <p className="text-xs text-muted-foreground mt-1">{t('pageNotesHint')}</p>
+              <Textarea
+                id="page-notes"
+                value={pageNotesText}
+                onChange={(e) => setPageNotesText(e.target.value)}
+                placeholder={t('pageNotesPlaceholder')}
+                className="mt-1 rounded-xl"
+                rows={3}
+                data-testid="page-notes-edit"
+              />
             </div>
 
             {/* Submit */}

@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
-import { shoppingListApi, pantryApi, nutritionApi } from '../lib/api';
+import { shoppingListApi, pantryApi, nutritionApi, configApi } from '../lib/api';
+import { SHOP_STORES, shopSearchTerm, shopUrl } from '../lib/shopLinks';
+import { ShopListRun } from '../components/ShopListRun';
 import {
   enqueueShoppingCheck,
   enqueueShoppingOp,
@@ -31,6 +33,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -53,11 +56,13 @@ import {
   Filter,
   Barcode,
   Camera,
+  Store,
 } from 'lucide-react';
 import { Label } from '../components/ui/label';
 import { ReceiptScanner } from '../components/ReceiptScanner';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/utils';
+import { formatIngredientLine } from '../lib/unitConversions';
 
 /** Group shopping items by aisle while keeping original indices for mutations. */
 function groupItemsByAisle(items = [], autoSort = true) {
@@ -91,11 +96,20 @@ function groupItemsByAisle(items = [], autoSort = true) {
 
 export const ShoppingLists = () => {
   const { t } = useLanguage();
+  const [amazonTag, setAmazonTag] = useState(null);
+  useEffect(() => {
+    configApi
+      .getConfig()
+      .then((res) => setAmazonTag(res.data?.amazon_associate_tag || null))
+      .catch(() => {});
+  }, []);
   const { confirmActions } = useAccessibility();
   const { preferences } = useUserPreferences();
   const autoSort = preferences.shoppingListAutoSort !== false;
+  const measurementUnit = preferences.measurementUnit || 'metric';
   const liveRefresh = useLiveRefreshContext();
   const { user } = useAuth();
+  const addingItemRef = useRef(false);
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedList, setSelectedList] = useState(null);
@@ -187,21 +201,22 @@ export const ShoppingLists = () => {
       setPresenceViewers([]);
       return undefined;
     }
+    const send = liveRefresh.send;
     const payload = {
       resource_type: 'shopping_list',
       resource_id: selectedList.id,
       display_name: user?.name || user?.email || 'Someone',
     };
-    liveRefresh.send({ type: 'presence:join', ...payload });
+    send({ type: 'presence:join', ...payload });
     const beat = setInterval(() => {
-      liveRefresh.send({ type: 'presence:heartbeat', ...payload });
+      send({ type: 'presence:heartbeat', ...payload });
     }, 20000);
     return () => {
       clearInterval(beat);
-      liveRefresh.send({ type: 'presence:leave', ...payload });
+      send({ type: 'presence:leave', ...payload });
       setPresenceViewers([]);
     };
-  }, [selectedList?.id, liveRefresh, user?.name, user?.email]);
+  }, [selectedList?.id, liveRefresh?.send, user?.name, user?.email]);
 
   useLiveRefreshEvent(
     EventType.PRESENCE_UPDATED,
@@ -407,7 +422,7 @@ export const ShoppingLists = () => {
     try {
       const res = await shoppingListApi.update(selectedList.id, {
         name: selectedList.name,
-        items: [...selectedList.items, newItem],
+        items: [...(selectedList.items || []), newItem],
       });
       setSelectedList(res.data);
       setLists(lists.map((l) => (l.id === res.data.id ? res.data : l)));
@@ -505,7 +520,7 @@ export const ShoppingLists = () => {
       setPantryDialog(null);
       setPantryExpiry('');
     } catch (error) {
-      toast.error(error.response?.data?.detail || `${t('addToPantry')} — ${t('error')}.`);
+      toast.error(error.response?.data?.detail || `${t('addToPantry')}: ${t('error')}.`);
     } finally {
       setPantrySaving(false);
     }
@@ -513,6 +528,9 @@ export const ShoppingLists = () => {
 
     const handleAddItem = async () => {
     if (!newItemName.trim() || !selectedList) return;
+    // A second Enter before the first save returns used to add the item twice.
+    if (addingItemRef.current) return;
+    addingItemRef.current = true;
 
     const newItem = {
       name: newItemName,
@@ -541,6 +559,8 @@ export const ShoppingLists = () => {
         return;
       }
       toast.error(error.response?.data?.detail || `${t('toastAddItemFailed')} (E-SL005)`);
+    } finally {
+      addingItemRef.current = false;
     }
   };
 
@@ -597,7 +617,7 @@ export const ShoppingLists = () => {
         toast.message(t('offlineQueued'));
         return;
       }
-      toast.error(error.response?.data?.detail || `${t('moveAisle')} — ${t('error')}. (E-SL008)`);
+      toast.error(error.response?.data?.detail || `${t('moveAisle')}: ${t('error')}. (E-SL008)`);
     }
   };
 
@@ -609,7 +629,7 @@ export const ShoppingLists = () => {
       else loadLists();
       toast.success(t('toastSavedAsStaple'));
     } catch (error) {
-      toast.error(error.response?.data?.detail || `${t('markAsStaple')} — ${t('error')}. (E-SL009)`);
+      toast.error(error.response?.data?.detail || `${t('markAsStaple')}: ${t('error')}. (E-SL009)`);
     }
   };
 
@@ -622,7 +642,7 @@ export const ShoppingLists = () => {
       if (res.data.list) applyListUpdate(res.data.list);
       toast.success(res.data.message || t('toastRecipeItemsRemoved'));
     } catch (error) {
-      toast.error(error.response?.data?.detail || `${t('removeItem')} — ${t('error')}. (E-SL010)`);
+      toast.error(error.response?.data?.detail || `${t('removeItem')}: ${t('error')}. (E-SL010)`);
     }
   };
 
@@ -833,19 +853,31 @@ export const ShoppingLists = () => {
                       : 'bg-card border border-border/60 hover:border-laro'
                   }`}
                   onClick={() => setSelectedList(list)}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selectedList?.id === list.id}
+                  onKeyDown={(e) => {
+                    // Only when the row itself has focus (not the delete button inside it).
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedList(list);
+                    }
+                  }}
                 >
                   <div className="flex items-center justify-between gap-2 min-w-0">
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <p className="font-medium truncate">{list.name}</p>
                       {/* text-laro-light is a pastel/dark tint token — unreadable on bg-laro (~1.8:1). Use white/80 on the solid accent. */}
                       <p className={`text-sm truncate ${selectedList?.id === list.id ? 'text-white/80' : 'text-muted-foreground'}`}>
-                        {t('itemsCount', { count: list.items.length })}
+                        {t('itemsCount', { count: list.items?.length ?? 0 })}
                         {list.created_at ? ` · ${formatDate(list.created_at)}` : ''}
                       </p>
                     </div>
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={t('ariaDeleteList')}
                       className={`h-8 w-8 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 ${
                         selectedList?.id === list.id ? 'text-white hover:text-white hover:bg-laro-dark' : ''
                       }`}
@@ -938,6 +970,7 @@ export const ShoppingLists = () => {
                     </Button>
                     <Button
                       onClick={handleAddItem}
+                      aria-label={t('ariaAddItem')}
                       className="rounded-xl bg-laro hover:bg-laro-dark shrink-0"
                       disabled={!newItemName.trim()}
                       data-testid="add-item-btn"
@@ -946,6 +979,14 @@ export const ShoppingLists = () => {
                     </Button>
                   </div>
                 </div>
+
+                {selectedList.items.length > 0 && (
+                  <ShopListRun
+                    rows={aisleGroups.flatMap(([, rows]) => rows)}
+                    amazonTag={amazonTag}
+                    onGotIt={(index) => handleToggleItem(index, true)}
+                  />
+                )}
 
                 {/* Items List — aisle grouped */}
                 <div className="space-y-5" data-testid="shopping-items">
@@ -984,10 +1025,16 @@ export const ShoppingLists = () => {
                               />
                               <div className={`flex-1 min-w-0 overflow-hidden ${item.checked ? 'line-through text-muted-foreground' : ''}`}>
                                 <div className="truncate">
-                                  {(item.amount || item.quantity) && (
-                                    <span className="font-medium">{item.amount || item.quantity}</span>
-                                  )}
-                                  {item.unit && <span> {item.unit}</span>}
+                                  {(() => {
+                                    const rawAmt = item.amount || item.quantity;
+                                    const qtyLine = formatIngredientLine(
+                                      { amount: rawAmt, unit: item.unit, name: '' },
+                                      measurementUnit
+                                    ).trim();
+                                    return qtyLine ? (
+                                      <span className="font-medium">{qtyLine}</span>
+                                    ) : null;
+                                  })()}
                                   <span> {item.name}</span>
                                   {item.in_pantry && (
                                     <span className="ml-2 text-[10px] uppercase tracking-wide text-laro not-italic no-underline">
@@ -1001,12 +1048,49 @@ export const ShoppingLists = () => {
                                   </p>
                                 )}
                               </div>
+                              {!item.checked && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 shrink-0 text-laro"
+                                      aria-label={t('shopAtAria', { item: item.name })}
+                                      onClick={(e) => e.stopPropagation()}
+                                      data-testid="shop-at-btn"
+                                    >
+                                      <Store className="w-4 h-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-64" onClick={(e) => e.stopPropagation()}>
+                                    <DropdownMenuLabel className="font-normal">
+                                      {t('shopAtTitle', { item: shopSearchTerm(item.name) })}
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {SHOP_STORES.map((store) => (
+                                      <DropdownMenuItem key={store.id} asChild>
+                                        <a
+                                          href={shopUrl(store.id, item.name, amazonTag)}
+                                          target="_blank"
+                                          rel={store.id === 'amazon' ? 'noopener noreferrer sponsored' : 'noopener noreferrer'}
+                                        >
+                                          {store.label}
+                                        </a>
+                                      </DropdownMenuItem>
+                                    ))}
+                                    {amazonTag && (
+                                      <p className="px-2 py-1.5 text-[11px] text-muted-foreground">{t('amazonAssociateNote')}</p>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     variant="ghost"
                                     size="icon"
                                     className="h-8 w-8 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-muted-foreground"
+                                    aria-label={t('ariaItemOptions')}
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <MoreVertical className="w-4 h-4" />
@@ -1105,7 +1189,7 @@ export const ShoppingLists = () => {
                     className="rounded-xl"
                   />
                   <p className="text-xs text-muted-foreground mt-1.5">
-                    Optional — great after scanning a receipt for fresh items.
+                    Optional. Great after scanning a receipt for fresh items.
                   </p>
                 </div>
                 <Button

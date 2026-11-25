@@ -19,7 +19,8 @@ Return exactly this format (no markdown, no explanation):
   "category": "Main Course",
   "tags": ["tag1", "tag2"]
 }
-Categories: Breakfast, Lunch, Dinner, Dessert, Appetizer, Snack, Beverage, Other""",
+Categories: Breakfast, Lunch, Dinner, Dessert, Appetizer, Snack, Beverage, Sauce, Other
+Ingredients of a sub-part (a sauce, filling, dough, topping, dressing) get that heading in "group", e.g. {"name": "tahini", "amount": "2", "unit": "tbsp", "group": "Sauce"}; never put the heading in "name". Leave "group" out for the main ingredients.""",
 
     "meal_planning": """You are a meal planning assistant. Create a balanced weekly meal plan using the available recipes.
 Return ONLY valid JSON in this format:

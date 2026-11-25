@@ -1,5 +1,6 @@
 import {
   enrichStepWithAmounts,
+  fixPackageInstructionWording,
   ingredientsForStep,
   nameVariants,
   normalizeCookStepsWithAmounts,
@@ -59,6 +60,30 @@ describe('enrichStepWithAmounts', () => {
     expect(enriched.toLowerCase()).toContain('20 g butter');
   });
 
+  it('does not inject weight before "standard package" phrasing', () => {
+    const step =
+      'Bake according to standard package instructions (typically 20-30 minutes) and cool.';
+    const ingredients = [
+      { name: 'standard chocolate brownie mix', amount: '375', unit: 'g' },
+    ];
+    const enriched = enrichStepWithAmounts(step, ingredients);
+    expect(enriched.toLowerCase()).not.toMatch(/375\s*g\s+standard/);
+    expect(enriched.toLowerCase()).toContain('standard package');
+  });
+
+  it('names the boxed product for package bake steps', () => {
+    const step =
+      'Bake according to standard package instructions (typically 20-30 minutes) and cool.';
+    const ingredients = [
+      { name: 'standard chocolate brownie mix', amount: '375', unit: 'g' },
+    ];
+    const fixed = fixPackageInstructionWording(step, ingredients);
+    expect(fixed.toLowerCase()).toContain(
+      'according to the standard chocolate brownie mix package'
+    );
+    expect(fixed.toLowerCase()).not.toMatch(/375\s*g/);
+  });
+
   it('does not double amounts already in the step', () => {
     const step = 'Add 500 g potatoes to the bowl.';
     const ingredients = [{ name: 'potatoes', amount: '500', unit: 'g' }];
@@ -94,5 +119,43 @@ describe('ingredientsForStep', () => {
     expect(ingredientsForStep('Preheat the oven.', [{ name: 'butter', amount: '20', unit: 'g' }])).toEqual(
       []
     );
+  });
+});
+
+describe('section prefixes and stacked amounts', () => {
+  const pesto = [
+    { name: 'Basil Pesto: fresh basil', amount: '1', unit: 'bunch' },
+    { name: 'Basil Pesto: pine nuts', amount: '75', unit: 'g' },
+    { name: 'spaghetti', amount: '400', unit: 'g' },
+  ];
+
+  it('leaves a sub-section name alone', () => {
+    const step = 'Blitz all the Basil Pesto ingredients until smooth.';
+    expect(enrichStepWithAmounts(step, pesto)).toBe(step);
+  });
+
+  it('never stacks two amounts in front of one word', () => {
+    const out = enrichStepWithAmounts('Blitz all the Basil Pesto ingredients, then toss with the spaghetti.', [
+      { name: 'basil', amount: '1', unit: 'bunch' },
+      { name: 'basil oil', amount: '75', unit: 'g' },
+      { name: 'spaghetti', amount: '400', unit: 'g' },
+    ]);
+    expect(out).not.toMatch(/bunch\s+75/);
+    expect(out).toContain('Basil Pesto ingredients');
+    expect(out).toContain('400 g spaghetti');
+  });
+
+  it('still injects for the ingredient after its section prefix', () => {
+    const out = enrichStepWithAmounts('Toast the pine nuts.', pesto);
+    expect(out).toContain('75 g pine nuts');
+  });
+
+  it('skips heading rows like "For the basil pesto:"', () => {
+    const step = 'Spoon over the basil pesto.';
+    const out = enrichStepWithAmounts(step, [
+      { name: 'For the basil pesto:', amount: '', unit: '' },
+      { name: 'basil', amount: '1', unit: 'bunch' },
+    ]);
+    expect(out).toBe(step);
   });
 });

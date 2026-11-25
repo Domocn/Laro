@@ -157,7 +157,7 @@ export function VetoReplacementBanner({
                             <span className="text-xs">
                               <span className="font-medium">{s.name}</span>
                               {s.reason ? (
-                                <span className="text-muted-foreground"> — {s.reason}</span>
+                                <span className="text-muted-foreground">: {s.reason}</span>
                               ) : null}
                             </span>
                             {typeof onApply === 'function' && (

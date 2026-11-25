@@ -15,7 +15,11 @@ from models import (
     GroceryGenerateResponse,
     FromMealPlanRequest,
     FromMealPlanResponse,
+    RecipeSelection,
 )
+from services.recipe_variants import clean_version_name, ingredients_for_choice
+from utils.ingredient_groups import split_ingredient_group
+from utils.recipe_fields import ensure_list_field
 from database.websocket_manager import ws_manager, EventType
 from utils.activity_logger import log_action
 from utils.security import sanitize_error_message
@@ -401,11 +405,25 @@ async def delete_shopping_item(
 
 
 @router.post("/from-recipes")
-async def generate_shopping_list_from_recipes(recipe_ids: List[str], user: dict = Depends(get_current_user)):
-    """Generate a shopping list from selected recipes (merged + aisle-sorted)."""
+async def generate_shopping_list_from_recipes(
+    recipe_ids: List[str],
+    recipe_version: Optional[str] = None,
+    low_fodmap: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    """Generate a shopping list from selected recipes (merged + aisle-sorted).
+
+    ``recipe_version`` / ``low_fodmap`` (query) shop the version shown on the recipe page."""
+    selections = None
+    if recipe_version or low_fodmap:
+        selections = [
+            RecipeSelection(recipe_id=rid, recipe_version=recipe_version, low_fodmap=low_fodmap)
+            for rid in recipe_ids
+        ]
     generated = await generate_grocery_list(
         GroceryGenerateRequest(
             recipe_ids=recipe_ids,
+            selections=selections,
             exclude_pantry=True,
             combine_quantities=True,
             assign_aisles=True,
@@ -457,6 +475,7 @@ async def shopping_list_from_meal_plan(
         plans = [p for p in plans if (p.get("meal_type") or "").lower() in wanted]
 
     recipe_ids = []
+    selections = []
     seen = set()
     for plan in plans:
         # Skip note/leftover placeholders — they have nothing to shop
@@ -464,9 +483,15 @@ async def shopping_list_from_meal_plan(
         if entry_type != "recipe":
             continue
         rid = plan.get("recipe_id")
-        if rid and rid not in seen:
-            seen.add(rid)
+        if not rid:
+            continue
+        if rid not in recipe_ids:
             recipe_ids.append(rid)
+        # Same recipe planned as two versions (or with / without Low FODMAP) shops both.
+        choice = (rid, clean_version_name(plan.get("recipe_version")), bool(plan.get("low_fodmap")))
+        if choice not in seen:
+            seen.add(choice)
+            selections.append(RecipeSelection(recipe_id=choice[0], recipe_version=choice[1], low_fodmap=choice[2]))
 
     if not recipe_ids:
         raise HTTPException(
@@ -478,6 +503,7 @@ async def shopping_list_from_meal_plan(
     generated = await generate_grocery_list(
         GroceryGenerateRequest(
             recipe_ids=recipe_ids,
+            selections=selections,
             exclude_pantry=data.exclude_pantry,
             combine_quantities=data.combine_quantities,
             assign_aisles=data.assign_aisles,
@@ -1110,6 +1136,48 @@ def combine_quantities(items: list) -> list:
     return list(combined.values())
 
 
+_PREP_WORDS = re.compile(
+    r"\b(chopped|diced|sliced|minced|crushed|grated|peeled|halved|quartered|shredded|"
+    r"finely|roughly|thinly|thickly|to taste|optional|rinsed|drained|softened|melted|"
+    r"beaten|cubed|trimmed|deseeded|seeded|torn|zested|juiced|at room temperature)\b",
+    re.IGNORECASE,
+)
+
+
+def _strip_prep_suffix(name: str) -> str:
+    """'onion, finely chopped' -> 'onion' so it merges with plain 'onion' on the shopping list.
+    Only drops the part after a comma when it is preparation wording (keeps 'salt, flaky')."""
+    if "," not in name:
+        return name
+    head, tail = name.split(",", 1)
+    if head.strip() and _PREP_WORDS.search(tail):
+        return head.strip()
+    return name
+
+
+def shopping_name(name: str) -> str:
+    """The food to buy: no section ("Basil Pesto: almonds" merges with other almonds) and no
+    preparation note."""
+    return _strip_prep_suffix(split_ingredient_group(name)[1].strip())
+
+
+def _recipe_ingredient_sets(recipes: List[dict], selections) -> List[tuple]:
+    """(recipe, ingredients) per planned choice: each selection's version with Low FODMAP
+    swaps applied; recipes with no selection shop their Original ingredients once."""
+    by_id = {r["id"]: r for r in recipes}
+    out = []
+    chosen = set()
+    for sel in selections or []:
+        recipe = by_id.get(sel.recipe_id)
+        if recipe:
+            chosen.add(sel.recipe_id)
+            out.append((recipe, ingredients_for_choice(recipe, sel.recipe_version, bool(sel.low_fodmap))))
+    for recipe in recipes:
+        if recipe["id"] not in chosen:
+            out.append((recipe, ensure_list_field(recipe.get("ingredients"))))
+    return out
+
+
 @router.post("/generate", response_model=GroceryGenerateResponse)
 async def generate_grocery_list(
     data: GroceryGenerateRequest,
@@ -1143,12 +1211,13 @@ async def generate_grocery_list(
     )
 
     def _apply_alias_name(name: str) -> str:
+        name = shopping_name(name)
         key = normalize_ingredient_key(name)
         return alias_map.get(key) or name
 
     all_items = []
-    for recipe in recipes:
-        for ing in recipe.get("ingredients", []):
+    for recipe, ingredients in _recipe_ingredient_sets(recipes, data.selections):
+        for ing in ingredients:
             if isinstance(ing, dict):
                 name = (ing.get("name") or "").strip()
                 if not name:

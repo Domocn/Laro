@@ -46,6 +46,18 @@ function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Single-word name variants too ambiguous for quantity injection (e.g. "standard package"). */
+const WEAK_INJECTION_VARIANTS = new Set([
+  'standard',
+  'regular',
+  'classic',
+  'original',
+  'generic',
+  'typical',
+  'normal',
+  'plain',
+]);
+
 const NOISE_WORDS = new Set([
   'fresh',
   'dried',
@@ -99,6 +111,12 @@ const NOISE_WORDS = new Set([
   'canned',
   'jarred',
   'packed',
+  'standard',
+  'regular',
+  'classic',
+  'original',
+  'generic',
+  'typical',
   'of',
   'and',
   'or',
@@ -203,6 +221,28 @@ export function nameVariants(name, unit = '') {
 }
 
 /**
+ * "Basil Pesto: fresh basil" -> { section: "Basil Pesto", name: "fresh basil" }.
+ * Names without a short "Section:" prefix come back unchanged (section '').
+ * @param {string} rawName
+ */
+export function splitSectionPrefix(rawName) {
+  const text = String(rawName || '').trim();
+  const m = text.match(/^([^:]{2,40}):\s*(.+)$/);
+  if (!m || /\d/.test(m[1])) return { section: '', name: text };
+  return { section: m[1].trim(), name: m[2].trim() };
+}
+
+/** [start, end) ranges of section names ("Basil Pesto") inside a step. */
+function sectionRanges(text, sectionNames) {
+  const ranges = [];
+  for (const section of sectionNames) {
+    const re = new RegExp(`\\b${escapeRegex(section)}\\b`, 'gi');
+    for (let m = re.exec(text); m; m = re.exec(text)) ranges.push([m.index, m.index + m[0].length]);
+  }
+  return ranges;
+}
+
+/**
  * Insert ingredient amounts into a step when the ingredient name appears
  * without a nearby quantity. Example: "chop the potatoes" + 500g potatoes
  * → "chop the 500 g potatoes".
@@ -218,21 +258,51 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
     return step || '';
   }
 
+  // "Basil Pesto: fresh basil" — the part before the colon names a sub-section of the recipe,
+  // not the ingredient. Match on the part after it, and never inject into the section name
+  // itself ("Blitz all the Basil Pesto ingredients" must stay as written).
+  const sectionNames = new Set();
+  for (const ing of ingredients) {
+    // Ingredient sections ({ group: "Basil Pesto" }) name a part of the recipe too.
+    const group = ing && typeof ing === 'object' ? String(ing.group || '').trim() : '';
+    if (group) sectionNames.add(group.replace(/^for the\s+/i, '').toLowerCase());
+    // Heading rows ("For the basil pesto:") with no amount also name a section.
+    const heading = ing && typeof ing === 'object' && !ing.amount && !ing.unit ? String(ing.name || '').trim() : '';
+    if (heading.endsWith(':')) {
+      const label = heading.slice(0, -1).replace(/^for the\s+/i, '').trim();
+      if (label) sectionNames.add(label.toLowerCase());
+    }
+  }
   const usable = ingredients
     .filter((ing) => ing && typeof ing === 'object' && ing.name && (ing.amount || ing.unit))
-    .map((ing) => ({
-      name: String(ing.name).trim(),
-      qty: formatIngredientQuantity(ing, measurementUnit),
-      variants: nameVariants(ing.name, ing.unit),
-    }))
+    .map((ing) => {
+      const { section, name } = splitSectionPrefix(ing.name);
+      if (section) sectionNames.add(section.toLowerCase());
+      return {
+        name: String(ing.name).trim(),
+        qty: formatIngredientQuantity(ing, measurementUnit),
+        variants: nameVariants(name, ing.unit),
+      };
+    })
     .filter((ing) => ing.name && ing.qty && ing.variants.length);
 
   if (!usable.length) return step;
 
   /** @type {{ variant: string, qty: string, fullName: string }[]} */
   const needles = [];
+  // A fuzzy variant shared by two ingredients ("basil" from "basil" and "basil oil", "oil" from
+  // olive + sesame oil) can't say which amount it means — only use it when it is a full name.
+  const owners = new Map();
   for (const ing of usable) {
     for (const variant of ing.variants) {
+      if (!owners.has(variant)) owners.set(variant, new Set());
+      owners.get(variant).add(ing.name);
+    }
+  }
+  for (const ing of usable) {
+    const exact = splitSectionPrefix(ing.name).name.toLowerCase();
+    for (const variant of ing.variants) {
+      if (owners.get(variant).size > 1 && variant !== exact) continue;
       needles.push({ variant, qty: ing.qty, fullName: ing.name });
     }
   }
@@ -244,6 +314,13 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
   for (const { variant, qty, fullName } of needles) {
     if (injectedNames.has(fullName)) continue;
 
+    if (
+      !variant.includes(' ') &&
+      WEAK_INJECTION_VARIANTS.has(variant.toLowerCase())
+    ) {
+      continue;
+    }
+
     const escapedVariant = escapeRegex(variant);
     const escapedQty = escapeRegex(qty);
 
@@ -253,14 +330,30 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
       continue;
     }
 
-    const re = new RegExp(`\\b(${escapedVariant})\\b`, 'i');
-    const match = re.exec(result);
+    const re = new RegExp(`\\b(${escapedVariant})\\b`, 'gi');
+    const blocked = sectionRanges(result, sectionNames);
+    let match = null;
+    for (let m = re.exec(result); m; m = re.exec(result)) {
+      const start = m.index;
+      const end = start + m[1].length;
+      if (!blocked.some(([s, e]) => start < e && end > s)) {
+        match = m;
+        break;
+      }
+    }
     if (!match) continue;
 
     const idx = match.index;
+    const afterMatch = result.slice(idx + match[1].length);
+    // "standard package instructions" — not a bare ingredient mention
+    if (/^\s+package\b/i.test(afterMatch)) continue;
+    // "all the Basil Pesto ingredients" names a group of ingredients, not this one
+    if (/^(?:\s+[a-z-]+){0,2}\s+ingredients\b/i.test(afterMatch)) continue;
+
     const before = result.slice(Math.max(0, idx - 28), idx);
-    // If there's already a number + unit right before the name, leave it
-    if (/\d[\d./]*\s*(?:g|kg|ml|l|oz|lb|tsp|tbsp|cups?|cloves?|leaves?)?\s*$/i.test(before)) {
+    // A quantity is already right before the name ("500 g", "1 bunch", "2 large") — leave it,
+    // so amounts never stack ("1 bunch 75 g basil").
+    if (/\d[\d./]*\s*(?:[a-z]+\.?)?\s*$/i.test(before)) {
       injectedNames.add(fullName);
       continue;
     }
@@ -284,6 +377,38 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
   return result.replace(/\s+/g, ' ').trim();
 }
 
+const PACKAGE_INSTRUCTION_RE =
+  /according to (?:the )?(?:(?:\d[\d./]*\s*(?:g|kg|ml|l|oz|lb|)\s+)?standard|standard)\s+package\b/i;
+
+/**
+ * "Bake according to standard package…" → name the boxed product from this step's ingredients.
+ * @param {string} step
+ * @param {Array<{name?: string, amount?: string|number, unit?: string}|string>} ingredients
+ * @param {string} [measurementUnit]
+ */
+export function fixPackageInstructionWording(step, ingredients, measurementUnit = 'metric') {
+  if (!step || typeof step !== 'string' || !PACKAGE_INSTRUCTION_RE.test(step)) {
+    return step || '';
+  }
+
+  const stepIngredients = ingredientsForStep(step, ingredients, measurementUnit);
+  let productName = stepIngredients[0]?.name;
+
+  if (!productName && Array.isArray(ingredients)) {
+    const boxed = ingredients
+      .map((ing) => (typeof ing === 'string' ? { name: ing } : ing))
+      .filter((ing) => ing?.name && /\b(mix|kit|box)\b/i.test(String(ing.name)));
+    productName = boxed[0]?.name;
+  }
+
+  if (!productName) return step;
+
+  return step.replace(
+    PACKAGE_INSTRUCTION_RE,
+    `according to the ${productName} package`
+  );
+}
+
 /**
  * @param {unknown} instructions
  * @param {Array} [ingredients]
@@ -291,7 +416,11 @@ export function enrichStepWithAmounts(step, ingredients, measurementUnit = 'metr
  */
 export function normalizeCookStepsWithAmounts(instructions, ingredients, measurementUnit = 'metric') {
   return normalizeCookSteps(instructions).map((step) =>
-    enrichStepWithAmounts(step, ingredients, measurementUnit)
+    fixPackageInstructionWording(
+      enrichStepWithAmounts(step, ingredients, measurementUnit),
+      ingredients,
+      measurementUnit
+    )
   );
 }
 

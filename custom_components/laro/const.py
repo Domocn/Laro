@@ -8,7 +8,7 @@ CONF_TOKEN = "token"
 DEFAULT_SCAN_INTERVAL = 300  # 5 minutes
 
 # Platforms
-PLATFORMS = ["sensor", "calendar"]
+PLATFORMS = ["sensor", "calendar", "todo"]
 
 # Services
 SERVICE_ADD_TO_SHOPPING_LIST = "add_to_shopping_list"

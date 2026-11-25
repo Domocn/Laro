@@ -1,7 +1,7 @@
 version: '3.8'
 
 # ============================================
-# Laro - Your Kitchen Sidekick
+# Laro - Local, Archived, Recipes, Organised
 # Simple deployment using pre-built images
 # ============================================
 # 
@@ -88,7 +88,7 @@ services:
       # When true, Settings shows managed "Laro AI" (no BYO provider picker).
       # laro.food production must set IS_CLOUD=true alongside Ollama Cloud.
       - IS_CLOUD=${IS_CLOUD:-false}
-      - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-cowandom79@gmail.com}
+      - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-}
       - REVENUECAT_WEBHOOK_AUTH=${REVENUECAT_WEBHOOK_AUTH:-}
       - REVENUECAT_WEBHOOK_SECRET=${REVENUECAT_WEBHOOK_SECRET:-}
       # Secret API key (sk_…) — admin grant/revoke ↔ RC promotional entitlements
@@ -102,6 +102,12 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-noreply@laro.food}
+      # Two-way support tickets. SUPPORT_FROM_EMAIL is the user-visible address;
+      # inbound replies + cold mail route to tickets via the Resend Receiving webhook.
+      - SUPPORT_FROM_EMAIL=${SUPPORT_FROM_EMAIL:-app@laro.food}
+      - SUPPORT_INBOUND_DOMAIN=${SUPPORT_INBOUND_DOMAIN:-}
+      - SUPPORT_NOTIFY_OWNERS=${SUPPORT_NOTIFY_OWNERS:-true}
+      - RESEND_WEBHOOK_SECRET=${RESEND_WEBHOOK_SECRET:-}
       - EMAIL_LOGO_URL=${EMAIL_LOGO_URL:-}
       - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-http://localhost:3000}
       # Google OAuth (login) + Google Health nutrition write
@@ -162,7 +168,7 @@ services:
       # When true, Settings shows managed "Laro AI" (no BYO provider picker).
       # laro.food production must set IS_CLOUD=true alongside Ollama Cloud.
       - IS_CLOUD=${IS_CLOUD:-false}
-      - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-cowandom79@gmail.com}
+      - LARO_OWNER_EMAILS=${LARO_OWNER_EMAILS:-}
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
       - VAPID_CLAIM_EMAIL=${VAPID_CLAIM_EMAIL:-mailto:noreply@laro.food}

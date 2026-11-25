@@ -26,9 +26,11 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLanguage } from '../context/LanguageContext';
+import { useAccessibility, confirmDestructive } from '../context/AccessibilityContext';
 
 export const SecuritySettings = () => {
   const { t } = useLanguage();
+  const { confirmActions } = useAccessibility();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -211,7 +213,7 @@ export const SecuritySettings = () => {
   };
 
   const handleRevokeAllSessions = async () => {
-    if (!window.confirm(t('confirmRevokeAllSessions'))) return;
+    if (!confirmDestructive(confirmActions, t('confirmRevokeAllSessions'))) return;
     
     try {
       await securityApi.revokeAllSessions(true);
@@ -247,7 +249,7 @@ export const SecuritySettings = () => {
   };
 
   const handleUnlinkAccount = async (provider) => {
-    if (!window.confirm(t('confirmUnlinkAccount', { provider }))) return;
+    if (!confirmDestructive(confirmActions, t('confirmUnlinkAccount', { provider }))) return;
     
     try {
       await oauthApi.unlinkAccount(provider);
@@ -275,7 +277,7 @@ export const SecuritySettings = () => {
   };
 
   const handleUnlinkGoogleHealth = async () => {
-    if (!window.confirm('Disconnect Google Health? Future mark-cooked meals will not sync nutrition to Fitbit / Google Health.')) {
+    if (!confirmDestructive(confirmActions, 'Disconnect Google Health? Future mark-cooked meals will not sync nutrition to Fitbit / Google Health.')) {
       return;
     }
     try {
@@ -301,7 +303,7 @@ export const SecuritySettings = () => {
   };
 
   const handleDeleteGoogleHealthLog = async (logId) => {
-    if (!window.confirm('Remove this meal from Google Health / Fitbit? Fitbit often cannot delete Laro-written logs itself — this is the supported undo.')) {
+    if (!confirmDestructive(confirmActions, 'Remove this meal from Google Health / Fitbit? Fitbit often cannot delete Laro-written logs itself. This is the supported undo.')) {
       return;
     }
     setDeletingLogId(logId);
@@ -662,14 +664,13 @@ export const SecuritySettings = () => {
                     {t('unlink')}
                   </Button>
                 ) : (
-                  <Button
-                    size="sm"
-                    onClick={handleLinkGoogle}
-                    disabled={linkingAccount === 'google'}
-                    className="rounded-full bg-laro hover:bg-laro-dark"
+                  // Google sign-in is switched off for now (see Auth.jsx)
+                  <span
+                    className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground"
+                    aria-label={t('googleSignInComingSoon')}
                   >
-                    {linkingAccount === 'google' ? <Loader2 className="w-4 h-4 animate-spin" /> : t('connect')}
-                  </Button>
+                    {t('comingSoon')}
+                  </span>
                 )
               ) : (
                 <span className="text-xs text-muted-foreground">{t('notConfigured')}</span>
@@ -777,7 +778,7 @@ export const SecuritySettings = () => {
               {googleHealth.linked && googleHealthLogs.length > 0 && (
                 <div className="mt-3 space-y-2">
                   <p className="text-xs text-muted-foreground px-1">
-                    Recent Google Health logs — delete here if Fitbit says it can’t remove them
+                    Recent Google Health logs. Delete here if Fitbit says it can’t remove them
                   </p>
                   {googleHealthLogs.slice(0, 10).map((log) => (
                     <div

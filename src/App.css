@@ -117,6 +117,8 @@
     [data-testid="add-to-meal-plan"],
     [data-testid="add-to-shopping"],
     [data-testid="share-recipe"],
+    [data-testid="share-recipe-header"],
+    [data-testid="share-recipe-actions"],
     [data-testid="edit-recipe-btn"],
     [data-testid="delete-recipe-btn"] {
         display: none !important;

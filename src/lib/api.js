@@ -189,11 +189,18 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      debug.auth.warn('Unauthorized response, clearing auth data');
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      // Use hash for HashRouter compatibility
-      window.location.hash = '#/login';
+      const reqUrl = String(error.config?.url || '');
+      const isAuthAttempt = /\/auth\/(login|register|verify-email|resend-verification)/.test(reqUrl);
+      if (!isAuthAttempt) {
+        debug.auth.warn('Unauthorized response, clearing auth data');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('laro:unauthorized'));
+        }
+        // Use hash for HashRouter compatibility
+        window.location.hash = '#/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -265,6 +272,8 @@ export const recipeApi = {
   getOne: (id) => api.get(`/recipes/${id}`),
   create: (data) => api.post('/recipes', data),
   update: (id, data) => api.put(`/recipes/${id}`, data),
+  /** Turn older "Low FODMAP adaptation: …" steps into structured swaps (own recipes only). */
+  backfillFodmap: () => api.post('/recipes/backfill-fodmap'),
   delete: (id) => api.delete(`/recipes/${id}`),
   bulkDelete: (recipeIds) =>
     api.delete('/recipes/bulk', { data: { recipe_ids: recipeIds } }),
@@ -277,6 +286,9 @@ export const recipeApi = {
   },
   toggleFavorite: (id) => api.post(`/recipes/${id}/favorite`),
   getScaled: (id, servings) => api.get(`/recipes/${id}/scaled`, { params: { servings } }),
+  getIngredientMacros: (id) => api.get(`/recipes/${id}/ingredient-macros`),
+  // { version, low_fodmap } -> { nutrition, ingredient_macros } for the shown version
+  macrosPreview: (id, body) => api.post(`/recipes/${id}/macros-preview`, body),
   getPrint: (id) => api.get(`/recipes/${id}/print`),
   // Personal rating
   getRating: (id) => api.get(`/recipes/${id}/rating`),
@@ -304,11 +316,23 @@ export const favoritesApi = {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Poll GET /ai/imports/:id until the async import finishes (or times out). */
-async function pollImportResult(importId, { timeoutMs = 300000, intervalMs = 2000 } = {}) {
+async function pollImportResult(importId, { timeoutMs = 300000, intervalMs = 2000, signal } = {}) {
   const started = Date.now();
   let lastError = null;
   while (Date.now() - started < timeoutMs) {
+    if (signal?.aborted) {
+      const err = new Error('Import cancelled');
+      err.code = 'IMPORT_CANCELLED';
+      err.response = { status: 499, data: { detail: 'Import cancelled' } };
+      throw err;
+    }
     await sleep(intervalMs);
+    if (signal?.aborted) {
+      const err = new Error('Import cancelled');
+      err.code = 'IMPORT_CANCELLED';
+      err.response = { status: 499, data: { detail: 'Import cancelled' } };
+      throw err;
+    }
     try {
       const st = await api.get(`/ai/imports/${importId}`, { timeout: 20000 });
       const data = st.data || {};
@@ -323,16 +347,24 @@ async function pollImportResult(importId, { timeoutMs = 300000, intervalMs = 200
           status: 200,
         };
       }
-      if (data.status === 'failed') {
-        const err = new Error(data.error || 'Import failed');
+      if (data.status === 'failed' || data.status === 'cancelled') {
+        const err = new Error(data.error || (data.status === 'cancelled' ? 'Import cancelled' : 'Import failed'));
+        err.code = data.status === 'cancelled' ? 'IMPORT_CANCELLED' : 'IMPORT_FAILED';
         err.response = {
-          status: 422,
-          data: { detail: data.error || 'Could not parse recipe from text. Please check the format.' },
+          status: data.status === 'cancelled' ? 499 : 422,
+          data: {
+            detail:
+              data.error ||
+              (data.status === 'cancelled'
+                ? 'Import cancelled'
+                : 'Could not parse recipe from text. Please check the format.'),
+          },
         };
         throw err;
       }
       // still importing
     } catch (e) {
+      if (e?.code === 'IMPORT_CANCELLED' || e?.code === 'IMPORT_FAILED') throw e;
       if (e?.response?.status === 404) {
         lastError = e;
         continue;
@@ -353,24 +385,37 @@ async function pollImportResult(importId, { timeoutMs = 300000, intervalMs = 200
   throw err;
 }
 
+export const recommendationsApi = {
+  /** Recommend recipes from the user's library. */
+  recommend: ({ description = '', ingredients = [], dietaryNeeds = [] }) =>
+    api.post('/recommendations', { description, ingredients, dietary_needs: dietaryNeeds }, { timeout: 120000 }),
+};
+
 export const aiApi = {
   importUrl: (url) => api.post('/ai/import-url', { url }, { timeout: 120000 }),
   /**
    * Paste-text import. Backend returns 202 + import_id quickly; we poll until
    * the LLM finishes so Cloudflare's ~100s limit cannot kill long parses.
+   * Pass `{ signal, onStarted }` to support Cancel in the UI.
    */
-  importText: async (text) => {
+  importText: async (text, options = {}) => {
+    const { signal, onStarted } = options;
     const res = await api.post('/ai/import-text', { text }, { timeout: 30000 });
     const body = res.data || {};
     if (res.status === 202 || body.status === 'importing') {
       if (!body.import_id) {
         throw new Error('Import started but no import_id returned');
       }
-      return pollImportResult(body.import_id);
+      if (typeof onStarted === 'function') onStarted(body.import_id);
+      return pollImportResult(body.import_id, { signal });
     }
     // Backward-compatible sync response
     return res;
   },
+  cancelImport: (importId) =>
+    api.post(`/ai/imports/${importId}/cancel`, {}, { timeout: 15000 }),
+  retryImport: (importId) =>
+    api.post(`/ai/imports/${importId}/retry`, {}, { timeout: 30000 }),
   importFeedback: (payload) => api.post('/ai/import-feedback', payload, { timeout: 30000 }),
   getImport: (importId) => api.get(`/ai/imports/${importId}`, { timeout: 20000 }),
   listImports: ({ limit = 50, offset = 0, status } = {}) =>
@@ -430,6 +475,10 @@ export const aiApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 180000,
     }),
+  /** Whole cookbook from a Google Drive share link — runs in the background; poll getImportJob. */
+  importPdfFromDrive: (payload) => api.post('/ai/import-pdf-drive', payload, { timeout: 30000 }),
+  // skipCache: progress changes every few seconds; the 5-minute GET cache froze it on "Downloading…".
+  getImportJob: (jobId) => api.get(`/ai/import-jobs/${jobId}`, { timeout: 15000, skipCache: true }),
   /** Import a weekly meal plan from a public URL (Huel guides, meal blogs, etc.) */
   importMealPlanUrl: (payload) =>
     api.post('/ai/import-meal-plan-url', payload, { timeout: 120000 }),
@@ -479,7 +528,8 @@ export const shoppingListApi = {
   create: (data) => api.post('/shopping-lists', data),
   update: (id, data) => api.put(`/shopping-lists/${id}`, data),
   delete: (id) => api.delete(`/shopping-lists/${id}`),
-  fromRecipes: (recipeIds) => api.post('/shopping-lists/from-recipes', recipeIds),
+  /** opts: { recipe_version, low_fodmap } — shop the version shown on the recipe page. */
+  fromRecipes: (recipeIds, opts) => api.post('/shopping-lists/from-recipes', recipeIds, { params: opts }),
   /** Honeydew-style: meal plan week → merged aisle list */
   fromMealPlan: (data) => api.post('/shopping-lists/from-meal-plan', data),
   generate: (data) => api.post('/shopping-lists/generate', data),
@@ -570,12 +620,31 @@ export const promptsApi = {
 export const cookingApi = {
   getTonightSuggestions: () => api.get('/cooking/tonight'),
   startSession: (recipeId) => api.post('/cooking/session', { recipe_id: recipeId }),
-  completeSession: (sessionId, feedback, notes = '') =>
-    api.post(`/cooking/session/${sessionId}/complete`, { feedback, notes }),
+  // nutritionOverride: per-serving totals the cook checked ("Check the numbers") for this cook.
+  completeSession: (sessionId, feedback, notes = '', nutritionOverride = null) =>
+    api.post(`/cooking/session/${sessionId}/complete`, {
+      feedback,
+      notes,
+      ...(nutritionOverride ? { nutrition_override: nutritionOverride } : {}),
+    }),
   submitFeedback: (recipeId, feedback) => api.post('/cooking/feedback', { recipe_id: recipeId, feedback }),
-  markCooked: (recipeId, { notes = '', feedback = null } = {}) =>
-    api.post(`/cooking/recipes/${recipeId}/mark-cooked`, { notes, feedback }),
+  markCooked: (recipeId, { notes = '', feedback = null, nutritionOverride = null } = {}) =>
+    api.post(`/cooking/recipes/${recipeId}/mark-cooked`, {
+      notes,
+      feedback,
+      ...(nutritionOverride ? { nutrition_override: nutritionOverride } : {}),
+    }),
   getStats: () => api.get('/cooking/stats'),
+};
+
+// "Check the numbers" before / while cooking (backend/routers/confirmed_lines.py).
+export const checkNumbersApi = {
+  get: (recipeId, { version = '', lowFodmap = false } = {}) =>
+    api.get(`/recipes/${recipeId}/check-numbers`, {
+      params: { ...(version ? { version } : {}), low_fodmap: lowFodmap ? 'true' : 'false' },
+    }),
+  estimate: (recipeId, body) => api.post(`/recipes/${recipeId}/check-numbers/estimate`, body),
+  save: (recipeId, body) => api.put(`/recipes/${recipeId}/confirmed-lines`, body),
 };
 
 // Server Config
@@ -594,6 +663,10 @@ export { isUsingProxy };
 
 // Admin APIs
 export const adminApi = {
+  // Error log (server 500s + web crashes)
+  listErrors: (days = 7) => api.get('/admin/errors', { params: { days } }),
+  getErrorSamples: (fingerprint) => api.get(`/admin/errors/${fingerprint}`),
+  getLinks: (days = 7) => api.get('/admin/links', { params: { days } }),
   // User Management
   listUsers: (params) => api.get('/admin/users', { params }),
   getUser: (userId) => api.get(`/admin/users/${userId}`),
@@ -614,6 +687,10 @@ export const adminApi = {
   listInviteCodes: () => api.get('/admin/invite-codes'),
   createInviteCode: (data) => api.post('/admin/invite-codes', data),
   deleteInviteCode: (codeId) => api.delete(`/admin/invite-codes/${codeId}`),
+  listPromoCodes: () => api.get('/admin/promo-codes'),
+  createPromoCode: (data) => api.post('/admin/promo-codes', data),
+  updatePromoCode: (codeId, data) => api.patch(`/admin/promo-codes/${codeId}`, data),
+  deletePromoCode: (codeId) => api.delete(`/admin/promo-codes/${codeId}`),
   
   // IP Access Rules
   getIPRules: () => api.get('/admin/ip-rules'),
@@ -760,6 +837,11 @@ export const importApi = {
   importFromUrl: (url) => api.post('/ai/import-url', { url }, { timeout: 120000 }),
   bulkImport: (urls) => api.post('/import/bulk', { urls }),
   importFromText: (text, title) => api.post('/import/text', { text, title }),
+  migrateStatus: () => api.get('/import/migrate/status'),
+  migrateClosingApps: (text, source = 'mealime') =>
+    api.post('/import/migrate', { text, source }, { timeout: 180000 }),
+  planMigratedWeek: (recipeIds, extra = {}) =>
+    api.post('/import/migrate/plan-week', { recipe_ids: recipeIds, ...extra }),
 };
 
 // Voice Cooking APIs
@@ -819,6 +901,8 @@ export const supportApi = {
   addMessage: (ticketId, body) => api.post(`/support/tickets/${ticketId}/messages`, { body }),
   update: (ticketId, data) => api.patch(`/support/tickets/${ticketId}`, data),
   adminList: (params) => api.get('/support/admin/tickets', { params }),
+  // Staff-initiated email to any address (opens a ticket + sends the first message).
+  adminMessage: (data) => api.post('/support/admin/message', data),
 };
 
 // API Tokens APIs

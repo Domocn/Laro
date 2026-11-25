@@ -1,0 +1,1268 @@
+{
+ "source": "Open Food Facts (https://world.openfoodfacts.org), products sold in the United Kingdom",
+ "licence": "Open Database Licence (ODbL 1.0); contents Database Contents Licence (DbCL 1.0)",
+ "built": "2026-10-22",
+ "method": "Per-100 g median of label values across >= 8 UK products per food, filtered by product name and category (no cooked pouches, ready meals or flavoured variants). Carbohydrate is available carbohydrate (UK/EU labelling). Built by backend/scripts/build_uk_labels.py.",
+ "foods": {
+  "houmous": {
+   "aliases": [
+    "houmous",
+    "hummus",
+    "humus",
+    "hommus",
+    "houmus",
+    "classic houmous",
+    "classic hummus"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 267.0,
+   "protein": 6.7,
+   "carbs": 10.9,
+   "fat": 20.7,
+   "fiber": 4.9,
+   "sugars": 0.7,
+   "saturates": 2.3,
+   "salt": 0.9,
+   "products": 127,
+   "search": [
+    "houmous",
+    "hummus"
+   ],
+   "examples": [
+    "Aldi Houmous xxl",
+    "TESCO Houmous",
+    "Ramonas Heavenly Houmous Jalepeno Houmous",
+    "Iceland Houmous",
+    "By sainsbury's Houmous"
+   ]
+  },
+  "kimchi": {
+   "aliases": [
+    "kimchi",
+    "kimchee",
+    "cabbage kimchi",
+    "vegan kimchi"
+   ],
+   "category": "vegetable",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 29.0,
+   "protein": 1.5,
+   "carbs": 4.4,
+   "fat": 0.4,
+   "fiber": 2.1,
+   "sugars": 1.4,
+   "saturates": 0.1,
+   "salt": 1.8,
+   "products": 56,
+   "search": [
+    "kimchi"
+   ],
+   "examples": [
+    "Mr. Kimchi Mr. Kimchi Spicy Fermented Chinese Leaves",
+    "Sun Hee Kimchi",
+    "Vadasz Kimchi",
+    "Jongga Kimchi",
+    "Holland & Barrett Kimchi"
+   ]
+  },
+  "dairy-free butter": {
+   "aliases": [
+    "dairy-free butter",
+    "dairy free butter",
+    "vegan butter",
+    "plant butter",
+    "plant-based butter",
+    "plant based butter",
+    "dairy-free block",
+    "vegan block",
+    "vegan baking block",
+    "dairy-free baking block",
+    "plant butter block",
+    "non-dairy butter"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 707.0,
+   "protein": 0.5,
+   "carbs": 0.5,
+   "fat": 79.0,
+   "fiber": null,
+   "sugars": 0.5,
+   "saturates": 45.0,
+   "salt": 1.1,
+   "products": 12,
+   "search": [
+    "plant butter block",
+    "vegan block",
+    "plant based butter",
+    "dairy free block"
+   ],
+   "examples": [
+    "Flora Plant Butter",
+    "Flora Plant butter",
+    "Flora Plant Butter",
+    "Rama Plant-based butter",
+    "Flora Flora plant butter"
+   ]
+  },
+  "dairy-free spread": {
+   "aliases": [
+    "dairy-free spread",
+    "dairy free spread",
+    "vegan spread",
+    "plant spread",
+    "plant-based spread",
+    "dairy-free margarine",
+    "vegan margarine",
+    "non-dairy spread"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 540.0,
+   "protein": 0.5,
+   "carbs": 1.0,
+   "fat": 56.0,
+   "fiber": 0.0,
+   "sugars": 0.5,
+   "saturates": 13.0,
+   "salt": 1.0,
+   "products": 25,
+   "search": [
+    "dairy free spread",
+    "vegan spread",
+    "plant based spread"
+   ],
+   "examples": [
+    "Vitalite- suitable for Vegan Vitalite Dairy Free Spread",
+    "Pure Dairy Free Sunflower Spread",
+    "Asda free from dairy free sunflower spread",
+    "Pure Dairy and Gluten free Sunflower spread",
+    "Flora Vegan Spread"
+   ]
+  },
+  "dairy-free cheese": {
+   "aliases": [
+    "dairy-free cheese",
+    "dairy free cheese",
+    "vegan cheese",
+    "plant-based cheese",
+    "plant based cheese",
+    "dairy-free cheddar",
+    "vegan cheddar",
+    "dairy-free grated cheese",
+    "vegan grated cheese",
+    "non-dairy cheese"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 304.0,
+   "protein": 1.0,
+   "carbs": 20.0,
+   "fat": 23.7,
+   "fiber": 1.6,
+   "sugars": 0.4,
+   "saturates": 19.2,
+   "salt": 1.9,
+   "products": 49,
+   "search": [
+    "vegan cheese block",
+    "dairy free cheese",
+    "plant based cheddar",
+    "vegan cheddar"
+   ],
+   "examples": [
+    "cathedral city Cathedral city vegan cheese block",
+    "Violife Cheddarton block",
+    "Violife Original Block",
+    "Aldi Plant Menu Mature Block",
+    "Marks & Spencer vegan 3 cheese"
+   ]
+  },
+  "oat milk": {
+   "aliases": [
+    "oat milk",
+    "oat drink",
+    "oatmilk",
+    "oat milk drink",
+    "barista oat milk",
+    "oat m*lk"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 49.0,
+   "protein": 0.7,
+   "carbs": 7.1,
+   "fat": 1.5,
+   "fiber": 0.7,
+   "sugars": 3.4,
+   "saturates": 0.2,
+   "salt": 0.1,
+   "products": 102,
+   "search": [
+    "oat drink",
+    "oat milk"
+   ],
+   "examples": [
+    "Oatly Barista Edition Oat Drink",
+    "Frías Oat Drink",
+    "Jörd Nordic Oat Drink",
+    "Oatly The Original Organic Oat Drink imp",
+    "Oatly Oat Drink Barista Edition"
+   ]
+  },
+  "almond milk": {
+   "aliases": [
+    "almond milk",
+    "almond drink",
+    "unsweetened almond milk",
+    "unsweetened almond drink",
+    "almond milk unsweetened"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 18.0,
+   "protein": 0.6,
+   "carbs": 0.5,
+   "fat": 1.2,
+   "fiber": 0.4,
+   "sugars": 0.2,
+   "saturates": 0.1,
+   "salt": 0.1,
+   "products": 33,
+   "search": [
+    "almond drink unsweetened",
+    "almond milk unsweetened",
+    "almond drink"
+   ],
+   "examples": [
+    "tesco Longlife Almond Drink Unsweetened",
+    "Morrisons Unsweetened Almond Drink",
+    "Unsweetened Almond Drink",
+    "Waitrose Almond Unsweeteened",
+    "Waitrose Almond unsweetened"
+   ]
+  },
+  "soy milk": {
+   "aliases": [
+    "soy milk",
+    "soya milk",
+    "soya drink",
+    "soy drink",
+    "unsweetened soy milk",
+    "unsweetened soya milk",
+    "unsweetened soya drink",
+    "soy milk unsweetened"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 33.0,
+   "protein": 3.3,
+   "carbs": 0.8,
+   "fat": 1.9,
+   "fiber": 0.6,
+   "sugars": 0.5,
+   "saturates": 0.3,
+   "salt": 0.1,
+   "products": 33,
+   "search": [
+    "soya drink unsweetened",
+    "soya milk unsweetened",
+    "soya drink"
+   ],
+   "examples": [
+    "Tesco Soya Drink Unsweetened",
+    "The Grower's Harvest Soya Drink Unsweetened",
+    "Asda Organic long life soya drink unsweetened",
+    "Actileaf Unsweetened UHT Soya Drink",
+    "Sainsbury's Unsweetened Soya"
+   ]
+  },
+  "coconut drink": {
+   "aliases": [
+    "coconut drink",
+    "coconut milk drink",
+    "coconut milk alternative",
+    "unsweetened coconut drink"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 20.0,
+   "protein": 0.3,
+   "carbs": 2.0,
+   "fat": 0.8,
+   "fiber": 0.1,
+   "sugars": 1.8,
+   "saturates": 0.7,
+   "salt": 0.1,
+   "products": 9,
+   "search": [
+    "coconut drink",
+    "coconut milk drink"
+   ],
+   "examples": [
+    "By sainsbury's Coconut drink",
+    "Morrisons Coconut Drink",
+    "Tesco Coconut drink",
+    "Asda Coconut drink",
+    "M&S Coconut drink"
+   ]
+  },
+  "coconut milk": {
+   "aliases": [
+    "coconut milk",
+    "tinned coconut milk",
+    "canned coconut milk",
+    "full-fat coconut milk",
+    "full fat coconut milk",
+    "tin coconut milk",
+    "can coconut milk",
+    "tin of coconut milk",
+    "can of coconut milk"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 175.0,
+   "protein": 1.4,
+   "carbs": 2.9,
+   "fat": 17.7,
+   "fiber": 0.5,
+   "sugars": 1.7,
+   "saturates": 16.0,
+   "salt": 0.1,
+   "products": 57,
+   "search": [
+    "coconut milk tin",
+    "coconut milk"
+   ],
+   "examples": [
+    "AROY-D Coconut Milk",
+    "Coconut Merchant Coconut milk",
+    "Waitrose Coconut milk",
+    "Coconut milk",
+    "Ruby Coconut milk"
+   ]
+  },
+  "light coconut milk": {
+   "aliases": [
+    "light coconut milk",
+    "reduced fat coconut milk",
+    "reduced-fat coconut milk",
+    "lite coconut milk",
+    "low fat coconut milk",
+    "lighter coconut milk",
+    "tinned light coconut milk",
+    "canned light coconut milk"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 67.0,
+   "protein": 0.6,
+   "carbs": 2.0,
+   "fat": 6.5,
+   "fiber": 0.5,
+   "sugars": 1.1,
+   "saturates": 5.5,
+   "salt": 0.1,
+   "products": 15,
+   "search": [
+    "light coconut milk",
+    "reduced fat coconut milk"
+   ],
+   "examples": [
+    "Co Op Light Coconut Milk",
+    "Tesco Light Coconut Milk",
+    "Blue dragon Light Coconut Milk",
+    "Kingfisher Light Coconut Milk",
+    "Freshona Coconut milk (light)"
+   ]
+  },
+  "coconut yoghurt": {
+   "aliases": [
+    "coconut yoghurt",
+    "coconut yogurt",
+    "plain coconut yoghurt",
+    "natural coconut yoghurt",
+    "coconut yoghurt alternative",
+    "coconut yogurt alternative"
+   ],
+   "category": "dairy-alt",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 131.1,
+   "protein": 1.8,
+   "carbs": 9.2,
+   "fat": 8.8,
+   "fiber": 0.5,
+   "sugars": 5.7,
+   "saturates": 6.0,
+   "salt": 0.1,
+   "products": 20,
+   "search": [
+    "coconut yoghurt",
+    "coconut yogurt"
+   ],
+   "examples": [
+    "Live coconut yoghurt",
+    "Aldi Greek Style Coconut Yoghurt",
+    "Dunnes Stores Greek Style Coconut Yoghurt",
+    "Organic live coconut yoghurt",
+    "brooklea Greek style coconut yoghurt"
+   ]
+  },
+  "pesto": {
+   "aliases": [
+    "pesto",
+    "green pesto",
+    "basil pesto",
+    "pesto alla genovese",
+    "genovese pesto",
+    "pesto genovese",
+    "jar pesto",
+    "fresh pesto"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 399.5,
+   "protein": 4.5,
+   "carbs": 5.9,
+   "fat": 39.5,
+   "fiber": 1.7,
+   "sugars": 1.9,
+   "saturates": 5.5,
+   "salt": 1.5,
+   "products": 68,
+   "search": [
+    "green pesto",
+    "basil pesto"
+   ],
+   "examples": [
+    "Morrisons Green Pesto",
+    "Marks & Spencer Green Pesto",
+    "Waitrose Green pesto",
+    "Lidl Green pesto",
+    "Plant Menu Green Pesto"
+   ]
+  },
+  "thai curry paste": {
+   "aliases": [
+    "thai curry paste",
+    "thai green curry paste",
+    "thai red curry paste",
+    "green curry paste",
+    "red curry paste",
+    "thai green paste",
+    "thai red paste",
+    "massaman curry paste",
+    "yellow curry paste",
+    "thai yellow curry paste",
+    "panang curry paste"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 107.0,
+   "protein": 1.7,
+   "carbs": 12.0,
+   "fat": 5.1,
+   "fiber": 2.6,
+   "sugars": 5.7,
+   "saturates": 0.5,
+   "salt": 2.2,
+   "products": 47,
+   "search": [
+    "thai green curry paste",
+    "thai red curry paste"
+   ],
+   "examples": [
+    "Lidl Thai green curry paste",
+    "Thai green curry paste",
+    "Potts Thai Green Curry Paste",
+    "Lidl Thai Green Curry Paste",
+    "Aldi Thai Green Curry Paste"
+   ]
+  },
+  "curry paste": {
+   "aliases": [
+    "curry paste",
+    "tikka paste",
+    "tikka masala paste",
+    "tikka curry paste",
+    "korma paste",
+    "korma curry paste",
+    "madras paste",
+    "madras curry paste",
+    "balti paste",
+    "balti curry paste",
+    "rogan josh paste",
+    "rogan josh curry paste",
+    "jalfrezi paste",
+    "jalfrezi curry paste",
+    "tandoori paste",
+    "vindaloo paste",
+    "vindaloo curry paste",
+    "biryani paste",
+    "garam masala paste",
+    "indian curry paste",
+    "mild curry paste",
+    "medium curry paste",
+    "hot curry paste"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 220.0,
+   "protein": 3.1,
+   "carbs": 13.5,
+   "fat": 15.4,
+   "fiber": 5.0,
+   "sugars": 6.3,
+   "saturates": 2.2,
+   "salt": 3.7,
+   "products": 29,
+   "search": [
+    "tikka masala curry paste",
+    "korma curry paste",
+    "madras curry paste",
+    "balti curry paste",
+    "rogan josh curry paste"
+   ],
+   "examples": [
+    "Jamie Oliver Tikka Masala Curry Paste",
+    "Tikka masala curry paste",
+    "Patak's Patak's Tikka Masala Spice Paste",
+    "Previns Tikka Masala Paste",
+    "Tikka Curry Paste"
+   ]
+  },
+  "tamari": {
+   "aliases": [
+    "tamari",
+    "tamari soy sauce",
+    "gluten-free tamari",
+    "gluten free tamari",
+    "tamari sauce",
+    "reduced salt tamari"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 83.0,
+   "protein": 11.8,
+   "carbs": 7.3,
+   "fat": 0.0,
+   "fiber": 0.7,
+   "sugars": 0.6,
+   "saturates": 0.0,
+   "salt": 14.0,
+   "products": 11,
+   "search": [
+    "tamari"
+   ],
+   "examples": [
+    "Yakso Tamari",
+    "Waitrose Tamari soy sauce",
+    "yutaka Organic tamari soy sauce",
+    "Tamari",
+    "Meridian Meridian tamari"
+   ]
+  },
+  "soy sauce": {
+   "aliases": [
+    "soy sauce",
+    "soya sauce",
+    "light soy sauce",
+    "light soy",
+    "naturally brewed soy sauce",
+    "reduced salt soy sauce",
+    "low sodium soy sauce",
+    "shoyu",
+    "japanese soy sauce"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 61.0,
+   "protein": 2.6,
+   "carbs": 11.9,
+   "fat": 0.1,
+   "fiber": 0.2,
+   "sugars": 10.0,
+   "saturates": 0.1,
+   "salt": 12.7,
+   "products": 54,
+   "search": [
+    "soy sauce",
+    "light soy sauce"
+   ],
+   "examples": [
+    "Amoy Light Soy Sauce",
+    "HAUGEN-GRUPPEN AS Kikkoman  less Salt soy sauce 150ml",
+    "Soy sauce",
+    "Batts Soy sauce",
+    "Kikkoman Soy sauce"
+   ]
+  },
+  "miso paste": {
+   "aliases": [
+    "miso",
+    "miso paste",
+    "white miso",
+    "white miso paste",
+    "brown miso",
+    "brown miso paste",
+    "red miso",
+    "red miso paste",
+    "shiro miso",
+    "sweet white miso",
+    "yellow miso",
+    "barley miso",
+    "genmai miso"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 176.0,
+   "protein": 10.3,
+   "carbs": 18.0,
+   "fat": 6.2,
+   "fiber": 4.4,
+   "sugars": 8.5,
+   "saturates": 1.0,
+   "salt": 11.5,
+   "products": 27,
+   "search": [
+    "miso paste",
+    "white miso"
+   ],
+   "examples": [
+    "Waitrose Miso paste",
+    "Miso Tasty Red Miso Paste",
+    "Vitasia Miso Paste Light",
+    "white miso paste",
+    "yutaka Unpasteurised Miso Paste imp"
+   ]
+  },
+  "tahini": {
+   "aliases": [
+    "tahini",
+    "tahina",
+    "tahini paste",
+    "sesame paste",
+    "light tahini",
+    "dark tahini",
+    "sesame seed paste"
+   ],
+   "category": "pantry",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 659.0,
+   "protein": 24.0,
+   "carbs": 3.9,
+   "fat": 59.0,
+   "fiber": 8.5,
+   "sugars": 0.7,
+   "saturates": 9.5,
+   "salt": 0.0,
+   "products": 37,
+   "search": [
+    "tahini"
+   ],
+   "examples": [
+    "Tahini Royal Tahini",
+    "By sainsbury's Tahini",
+    "Sunita Tahini",
+    "Bevelini Tahini",
+    "Cypressa Tahini"
+   ]
+  },
+  "firm tofu": {
+   "aliases": [
+    "firm tofu",
+    "extra firm tofu",
+    "extra-firm tofu",
+    "tofu",
+    "tofu block",
+    "plain tofu",
+    "organic tofu",
+    "naked tofu",
+    "original tofu"
+   ],
+   "category": "protein",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 125.0,
+   "protein": 12.8,
+   "carbs": 1.8,
+   "fat": 6.8,
+   "fiber": 1.4,
+   "sugars": 0.5,
+   "saturates": 1.2,
+   "salt": 0.1,
+   "products": 54,
+   "search": [
+    "firm tofu",
+    "tofu block",
+    "organic tofu"
+   ],
+   "examples": [
+    "Tofu King UK Firm Tofu",
+    "Tofuking Firm tofu",
+    "Tesco Organic firm tofu",
+    "Sainsbury's Super firm tofu",
+    "Cauldron Extra firm tofu"
+   ]
+  },
+  "chickpeas (cooked)": {
+   "aliases": [
+    "chickpeas",
+    "chickpea",
+    "chick peas",
+    "chick pea",
+    "garbanzo beans"
+   ],
+   "category": "legume",
+   "state": "canned",
+   "cooked_only": true,
+   "calories": 121.0,
+   "protein": 6.7,
+   "carbs": 15.0,
+   "fat": 2.3,
+   "fiber": 6.0,
+   "sugars": 0.5,
+   "saturates": 0.3,
+   "salt": 0.0,
+   "products": 63,
+   "search": [
+    "chickpeas in water",
+    "chick peas in water"
+   ],
+   "examples": [
+    "Napolina Chickpeas in water",
+    "Sainsbury's Chickpeas in water",
+    "ASDA Chickpeas in water",
+    "Tesco Organic chickpeas in water",
+    "Freshona Chickpeas in water"
+   ]
+  },
+  "kidney beans (cooked)": {
+   "aliases": [
+    "kidney beans",
+    "kidney bean",
+    "red kidney beans",
+    "red kidney bean"
+   ],
+   "category": "legume",
+   "state": "canned",
+   "cooked_only": true,
+   "calories": 104.5,
+   "protein": 7.2,
+   "carbs": 13.9,
+   "fat": 0.6,
+   "fiber": 6.5,
+   "sugars": 0.6,
+   "saturates": 0.1,
+   "salt": 0.0,
+   "products": 46,
+   "search": [
+    "red kidney beans in water",
+    "kidney beans in water"
+   ],
+   "examples": [
+    "The growers harvest Red Kidney Beans in water",
+    "Sainsbury's Red Kidney Beans in water",
+    "Napolina Red Kidney Beans in Water imp",
+    "Freshona Red Kidney Beans in Water",
+    "Red Kidney beans in water"
+   ]
+  },
+  "black beans (cooked)": {
+   "aliases": [
+    "black beans",
+    "black bean",
+    "black turtle beans",
+    "turtle beans"
+   ],
+   "category": "legume",
+   "state": "canned",
+   "cooked_only": true,
+   "calories": 101.5,
+   "protein": 7.4,
+   "carbs": 13.5,
+   "fat": 0.6,
+   "fiber": 7.1,
+   "sugars": 0.5,
+   "saturates": 0.1,
+   "salt": 0.2,
+   "products": 22,
+   "search": [
+    "black beans in water",
+    "black turtle beans in water"
+   ],
+   "examples": [
+    "Tesco Black Beans in Water",
+    "Freshona Black beans in water",
+    "Ocado Black beans in water",
+    "Four Seasons Black Beans in Water",
+    "Biona Organic Organic black beans"
+   ]
+  },
+  "butter beans (cooked)": {
+   "aliases": [
+    "butter beans",
+    "butter bean",
+    "lima beans",
+    "lima bean"
+   ],
+   "category": "legume",
+   "state": "canned",
+   "cooked_only": true,
+   "calories": 97.5,
+   "protein": 6.3,
+   "carbs": 13.0,
+   "fat": 0.6,
+   "fiber": 6.4,
+   "sugars": 0.7,
+   "saturates": 0.1,
+   "salt": 0.0,
+   "products": 20,
+   "search": [
+    "butter beans in water"
+   ],
+   "examples": [
+    "Napolina Butter Beans in Water",
+    "Sainsbury's Butter Beans in Water",
+    "Campo Largo Butter Beans in water",
+    "Essential Waitrose Butter Beans in Water",
+    "Morrisons Butter Beans in Water"
+   ]
+  },
+  "cannellini beans (cooked)": {
+   "aliases": [
+    "cannellini beans",
+    "cannellini bean",
+    "white beans",
+    "white bean"
+   ],
+   "category": "legume",
+   "state": "canned",
+   "cooked_only": true,
+   "calories": 93.0,
+   "protein": 6.6,
+   "carbs": 11.1,
+   "fat": 0.6,
+   "fiber": 6.3,
+   "sugars": 0.5,
+   "saturates": 0.1,
+   "salt": 0.0,
+   "products": 13,
+   "search": [
+    "cannellini beans in water"
+   ],
+   "examples": [
+    "Co-op Cannellini Beans in Water",
+    "Four Seasons Cannellini Beans in Water",
+    "Tesco Cannellini Beans in Water",
+    "Biona Organic Organic Cannellini Beans in Water",
+    "Freshona Cannellini beans"
+   ]
+  },
+  "breadcrumbs": {
+   "aliases": [
+    "breadcrumbs",
+    "dried breadcrumbs",
+    "dry breadcrumbs",
+    "golden breadcrumbs",
+    "panko",
+    "panko breadcrumbs",
+    "dried white breadcrumbs",
+    "bread crumbs",
+    "dried bread crumbs",
+    "toasted breadcrumbs"
+   ],
+   "category": "grain",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 365.0,
+   "protein": 11.7,
+   "carbs": 73.5,
+   "fat": 1.9,
+   "fiber": 4.4,
+   "sugars": 3.6,
+   "saturates": 0.5,
+   "salt": 1.2,
+   "products": 35,
+   "search": [
+    "breadcrumbs",
+    "panko breadcrumbs"
+   ],
+   "examples": [
+    "Tesco Golden Breadcrumbs",
+    "Asda Plain breadcrumbs",
+    "Sainsbury's Golden Breadcrumbs",
+    "Belvake Golden Breadcrumbs",
+    "Morrisons Panko Breadcrumbs"
+   ]
+  },
+  "fresh breadcrumbs": {
+   "aliases": [
+    "fresh breadcrumbs",
+    "fresh white breadcrumbs",
+    "fresh bread crumbs",
+    "fresh white bread crumbs",
+    "fresh brown breadcrumbs",
+    "fresh wholemeal breadcrumbs"
+   ],
+   "category": "grain",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 238.5,
+   "protein": 8.4,
+   "carbs": 45.6,
+   "fat": 1.9,
+   "fiber": 2.8,
+   "sugars": 3.0,
+   "saturates": 0.4,
+   "salt": 0.9,
+   "products": 44,
+   "search": [
+    "white bread medium sliced",
+    "white bread thick sliced"
+   ],
+   "examples": [
+    "Asda Soft white bread medium sliced",
+    "Tesco White Bread",
+    "Warburtons Medium Sliced Soft White Bread",
+    "Braces Medium white sliced bread",
+    "Medium sliced white bread"
+   ]
+  },
+  "baking powder": {
+   "aliases": [
+    "baking powder",
+    "gluten-free baking powder",
+    "gluten free baking powder"
+   ],
+   "category": "baking",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 184.0,
+   "protein": 2.4,
+   "carbs": 42.2,
+   "fat": 0.6,
+   "fiber": 0.9,
+   "sugars": 0.3,
+   "saturates": 0.2,
+   "salt": 35.7,
+   "products": 9,
+   "search": [
+    "baking powder"
+   ],
+   "examples": [
+    "Asda Baking powder",
+    "Tesco - Stockwell & Co Baking Powder",
+    "Baking powder",
+    "Sainsbury's Baking Powder",
+    "Morrisons Baking Powder"
+   ]
+  },
+  "mayonnaise": {
+   "aliases": [
+    "mayonnaise",
+    "mayo",
+    "real mayonnaise",
+    "full-fat mayonnaise",
+    "full fat mayonnaise",
+    "classic mayonnaise",
+    "real mayo"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 692.5,
+   "protein": 1.1,
+   "carbs": 2.5,
+   "fat": 75.0,
+   "fiber": 0.1,
+   "sugars": 1.4,
+   "saturates": 5.8,
+   "salt": 1.0,
+   "products": 62,
+   "search": [
+    "real mayonnaise",
+    "mayonnaise"
+   ],
+   "examples": [
+    "Batts Real Mayonnaise",
+    "Bramwells Real Mayonnaise",
+    "Bramwells Real Mayonnaise",
+    "BATTS Real mayonnaise",
+    "Hellmann's Real Mayonnaise"
+   ]
+  },
+  "ketchup": {
+   "aliases": [
+    "ketchup",
+    "tomato ketchup",
+    "tomato sauce ketchup"
+   ],
+   "category": "condiment",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 104.0,
+   "protein": 1.2,
+   "carbs": 23.3,
+   "fat": 0.3,
+   "fiber": 1.4,
+   "sugars": 21.0,
+   "saturates": 0.1,
+   "salt": 1.6,
+   "products": 85,
+   "search": [
+    "tomato ketchup"
+   ],
+   "examples": [
+    "Heinz Tomato Ketchup",
+    "Heinz Organic Tomato Ketchup",
+    "co-op Tomato ketchup",
+    "Tomato ketchup",
+    "Heinz Tomato Ketchup"
+   ]
+  },
+  "stock cube": {
+   "aliases": [
+    "stock cube",
+    "stock cubes",
+    "vegetable stock cube",
+    "vegetable stock cubes",
+    "chicken stock cube",
+    "chicken stock cubes",
+    "beef stock cube",
+    "beef stock cubes",
+    "bouillon cube",
+    "bouillon cubes",
+    "veg stock cube",
+    "vegan stock cube",
+    "lamb stock cube",
+    "fish stock cube"
+   ],
+   "category": "pantry",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 271.0,
+   "protein": 7.9,
+   "carbs": 27.6,
+   "fat": 5.3,
+   "fiber": 2.8,
+   "sugars": 8.6,
+   "saturates": 2.4,
+   "salt": 25.0,
+   "products": 21,
+   "search": [
+    "stock cubes",
+    "vegetable stock cubes",
+    "chicken stock cubes",
+    "beef stock cubes"
+   ],
+   "examples": [
+    "Knorr Vegetable Stock cubes 8 x imp",
+    "OXO Vegetable Stock Cubes",
+    "Oxo Beef Stock Cube",
+    "by sainsbury's Vegetable Stock Cubes",
+    "Bramwells Chicken stock cubes"
+   ]
+  },
+  "stock powder": {
+   "aliases": [
+    "stock powder",
+    "vegetable stock powder",
+    "chicken stock powder",
+    "bouillon powder",
+    "vegetable bouillon powder",
+    "swiss vegetable bouillon powder",
+    "vegan bouillon powder",
+    "veg stock powder",
+    "beef stock powder"
+   ],
+   "category": "pantry",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 221.0,
+   "protein": 8.0,
+   "carbs": 37.6,
+   "fat": 2.5,
+   "fiber": 0.1,
+   "sugars": 5.3,
+   "saturates": 0.4,
+   "salt": 36.2,
+   "products": 10,
+   "search": [
+    "vegetable bouillon powder",
+    "stock powder"
+   ],
+   "examples": [
+    "Marigold Health Foods Swiss Vegetable Bouillon Powder",
+    "Marigold Organic Swiss Vegetable Vegan Bouillon Powder",
+    "Marigold Vegan bouillon",
+    "Mari Gold Swiss Vegetable Vegan Bouillon Powder",
+    "Telma Beef flavoured stock powder"
+   ]
+  },
+  "puff pastry": {
+   "aliases": [
+    "puff pastry",
+    "ready rolled puff pastry",
+    "ready-rolled puff pastry",
+    "all butter puff pastry",
+    "all-butter puff pastry",
+    "puff pastry sheet",
+    "ready rolled puff pastry sheet",
+    "frozen puff pastry",
+    "vegan puff pastry"
+   ],
+   "category": "grain",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 390.0,
+   "protein": 5.7,
+   "carbs": 37.3,
+   "fat": 23.7,
+   "fiber": 2.0,
+   "sugars": 1.6,
+   "saturates": 11.2,
+   "salt": 0.5,
+   "products": 23,
+   "search": [
+    "ready rolled puff pastry",
+    "puff pastry block"
+   ],
+   "examples": [
+    "M&S Ready Rolled Puff Pastry",
+    "ready rolled puff pastry",
+    "Co-Op Puff Pastry",
+    "Jus Rol Ready Rolled Puff Pastry Sheet",
+    "Chef Select Puff Pastry"
+   ]
+  },
+  "cocoa powder": {
+   "aliases": [
+    "cocoa powder",
+    "cocoa",
+    "unsweetened cocoa powder",
+    "cocoa powder unsweetened",
+    "cacao powder",
+    "raw cacao powder",
+    "dutch process cocoa",
+    "dutch-process cocoa powder",
+    "baking cocoa"
+   ],
+   "category": "pantry",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 365.5,
+   "protein": 22.1,
+   "carbs": 14.5,
+   "fat": 16.9,
+   "fiber": 29.9,
+   "sugars": 0.6,
+   "saturates": 7.9,
+   "salt": 0.1,
+   "products": 42,
+   "search": [
+    "cocoa powder",
+    "cacao powder"
+   ],
+   "examples": [
+    "Tesco Cocoa Powder",
+    "Green & Blacks Cocoa Powder",
+    "Tesco Cocoa powder",
+    "Asda Cocoa Powder",
+    "The Pantry Cocoa powder"
+   ]
+  },
+  "gluten-free wraps": {
+   "aliases": [
+    "gluten-free wraps",
+    "gluten free wraps",
+    "gluten-free wrap",
+    "gluten free wrap",
+    "gluten-free tortilla wraps",
+    "gluten free tortilla wraps",
+    "gluten-free tortillas",
+    "gluten free tortillas",
+    "gluten-free tortilla",
+    "gluten free tortilla"
+   ],
+   "category": "grain",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 294.0,
+   "protein": 8.4,
+   "carbs": 52.0,
+   "fat": 5.1,
+   "fiber": 3.6,
+   "sugars": 2.8,
+   "saturates": 2.0,
+   "salt": 1.0,
+   "products": 33,
+   "search": [
+    "gluten free wraps",
+    "gluten free tortilla wraps"
+   ],
+   "examples": [
+    "Old El Paso Gluten Free Wraps",
+    "Bfree Sweet Potato Wraps",
+    "BFree Quinoa & Chia Seed Wrap with Teff Seeds & Flax Seeds",
+    "Old El Paso White corn tortillas",
+    "Sofra Tortillas"
+   ]
+  },
+  "gluten-free bread": {
+   "aliases": [
+    "gluten-free bread",
+    "gluten free bread",
+    "gluten-free white bread",
+    "gluten free white bread",
+    "gluten-free sliced bread",
+    "gluten free sliced bread",
+    "gluten-free loaf",
+    "gluten free loaf"
+   ],
+   "category": "grain",
+   "state": "as_sold",
+   "cooked_only": false,
+   "calories": 248.0,
+   "protein": 4.5,
+   "carbs": 36.9,
+   "fat": 6.8,
+   "fiber": 8.1,
+   "sugars": 2.3,
+   "saturates": 0.8,
+   "salt": 1.0,
+   "products": 40,
+   "search": [
+    "gluten free white bread",
+    "gluten free bread loaf"
+   ],
+   "examples": [
+    "Promise Gluten free Soft white bread",
+    "Gluten Free Bread",
+    "Glutafin Fresh Brown Loaf",
+    "Marks & Spencer Gluten Free White Loaf",
+    "Biona Gluten free bread"
+   ]
+  }
+ }
+}

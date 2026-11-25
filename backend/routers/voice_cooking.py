@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from dependencies import get_current_user, recipe_repository, voice_settings_repository
+from utils.authorization import require_recipe_view
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/voice", tags=["Voice Cooking"])
@@ -300,6 +301,7 @@ async def prepare_recipe_for_voice(
 
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    require_recipe_view(user, recipe)
 
     instructions = recipe.get("instructions", [])
     ingredients = recipe.get("ingredients", [])

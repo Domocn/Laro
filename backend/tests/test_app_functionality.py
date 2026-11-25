@@ -123,42 +123,41 @@ class TestUserRegistration:
 
             return True, ""
 
-        # Test minimum length
-        loop = asyncio.get_event_loop()
+        # Test minimum length (asyncio.run: get_event_loop() raises when no loop is set, e.g. after other async tests)
 
         settings = {"password_min_length": 8}
-        result, msg = loop.run_until_complete(validate_password("short", settings))
+        result, msg = asyncio.run(validate_password("short", settings))
         assert result is False
         assert "at least 8 characters" in msg
 
-        result, msg = loop.run_until_complete(validate_password("longenough", settings))
+        result, msg = asyncio.run(validate_password("longenough", settings))
         assert result is True
 
         # Test uppercase requirement
         settings = {"password_require_uppercase": True}
-        result, msg = loop.run_until_complete(validate_password("nouppercase", settings))
+        result, msg = asyncio.run(validate_password("nouppercase", settings))
         assert result is False
         assert "uppercase" in msg
 
-        result, msg = loop.run_until_complete(validate_password("HasUppercase", settings))
+        result, msg = asyncio.run(validate_password("HasUppercase", settings))
         assert result is True
 
         # Test number requirement
         settings = {"password_require_number": True}
-        result, msg = loop.run_until_complete(validate_password("nonumbers", settings))
+        result, msg = asyncio.run(validate_password("nonumbers", settings))
         assert result is False
         assert "number" in msg
 
-        result, msg = loop.run_until_complete(validate_password("hasnumber123", settings))
+        result, msg = asyncio.run(validate_password("hasnumber123", settings))
         assert result is True
 
         # Test special character requirement
         settings = {"password_require_special": True}
-        result, msg = loop.run_until_complete(validate_password("nospecials123", settings))
+        result, msg = asyncio.run(validate_password("nospecials123", settings))
         assert result is False
         assert "special" in msg
 
-        result, msg = loop.run_until_complete(validate_password("hasspecial!", settings))
+        result, msg = asyncio.run(validate_password("hasspecial!", settings))
         assert result is True
 
 

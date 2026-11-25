@@ -5,6 +5,7 @@ from models import MobileNotificationSettingsUpdate, MobileNotificationSettingsR
 from datetime import datetime, timezone
 import os
 import uuid
+from utils.reminder_time import coerce_lead_minutes, lead_minutes_for_storage
 
 # Import for mobile notification settings
 from database.connection import get_db
@@ -42,6 +43,8 @@ async def get_notification_settings(user: dict = Depends(get_current_user)):
             "shopping_reminders": True,
             "weekly_plan_reminder": True
         }
+    else:
+        settings["reminder_time"] = coerce_lead_minutes(settings.get("reminder_time"), 30)
 
     # Remove internal fields
     settings.pop("user_id", None)
@@ -62,6 +65,8 @@ async def update_notification_settings(settings: dict, user: dict = Depends(get_
         "weekly_plan_reminder",
     }
     clean = {k: v for k, v in settings.items() if k in allowed}
+    if "reminder_time" in clean:
+        clean["reminder_time"] = coerce_lead_minutes(clean["reminder_time"], 30)
     await notification_settings_repository.upsert_settings(user["id"], clean)
 
     # Keep mobile preference row in sync for FCM preference checks
@@ -73,6 +78,8 @@ async def update_notification_settings(settings: dict, user: dict = Depends(get_
     ):
         if src in clean:
             mobile_sync[dst] = clean[src]
+    if "reminder_time" in clean:
+        mobile_sync["reminder_time"] = lead_minutes_for_storage(clean["reminder_time"])
     if mobile_sync:
         pool = await get_db()
         now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -143,7 +150,7 @@ async def get_mobile_notification_settings(user: dict = Depends(get_current_user
             user_id=user["id"],
             fcm_token=None,
             apns_token=None,
-            reminder_time="17:00",
+            reminder_time=lead_minutes_for_storage("30"),
             push_enabled=True,
             email_enabled=True,
             subscription_alerts=True,
@@ -169,7 +176,7 @@ async def get_mobile_notification_settings(user: dict = Depends(get_current_user
         user_id=data["user_id"],
         fcm_token=data.get("fcm_token"),
         apns_token=data.get("apns_token"),
-        reminder_time=data.get("reminder_time", "17:00"),
+        reminder_time=lead_minutes_for_storage(data.get("reminder_time")),
         # Master toggles
         push_enabled=data.get("push_enabled", True),
         email_enabled=data.get("email_enabled", True),
@@ -211,7 +218,10 @@ async def update_mobile_notification_settings(
     update_fields = {"updated_at": now}
     for field, value in settings.model_dump().items():
         if value is not None:
-            update_fields[field] = value
+            if field == "reminder_time":
+                update_fields[field] = lead_minutes_for_storage(value)
+            else:
+                update_fields[field] = value
 
     async with pool.acquire() as conn:
         # Check if settings exist
@@ -251,6 +261,12 @@ async def update_mobile_notification_settings(
             """
             await conn.execute(query, *values)
 
+    if "reminder_time" in update_fields:
+        await notification_settings_repository.upsert_settings(
+            user["id"],
+            {"reminder_time": coerce_lead_minutes(update_fields["reminder_time"], 30)},
+        )
+
     return await get_mobile_notification_settings(user)
 
 
@@ -283,7 +299,7 @@ async def register_fcm_token(
             await conn.execute(
                 """INSERT INTO mobile_notification_settings
                    (user_id, fcm_token, meal_reminders, expiry_alerts, shopping_list_updates, import_complete, reminder_time, updated_at)
-                   VALUES ($1, $2, true, true, true, true, '17:00', $3)""",
+                   VALUES ($1, $2, true, true, true, true, '30', $3)""",
                 user["id"], fcm_token, now
             )
 

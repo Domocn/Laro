@@ -40,6 +40,24 @@ COUNTRIES = {
     "KR": {"name": "South Korea", "flag": "🇰🇷", "language": "ko", "measurementUnit": "metric", "currency": "KRW"},
 }
 
+# Every ISO 3166-1 alpha-2 country (sign-up / Settings "Which country are you in?").
+# COUNTRIES above only lists the ones with their own language / unit defaults.
+ALL_COUNTRY_CODES = frozenset((
+    "AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE "
+    "BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD "
+    "CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM "
+    "DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF "
+    "GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU "
+    "ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN "
+    "KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME "
+    "MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA "
+    "NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM "
+    "PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI "
+    "SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK "
+    "TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI "
+    "VN VU WF WS YE YT ZA ZM ZW "
+).split())
+
 DEFAULT_LANGUAGE = "en-GB"
 DEFAULT_COUNTRY = "GB"
 
@@ -81,15 +99,16 @@ def normalize_language(code: str | None) -> str:
 def normalize_country(code: str | None) -> str:
     if not code:
         return DEFAULT_COUNTRY
-    upper = str(code).upper()
+    upper = str(code).strip().upper()
     if upper == "UK":
         return "GB"
-    return upper if upper in COUNTRIES else DEFAULT_COUNTRY
+    return upper if (upper in COUNTRIES or upper in ALL_COUNTRY_CODES) else DEFAULT_COUNTRY
 
 
 def defaults_for_country(country_code: str | None) -> dict:
     country = normalize_country(country_code)
-    info = COUNTRIES[country]
+    # Countries without their own catalogue entry: UK-style defaults (English UK, metric).
+    info = COUNTRIES.get(country) or {**COUNTRIES[DEFAULT_COUNTRY], "currency": None}
     return {
         "country": country,
         "language": info["language"],

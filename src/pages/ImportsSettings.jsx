@@ -13,6 +13,8 @@ import {
   RefreshCw,
   AlertCircle,
   Download,
+  XCircle,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,6 +34,13 @@ function statusMeta(status, t) {
         Icon: CheckCircle2,
         spin: false,
       };
+    case 'cancelled':
+      return {
+        label: t('importStatusCancelled'),
+        className: 'text-amber-800 bg-amber-50',
+        Icon: XCircle,
+        spin: false,
+      };
     default:
       return {
         label: t('importStatusFailed'),
@@ -47,6 +56,7 @@ export const ImportsSettings = () => {
   const navigate = useNavigate();
   const [imports, setImports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -70,6 +80,47 @@ export const ImportsSettings = () => {
     const id = setInterval(load, 4000);
     return () => clearInterval(id);
   }, [imports, load]);
+
+  const handleCancel = async (item) => {
+    setBusyId(item.id);
+    try {
+      await aiApi.cancelImport(item.id);
+      toast.success(t('toastImportCancelled'));
+      await load();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || t('toastImportCancelFailed'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRetry = async (item) => {
+    setBusyId(item.id);
+    try {
+      if (!item.has_source_text) {
+        navigate('/recipes/quick-add');
+        toast.message(t('toastImportRetryPasteAgain'));
+        return;
+      }
+      const res = await aiApi.retryImport(item.id);
+      const body = res.data || {};
+      if (res.status === 202 || body.status === 'importing') {
+        toast.success(t('toastImportRetryStarted'));
+        await load();
+        return;
+      }
+      toast.success(t('toastImportRetryStarted'));
+      await load();
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      if (typeof detail === 'string' && detail.toLowerCase().includes('paste')) {
+        navigate('/recipes/quick-add');
+      }
+      toast.error(detail || t('toastImportRetryFailed'));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   return (
     <Layout>
@@ -106,8 +157,8 @@ export const ImportsSettings = () => {
           <div className="rounded-2xl border border-border/60 bg-white p-8 text-center space-y-3">
             <Download className="w-8 h-8 mx-auto text-muted-foreground" />
             <p className="text-muted-foreground">{t('yourImportsEmpty')}</p>
-            <Link to="/recipes/import">
-              <Button className="rounded-full mt-2">{t('importRecipe')}</Button>
+            <Link to="/recipes/add">
+              <Button className="rounded-full mt-2">{t('addRecipe')}</Button>
             </Link>
           </div>
         ) : (
@@ -115,6 +166,11 @@ export const ImportsSettings = () => {
             {imports.map((item, index) => {
               const meta = statusMeta(item.status, t);
               const Icon = meta.Icon;
+              const showCancel = item.status === 'importing';
+              const showRetry =
+                item.status === 'importing' ||
+                item.status === 'failed' ||
+                item.status === 'cancelled';
               return (
                 <motion.div
                   key={item.id}
@@ -148,12 +204,47 @@ export const ImportsSettings = () => {
                           <ExternalLink className="w-3 h-3 shrink-0" />
                         </a>
                       ) : null}
-                      {item.error && item.status === 'failed' ? (
+                      {(item.error && (item.status === 'failed' || item.status === 'cancelled')) ? (
                         <p className="text-xs text-red-600">{item.error}</p>
                       ) : null}
                       {item.kind ? (
                         <p className="text-[11px] text-muted-foreground">{item.kind}</p>
                       ) : null}
+                      {(showCancel || showRetry) && (
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          {showCancel ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="rounded-full h-8"
+                              disabled={busyId === item.id}
+                              onClick={() => handleCancel(item)}
+                              data-testid="import-cancel-btn"
+                            >
+                              <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                              {t('cancelImport')}
+                            </Button>
+                          ) : null}
+                          {showRetry ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="rounded-full h-8 bg-laro hover:bg-laro-dark"
+                              disabled={busyId === item.id}
+                              onClick={() => handleRetry(item)}
+                              data-testid="import-retry-btn"
+                            >
+                              {busyId === item.id ? (
+                                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                              )}
+                              {t('retryImport')}
+                            </Button>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </motion.div>

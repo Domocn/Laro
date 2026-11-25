@@ -74,7 +74,13 @@ async def import_from_platform(data: ImportPlatformRequest, request: Request, us
             recipe_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc).isoformat()
 
+            # Keep every field the export carries (nutrition, video, source, ...); _row drops
+            # anything that isn't a recipe column. Ownership/ids below always win.
+            keep = {k: v for k, v in recipe.items()
+                    if k not in ("id", "author_id", "household_id", "created_at", "updated_at",
+                                 "cookbook_id", "cookbook_page")}
             recipe_doc = {
+                **keep,
                 "id": recipe_id,
                 "title": recipe.get("title", "Untitled"),
                 "description": recipe.get("description", ""),
@@ -91,7 +97,8 @@ async def import_from_platform(data: ImportPlatformRequest, request: Request, us
                 "created_at": now,
                 "updated_at": now
             }
-            await recipe_repository.create(recipe_doc)
+            from routers.recipe_import import _row
+            await recipe_repository.create(_row(recipe_doc))
             saved_count += 1
 
         # Log data import

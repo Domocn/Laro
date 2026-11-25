@@ -45,6 +45,62 @@ export const COUNTRIES = {
   KR: { name: 'South Korea', flag: '🇰🇷', language: 'ko', measurementUnit: 'metric', currency: 'KRW' },
 };
 
+/** Every ISO 3166-1 alpha-2 country ("Which country are you in?"). COUNTRIES only lists the
+ * ones with their own language / unit defaults. Keep in sync with backend/utils/locales.py. */
+export const ALL_COUNTRY_CODES = (
+  'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE ' +
+  'BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD ' +
+  'CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM ' +
+  'DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF ' +
+  'GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ' +
+  'ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN ' +
+  'KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME ' +
+  'MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA ' +
+  'NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM ' +
+  'PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI ' +
+  'SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK ' +
+  'TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI ' +
+  'VN VU WF WS YE YT ZA ZM ZW '
+).trim().split(/\s+/);
+
+/** Shown first in the country picker. */
+export const COMMON_COUNTRIES = ['GB', 'IE', 'US', 'CA', 'AU', 'NZ'];
+
+const ALL_COUNTRY_SET = new Set(ALL_COUNTRY_CODES);
+let regionNames = null;
+
+/** English country name (Intl when available; catalogue name / code otherwise). */
+export function countryName(code) {
+  const upper = String(code || '').toUpperCase();
+  if (upper === 'GB') return 'United Kingdom';
+  try {
+    if (!regionNames && typeof Intl !== 'undefined' && Intl.DisplayNames) {
+      regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+    }
+    const name = regionNames?.of(upper);
+    if (name && name !== upper) return name;
+  } catch {
+    /* fall through */
+  }
+  return COUNTRIES[upper]?.name || upper;
+}
+
+/** Flag emoji from the two regional-indicator letters. */
+export function countryFlag(code) {
+  const upper = String(code || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(upper)) return '';
+  return String.fromCodePoint(...[...upper].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+/** Picker order: common countries first, then every other country A-Z by name. */
+export function countryOptions() {
+  const common = COMMON_COUNTRIES.map((code) => ({ code, name: countryName(code), flag: countryFlag(code) }));
+  const rest = ALL_COUNTRY_CODES.filter((c) => !COMMON_COUNTRIES.includes(c))
+    .map((code) => ({ code, name: countryName(code), flag: countryFlag(code) }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'en'));
+  return { common, rest };
+}
+
 export const DEFAULT_LANGUAGE = 'en-GB';
 export const DEFAULT_COUNTRY = 'GB';
 
@@ -90,17 +146,21 @@ export function normalizeCountry(code) {
   if (!code) return DEFAULT_COUNTRY;
   const upper = String(code).toUpperCase();
   if (upper === 'UK') return 'GB';
-  return COUNTRIES[upper] ? upper : DEFAULT_COUNTRY;
+  return COUNTRIES[upper] || ALL_COUNTRY_SET.has(upper) ? upper : DEFAULT_COUNTRY;
 }
 
-/** Suggest language + units when the user picks a country. */
+/**
+ * Suggest language + units when the user picks a country. Countries without a catalogue entry
+ * get metric and `language: null` (keep whatever language is already chosen).
+ */
 export function defaultsForCountry(countryCode) {
-  const c = COUNTRIES[normalizeCountry(countryCode)] || COUNTRIES[DEFAULT_COUNTRY];
+  const code = normalizeCountry(countryCode);
+  const c = COUNTRIES[code];
   return {
-    country: normalizeCountry(countryCode),
-    language: c.language,
-    measurementUnit: c.measurementUnit,
-    currency: c.currency,
+    country: code,
+    language: c ? c.language : null,
+    measurementUnit: c ? c.measurementUnit : 'metric',
+    currency: c ? c.currency : null,
   };
 }
 

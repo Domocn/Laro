@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS users (
     friend_code VARCHAR(20) UNIQUE,
     referred_by VARCHAR(255),
     referral_trial_end TIMESTAMP,
+    signup_promo_code VARCHAR(64),
     referral_count INTEGER DEFAULT 0,
     pending_referral_rewards TEXT DEFAULT '[]',
     referral_reward_granted BOOLEAN DEFAULT FALSE,
@@ -105,6 +106,7 @@ CREATE TABLE IF NOT EXISTS recipes (
     rating_average DOUBLE PRECISION DEFAULT NULL,
     rating_count INTEGER DEFAULT 0,
     would_make_again_percent INTEGER DEFAULT NULL,
+    adaptations TEXT DEFAULT NULL,
     FOREIGN KEY (author_id) REFERENCES users(id)
 );
 
@@ -113,7 +115,7 @@ CREATE TABLE IF NOT EXISTS user_recipe_ratings (
     id VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
     recipe_id VARCHAR(255) NOT NULL,
-    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
     personal_notes TEXT DEFAULT '',
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
@@ -121,6 +123,9 @@ CREATE TABLE IF NOT EXISTS user_recipe_ratings (
     FOREIGN KEY (recipe_id) REFERENCES recipes(id),
     UNIQUE(user_id, recipe_id)
 );
+
+-- Migration: a personal note no longer forces a star rating (NULL = not rated yet).
+ALTER TABLE user_recipe_ratings ALTER COLUMN rating DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS households (
     id VARCHAR(255) PRIMARY KEY,
@@ -177,6 +182,8 @@ CREATE TABLE IF NOT EXISTS meal_plans (
     notes TEXT DEFAULT '',
     adult_boost TEXT DEFAULT '',  -- "For adults: …" upgrade tip (family one-meal)
     entry_type VARCHAR(50) DEFAULT 'recipe',  -- recipe | note | leftover
+    recipe_version VARCHAR(80) DEFAULT NULL,  -- named version (recipes.adaptations.versions); NULL = Original
+    low_fodmap BOOLEAN DEFAULT FALSE,  -- use the recipe's Low FODMAP swaps
     household_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL
 );
@@ -254,6 +261,7 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     id VARCHAR(255) PRIMARY KEY,
     state VARCHAR(255) UNIQUE NOT NULL,
     provider VARCHAR(50) NOT NULL,
+    redirect_uri TEXT,
     created_at TIMESTAMP NOT NULL
 );
 
@@ -291,6 +299,20 @@ CREATE TABLE IF NOT EXISTS invite_codes (
     uses INTEGER DEFAULT 0,
     grants_admin BOOLEAN DEFAULT FALSE,
     expires_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS promo_codes (
+    id VARCHAR(255) PRIMARY KEY,
+    code VARCHAR(64) UNIQUE NOT NULL,
+    description TEXT,
+    trial_days INTEGER NOT NULL DEFAULT 14,
+    max_uses INTEGER,
+    uses INTEGER DEFAULT 0,
+    active BOOLEAN DEFAULT TRUE,
+    referrer_user_id VARCHAR(255),
+    expires_at TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL
 );
 
@@ -380,6 +402,7 @@ CREATE TABLE IF NOT EXISTS import_attempts (
     error TEXT,
     recipe_id VARCHAR(255),
     result_json TEXT,
+    source_text TEXT,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
@@ -393,14 +416,26 @@ CREATE TABLE IF NOT EXISTS cook_sessions (
     completed_at TIMESTAMP,
     feedback TEXT,
     notes TEXT DEFAULT '',
+    nutrition_override TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+);
+
+CREATE TABLE IF NOT EXISTS feedback_responses (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255),
+    source VARCHAR(50) NOT NULL,
+    reason VARCHAR(50),
+    comment TEXT,
+    created_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS support_tickets (
     id VARCHAR(255) PRIMARY KEY,
     ticket_number VARCHAR(32) UNIQUE NOT NULL,
-    user_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255),
+    reporter_email VARCHAR(320),
+    reporter_name VARCHAR(255),
     category VARCHAR(50) NOT NULL DEFAULT 'support',
     subject VARCHAR(300) NOT NULL,
     description TEXT NOT NULL,
@@ -420,7 +455,8 @@ CREATE TABLE IF NOT EXISTS support_tickets (
 CREATE TABLE IF NOT EXISTS support_ticket_messages (
     id VARCHAR(255) PRIMARY KEY,
     ticket_id VARCHAR(255) NOT NULL,
-    user_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255),
+    reporter_email VARCHAR(320),
     is_staff BOOLEAN NOT NULL DEFAULT FALSE,
     body TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL,
@@ -493,6 +529,26 @@ CREATE TABLE IF NOT EXISTS llm_cache (
     model VARCHAR(100)
 );
 
+-- AI macro estimate per normalised ingredient line ("500 g dried pasta"), shared by every
+-- recipe / version / Low FODMAP list so the same line never costs a second AI call.
+CREATE TABLE IF NOT EXISTS ingredient_line_macros (
+    line_key VARCHAR(500) PRIMARY KEY,
+    protein INTEGER NOT NULL,
+    carbs INTEGER NOT NULL,
+    fat INTEGER NOT NULL,
+    calories INTEGER NOT NULL,
+    model VARCHAR(100),
+    -- provenance: method 'db' (food database: matched food, grams, dataset source) or 'ai'
+    method VARCHAR(10),
+    food VARCHAR(200),
+    grams DOUBLE PRECISION,
+    source VARCHAR(40),
+    source_id VARCHAR(100),
+    -- total carbohydrate incl. fibre (US basis); ``carbs`` is available carbohydrate (UK basis)
+    carbs_total INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS custom_prompts (
     user_id VARCHAR(255) PRIMARY KEY,
     recipe_extraction TEXT,
@@ -506,6 +562,7 @@ CREATE TABLE IF NOT EXISTS recipe_versions (
     recipe_id VARCHAR(255) NOT NULL,
     version INTEGER NOT NULL,
     data TEXT NOT NULL,
+    change_note TEXT,
     created_at TIMESTAMP NOT NULL,
     created_by VARCHAR(255) NOT NULL,
     FOREIGN KEY (recipe_id) REFERENCES recipes(id)
@@ -567,6 +624,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     "compactView" BOOLEAN DEFAULT FALSE,
     "weekStartsOn" VARCHAR(20) DEFAULT 'monday',
     "mealPlanNotifications" BOOLEAN DEFAULT TRUE,
+    "weeklyPlanEmail" BOOLEAN DEFAULT FALSE,
     "shoppingListAutoSort" BOOLEAN DEFAULT TRUE,
     "defaultCookingTime" INTEGER DEFAULT 30,
     -- Accessibility: Reading Support
@@ -624,6 +682,9 @@ CREATE TABLE IF NOT EXISTS custom_roles (
     name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT,
     permissions TEXT DEFAULT '[]',
+    color VARCHAR(20),
+    is_builtin BOOLEAN DEFAULT FALSE,
+    created_by VARCHAR(255),
     created_at TIMESTAMP NOT NULL
 );
 
@@ -787,7 +848,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mobile_notification_settings' AND column_name='cookbook_updates') THEN
         ALTER TABLE mobile_notification_settings ADD COLUMN cookbook_updates BOOLEAN DEFAULT TRUE;
     END IF;
-    -- Shopping
+    -- Shopping (older databases only have shared_list_updates; FCM token registration 500s without this)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mobile_notification_settings' AND column_name='shopping_list_updates') THEN
+        ALTER TABLE mobile_notification_settings ADD COLUMN shopping_list_updates BOOLEAN DEFAULT TRUE;
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mobile_notification_settings' AND column_name='shopping_reminders') THEN
         ALTER TABLE mobile_notification_settings ADD COLUMN shopping_reminders BOOLEAN DEFAULT TRUE;
     END IF;
@@ -800,6 +864,42 @@ BEGIN
         ALTER TABLE mobile_notification_settings ADD COLUMN security_alerts BOOLEAN DEFAULT TRUE;
     END IF;
 END $$;
+
+-- Error log: server 500s and web-app crashes (services/error_log.py). Kept here because
+-- container logs are wiped on every deploy.
+CREATE TABLE IF NOT EXISTS error_events (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    fingerprint VARCHAR(64) NOT NULL,
+    error_type VARCHAR(200),
+    message TEXT,
+    path VARCHAR(300),
+    method VARCHAR(10),
+    location VARCHAR(300),
+    user_id VARCHAR(255),
+    user_agent VARCHAR(300),
+    app_version VARCHAR(40),
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_error_events_created ON error_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_error_events_fp ON error_events(fingerprint, created_at);
+CREATE TABLE IF NOT EXISTS error_alerts (
+    fingerprint VARCHAR(64) PRIMARY KEY,
+    last_sent_at TIMESTAMP NOT NULL
+);
+
+-- Where web visits come from (no personal data: source, landing page, device type)
+CREATE TABLE IF NOT EXISTS link_visits (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    source VARCHAR(100) NOT NULL,
+    campaign VARCHAR(100),
+    landing VARCHAR(200),
+    referrer_host VARCHAR(200),
+    device VARCHAR(20)
+);
+CREATE INDEX IF NOT EXISTS idx_link_visits_created ON link_visits(created_at);
 
 -- Remote instances linked to cloud accounts (like Home Assistant Cloud)
 CREATE TABLE IF NOT EXISTS remote_instances (
@@ -933,6 +1033,96 @@ DO $$
 DECLARE
     r RECORD;
 BEGIN
+    -- OAuth sign-in stores where to send the user back (Google/GitHub web sign-in 500'd without it)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='oauth_states' AND column_name='redirect_uri') THEN
+        ALTER TABLE oauth_states ADD COLUMN redirect_uri TEXT;
+    END IF;
+    -- Version history: every save failed without it (0 rows ever)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipe_versions' AND column_name='change_note') THEN
+        ALTER TABLE recipe_versions ADD COLUMN change_note TEXT;
+    END IF;
+    -- Admin > Roles: creating a role failed without these
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='custom_roles' AND column_name='color') THEN
+        ALTER TABLE custom_roles ADD COLUMN color VARCHAR(20);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='custom_roles' AND column_name='is_builtin') THEN
+        ALTER TABLE custom_roles ADD COLUMN is_builtin BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='custom_roles' AND column_name='created_by') THEN
+        ALTER TABLE custom_roles ADD COLUMN created_by VARCHAR(255);
+    END IF;
+    -- Version history also sets recipes.current_version
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='current_version') THEN
+        ALTER TABLE recipes ADD COLUMN current_version INTEGER DEFAULT 1;
+    END IF;
+    -- Two-factor setup failed at "enter code" without it
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='totp_secrets' AND column_name='verified_at') THEN
+        ALTER TABLE totp_secrets ADD COLUMN verified_at TIMESTAMP;
+    END IF;
+    -- Delete-account-by-email (/delete-account, Play data deletion page)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='deletion_token') THEN
+        ALTER TABLE users ADD COLUMN deletion_token VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='deletion_token_expires') THEN
+        ALTER TABLE users ADD COLUMN deletion_token_expires TIMESTAMP;
+    END IF;
+    -- Trusted devices: code was written for a newer table layout
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trusted_devices' AND column_name='token_hash') THEN
+        ALTER TABLE trusted_devices ADD COLUMN token_hash VARCHAR(255);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trusted_devices' AND column_name='device_fingerprint') THEN
+        ALTER TABLE trusted_devices ADD COLUMN device_fingerprint VARCHAR(64);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trusted_devices' AND column_name='user_agent') THEN
+        ALTER TABLE trusted_devices ADD COLUMN user_agent VARCHAR(500);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trusted_devices' AND column_name='is_active') THEN
+        ALTER TABLE trusted_devices ADD COLUMN is_active INTEGER DEFAULT 1;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trusted_devices' AND column_name='expires_at') THEN
+        ALTER TABLE trusted_devices ADD COLUMN expires_at TIMESTAMP;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trusted_devices' AND column_name='revoked_at') THEN
+        ALTER TABLE trusted_devices ADD COLUMN revoked_at TIMESTAMP;
+    END IF;
+    -- The code stores token_hash, never the raw device_token
+    BEGIN
+        ALTER TABLE trusted_devices ALTER COLUMN device_token DROP NOT NULL;
+    EXCEPTION WHEN others THEN
+        NULL;
+    END;
+    -- Engagement (2026-11-26): real "last seen" (last_login only changes on password sign-in)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_seen_at') THEN
+        ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP;
+        -- Start everyone at 'seen now': last_login is unreliable, and a stale value would email active users.
+        UPDATE users SET last_seen_at = (now() AT TIME ZONE 'utc');
+    END IF;
+    -- Onboarding / tour / what's new shown once per ACCOUNT (was per browser via localStorage)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='ui_seen') THEN
+        ALTER TABLE users ADD COLUMN ui_seen TEXT DEFAULT '{}';
+        -- Accounts that existed before this change have already been through onboarding/tour
+        UPDATE users SET ui_seen = '{"onboarding": "before-2026-11-26", "tour": "before-2026-11-26"}';
+    END IF;
+    -- "Haven't seen you for a while" feedback emails
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='feedback_email_sent_at') THEN
+        ALTER TABLE users ADD COLUMN feedback_email_sent_at TIMESTAMP;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='feedback_email_count') THEN
+        ALTER TABLE users ADD COLUMN feedback_email_count INTEGER DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='feedback_emails_opt_out') THEN
+        ALTER TABLE users ADD COLUMN feedback_emails_opt_out BOOLEAN DEFAULT FALSE;
+    END IF;
+    -- Win-back trial (once per person) and weekly plan email bookkeeping
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='winback_trial_granted_at') THEN
+        ALTER TABLE users ADD COLUMN winback_trial_granted_at TIMESTAMP;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='weekly_plan_last_week') THEN
+        ALTER TABLE users ADD COLUMN weekly_plan_last_week VARCHAR(10);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='weeklyPlanEmail') THEN
+        ALTER TABLE user_preferences ADD COLUMN "weeklyPlanEmail" BOOLEAN DEFAULT FALSE;
+    END IF;
     -- Locale / region
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_preferences' AND column_name='country') THEN
         ALTER TABLE user_preferences ADD COLUMN country VARCHAR(10) DEFAULT 'GB';
@@ -1112,6 +1302,38 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='cookbook_page') THEN
         ALTER TABLE recipes ADD COLUMN cookbook_page INTEGER;
     END IF;
+    -- Cooking video link (Pro). Was device-only on Android: never synced, lost on logout.
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='video_url') THEN
+        ALTER TABLE recipes ADD COLUMN video_url TEXT DEFAULT NULL;
+    END IF;
+    -- Cached per-ingredient macro breakdown (Pro feature): JSON array parallel to ingredients
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='ingredient_macros') THEN
+        ALTER TABLE recipes ADD COLUMN ingredient_macros TEXT DEFAULT NULL;
+    END IF;
+    -- Optional diet adaptations, e.g. {"low_fodmap": {"swaps": [...], "notes": "..."}} (JSON text)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='adaptations') THEN
+        ALTER TABLE recipes ADD COLUMN adaptations TEXT DEFAULT NULL;
+    END IF;
+    -- Line macro provenance (services/line_macros.py): food database match vs AI estimate.
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_line_macros' AND column_name='method') THEN
+        ALTER TABLE ingredient_line_macros ADD COLUMN method VARCHAR(10) DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_line_macros' AND column_name='food') THEN
+        ALTER TABLE ingredient_line_macros ADD COLUMN food VARCHAR(200) DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_line_macros' AND column_name='grams') THEN
+        ALTER TABLE ingredient_line_macros ADD COLUMN grams DOUBLE PRECISION DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_line_macros' AND column_name='source') THEN
+        ALTER TABLE ingredient_line_macros ADD COLUMN source VARCHAR(40) DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_line_macros' AND column_name='source_id') THEN
+        ALTER TABLE ingredient_line_macros ADD COLUMN source_id VARCHAR(100) DEFAULT NULL;
+    END IF;
+    -- US-basis carbs (incl. fibre) next to the UK-basis ``carbs`` column; NULL on AI / older rows.
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ingredient_line_macros' AND column_name='carbs_total') THEN
+        ALTER TABLE ingredient_line_macros ADD COLUMN carbs_total INTEGER DEFAULT NULL;
+    END IF;
 
     -- Feature-parity / cost columns on recipes (older DBs used CREATE TABLE IF NOT EXISTS
     -- and never picked up columns added to the CREATE statement later)
@@ -1283,6 +1505,13 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meal_plans' AND column_name='adult_boost') THEN
         ALTER TABLE meal_plans ADD COLUMN adult_boost TEXT DEFAULT '';
     END IF;
+    -- Planned recipe version + Low FODMAP choice (carried into the shopping list)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meal_plans' AND column_name='recipe_version') THEN
+        ALTER TABLE meal_plans ADD COLUMN recipe_version VARCHAR(80) DEFAULT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meal_plans' AND column_name='low_fodmap') THEN
+        ALTER TABLE meal_plans ADD COLUMN low_fodmap BOOLEAN DEFAULT FALSE;
+    END IF;
 
     -- Track when a recipe was last cooked
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='recipes' AND column_name='last_cooked_at') THEN
@@ -1292,6 +1521,11 @@ BEGIN
     -- Optional cook-session notes ("too salty", "kids loved it")
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cook_sessions' AND column_name='notes') THEN
         ALTER TABLE cook_sessions ADD COLUMN notes TEXT DEFAULT '';
+    END IF;
+
+    -- Per-serving nutrition the cook checked for this session ("Check the numbers"), JSON
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cook_sessions' AND column_name='nutrition_override') THEN
+        ALTER TABLE cook_sessions ADD COLUMN nutrition_override TEXT;
     END IF;
 
     -- Ensure aisle_overrides exists on older DBs (CREATE TABLE IF NOT EXISTS also runs above)
@@ -1557,6 +1791,7 @@ BEGIN
             error TEXT,
             recipe_id VARCHAR(255),
             result_json TEXT,
+            source_text TEXT,
             created_at TIMESTAMP NOT NULL,
             updated_at TIMESTAMP NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
@@ -1569,6 +1804,12 @@ BEGIN
         ALTER TABLE import_attempts ADD COLUMN result_json TEXT;
     END IF;
     IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='import_attempts' AND column_name='source_text'
+    ) THEN
+        ALTER TABLE import_attempts ADD COLUMN source_text TEXT;
+    END IF;
+    IF NOT EXISTS (
         SELECT 1 FROM pg_indexes WHERE indexname='idx_import_attempts_user_created'
     ) THEN
         CREATE INDEX idx_import_attempts_user_created ON import_attempts(user_id, created_at DESC);
@@ -1577,6 +1818,50 @@ BEGIN
         SELECT 1 FROM pg_indexes WHERE indexname='idx_import_attempts_user_status'
     ) THEN
         CREATE INDEX idx_import_attempts_user_status ON import_attempts(user_id, status);
+    END IF;
+END $$;
+
+-- Support tickets: allow email-originated tickets from non-registered senders
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='support_tickets' AND column_name='user_id' AND is_nullable='NO') THEN
+        ALTER TABLE support_tickets ALTER COLUMN user_id DROP NOT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='support_tickets' AND column_name='reporter_email') THEN
+        ALTER TABLE support_tickets ADD COLUMN reporter_email VARCHAR(320);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='support_tickets' AND column_name='reporter_name') THEN
+        ALTER TABLE support_tickets ADD COLUMN reporter_name VARCHAR(255);
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='support_ticket_messages' AND column_name='user_id' AND is_nullable='NO') THEN
+        ALTER TABLE support_ticket_messages ALTER COLUMN user_id DROP NOT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='support_ticket_messages' AND column_name='reporter_email') THEN
+        ALTER TABLE support_ticket_messages ADD COLUMN reporter_email VARCHAR(320);
+    END IF;
+END $$;
+
+-- Promo codes: admin-made sign-up codes with their own Pro trial length
+CREATE TABLE IF NOT EXISTS promo_codes (
+    id VARCHAR(255) PRIMARY KEY,
+    code VARCHAR(64) UNIQUE NOT NULL,
+    description TEXT,
+    trial_days INTEGER NOT NULL DEFAULT 14,
+    max_uses INTEGER,
+    uses INTEGER DEFAULT 0,
+    active BOOLEAN DEFAULT TRUE,
+    referrer_user_id VARCHAR(255),
+    expires_at TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL
+);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='signup_promo_code') THEN
+        ALTER TABLE users ADD COLUMN signup_promo_code VARCHAR(64);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='signup_source') THEN
+        ALTER TABLE users ADD COLUMN signup_source VARCHAR(100);
     END IF;
 END $$;
 """
@@ -1609,29 +1894,39 @@ async def init_db() -> asyncpg.Pool:
 
     # Create schema
     schema_start = time.time()
+    # Serialize DDL across processes with a Postgres advisory lock so multiple
+    # uvicorn workers can start concurrently. Without it, two workers racing on
+    # `CREATE TYPE ... IF NOT EXISTS` can both insert into pg_type and one hits a
+    # unique-violation, latching that worker in a broken state. The lock makes one
+    # worker run the (idempotent) schema while the others wait, then no-op.
+    INIT_LOCK_KEY = 1734056  # fixed arbitrary bigint key shared by all workers
     async with _pool.acquire() as conn:
-        if _debug_available:
-            Loggers.db.debug("Executing schema creation...")
+        await conn.execute("SELECT pg_advisory_lock($1)", INIT_LOCK_KEY)
+        try:
+            if _debug_available:
+                Loggers.db.debug("Executing schema creation...")
 
-        # Execute schema creation
-        await conn.execute(SCHEMA)
-        schema_time = (time.time() - schema_start) * 1000
-        if _debug_available:
-            Loggers.db.debug("Schema created", duration_ms=f"{schema_time:.2f}")
+            # Execute schema creation
+            await conn.execute(SCHEMA)
+            schema_time = (time.time() - schema_start) * 1000
+            if _debug_available:
+                Loggers.db.debug("Schema created", duration_ms=f"{schema_time:.2f}")
 
-        # Create indices
-        indices_start = time.time()
-        await conn.execute(INDICES)
-        indices_time = (time.time() - indices_start) * 1000
-        if _debug_available:
-            Loggers.db.debug("Indices created", duration_ms=f"{indices_time:.2f}")
+            # Create indices
+            indices_start = time.time()
+            await conn.execute(INDICES)
+            indices_time = (time.time() - indices_start) * 1000
+            if _debug_available:
+                Loggers.db.debug("Indices created", duration_ms=f"{indices_time:.2f}")
 
-        # Run migrations for existing databases
-        migrations_start = time.time()
-        await conn.execute(MIGRATIONS)
-        migrations_time = (time.time() - migrations_start) * 1000
-        if _debug_available:
-            Loggers.db.debug("Migrations executed", duration_ms=f"{migrations_time:.2f}")
+            # Run migrations for existing databases
+            migrations_start = time.time()
+            await conn.execute(MIGRATIONS)
+            migrations_time = (time.time() - migrations_start) * 1000
+            if _debug_available:
+                Loggers.db.debug("Migrations executed", duration_ms=f"{migrations_time:.2f}")
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock($1)", INIT_LOCK_KEY)
 
     total_time = (time.time() - start_time) * 1000
     logger.info("Database initialized successfully")

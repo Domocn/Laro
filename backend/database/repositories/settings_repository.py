@@ -271,6 +271,66 @@ class InviteCodeRepository(BaseRepository):
         return None
 
 
+class PromoCodeRepository(BaseRepository):
+    """Repository for promo codes (sign-up codes with their own Pro trial length)"""
+
+    def __init__(self):
+        super().__init__("promo_codes")
+
+    async def find_by_code(self, code: str) -> Optional[dict]:
+        """Find promo code by code"""
+        return await self.find_one({"code": code})
+
+    async def find_by_id(self, code_id: str) -> Optional[dict]:
+        """Find promo code by ID"""
+        return await self.find_one({"id": code_id})
+
+    async def create(self, promo_data: dict) -> dict:
+        """Create a new promo code"""
+        return await self.insert(promo_data)
+
+    async def update_code(self, code_id: str, data: dict) -> int:
+        """Update a promo code"""
+        return await self.update({"id": code_id}, data)
+
+    async def delete_code(self, code_id: str) -> int:
+        """Delete a promo code"""
+        return await self.delete({"id": code_id})
+
+    async def list_all(self, limit: int = 200) -> List[dict]:
+        """List all promo codes"""
+        return await self.find_many(
+            order_by="created_at",
+            order_dir="DESC",
+            limit=limit
+        )
+
+    async def claim(self, code: str, current_time) -> Optional[dict]:
+        """Use up one redemption of an active, unexpired code with uses left.
+
+        Check and increment happen in one statement so a last remaining
+        use can't be taken twice.
+        """
+        pool = await self._get_db()
+
+        query = """
+            UPDATE promo_codes SET uses = uses + 1
+            WHERE code = $1
+            AND active = TRUE
+            AND (expires_at IS NULL OR expires_at > $2)
+            AND (max_uses IS NULL OR uses < max_uses)
+            RETURNING *
+        """
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(query, code, current_time)
+
+        if row:
+            from ..connection import dict_from_row
+            return dict_from_row(row)
+        return None
+
+
 class AuditLogRepository(BaseRepository):
     """Repository for audit logs"""
 
@@ -518,6 +578,7 @@ llm_cache_repository = LLMCacheRepository()
 custom_prompts_repository = CustomPromptsRepository()
 user_preferences_repository = UserPreferencesRepository()
 invite_code_repository = InviteCodeRepository()
+promo_code_repository = PromoCodeRepository()
 audit_log_repository = AuditLogRepository()
 backup_repository = BackupRepository()
 backup_settings_repository = BackupSettingsRepository()

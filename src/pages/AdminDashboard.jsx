@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { adminApi, supportApi } from '../lib/api';
+import { CopyButton } from '../components/ui/copy-button';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -45,18 +46,25 @@ import {
   Crown,
   MessageSquare,
   CreditCard,
+  Gift,
+  Link2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { RolesManager } from '../components/RolesManager';
+import { AdminErrors } from '../components/AdminErrors';
+import { AdminLinks } from '../components/AdminLinks';
 
 const tabs = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
   { id: 'tickets', label: 'Tickets', icon: MessageSquare },
+  { id: 'errors', label: 'Errors', icon: AlertTriangle },
+  { id: 'links', label: 'Links', icon: Link2 },
   { id: 'roles', label: 'Roles', icon: Crown },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'invites', label: 'Invite Codes', icon: Key },
+  { id: 'promos', label: 'Promo Codes', icon: Gift },
   { id: 'ip-rules', label: 'IP Rules', icon: Globe },
   { id: 'audit', label: 'Audit Log', icon: FileText },
   { id: 'system', label: 'System', icon: Activity },
@@ -64,7 +72,7 @@ const tabs = [
 
 export const AdminDashboard = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, previewFree, setPreviewFree, isRealOwner } = useAuth();
   const [activeTab, setActiveTab] = useState('users');
   const [loading, setLoading] = useState(true);
   
@@ -99,6 +107,10 @@ export const AdminDashboard = () => {
   const [inviteCodes, setInviteCodes] = useState([]);
   const [showCreateInvite, setShowCreateInvite] = useState(false);
   const [newInvite, setNewInvite] = useState({ max_uses: 1, expires_days: 7, grants_admin: false });
+  const emptyPromo = { code: '', trial_days: 28, description: '', max_uses: '', expires_days: '', referrer_email: '' };
+  const [promoCodes, setPromoCodes] = useState([]);
+  const [showCreatePromo, setShowCreatePromo] = useState(false);
+  const [newPromo, setNewPromo] = useState(emptyPromo);
   
   // IP Rules state
   const [ipAllowlist, setIpAllowlist] = useState([]);
@@ -140,6 +152,12 @@ export const AdminDashboard = () => {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [ticketReply, setTicketReply] = useState('');
   const [ticketBusy, setTicketBusy] = useState(false);
+  // Compose a new outbound email (opens a ticket)
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeEmail, setComposeEmail] = useState('');
+  const [composeSubject, setComposeSubject] = useState('');
+  const [composeBody, setComposeBody] = useState('');
+  const [composeCreateTicket, setComposeCreateTicket] = useState(true);
 
   // Subscriptions (admin grant / revoke)
   const [subscriptions, setSubscriptions] = useState([]);
@@ -185,6 +203,22 @@ export const AdminDashboard = () => {
     }
   }, [auditPage]);
 
+  // Auto-refresh an open ticket so emailed replies appear without a manual reload.
+  // Fetches directly (not openAdminTicket) so it never clears a half-typed reply.
+  useEffect(() => {
+    if (activeTab !== 'tickets' || composeOpen || !selectedTicket?.id) return;
+    const id = selectedTicket.id;
+    const timer = setInterval(async () => {
+      try {
+        const res = await supportApi.get(id);
+        setSelectedTicket((prev) => (prev && prev.id === id ? res.data : prev));
+      } catch (e) {
+        /* ignore transient poll errors */
+      }
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [activeTab, composeOpen, selectedTicket?.id]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -203,6 +237,9 @@ export const AdminDashboard = () => {
           break;
         case 'invites':
           await loadInviteCodes();
+          break;
+        case 'promos':
+          await loadPromoCodes();
           break;
         case 'ip-rules':
           await loadIPRules();
@@ -362,6 +399,7 @@ export const AdminDashboard = () => {
 
   const openAdminTicket = async (id) => {
     setTicketBusy(true);
+    setComposeOpen(false);
     try {
       const res = await supportApi.get(id);
       setSelectedTicket(res.data);
@@ -384,6 +422,32 @@ export const AdminDashboard = () => {
       toast.success('Reply sent');
     } catch (error) {
       toast.error(error.response?.data?.detail || "Couldn't send reply.");
+    } finally {
+      setTicketBusy(false);
+    }
+  };
+
+  const sendAdminCompose = async () => {
+    const email = composeEmail.trim();
+    const subject = composeSubject.trim();
+    const body = composeBody.trim();
+    if (!email || !subject || !body) return;
+    setTicketBusy(true);
+    try {
+      const res = await supportApi.adminMessage({ email, subject, body, create_ticket: composeCreateTicket });
+      setComposeEmail('');
+      setComposeSubject('');
+      setComposeBody('');
+      setComposeOpen(false);
+      await loadAdminTickets();
+      const num = res.data?.ticket_number;
+      if (res.data?.email_sent) {
+        toast.success(num ? `Email sent (ticket ${num})` : 'Email sent');
+      } else {
+        toast.error('Email not sent. Check email config.');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Couldn't send the email.");
     } finally {
       setTicketBusy(false);
     }
@@ -419,6 +483,15 @@ export const AdminDashboard = () => {
       setInviteCodes(res.data.codes || []);
     } catch (error) {
       console.error('Failed to load invite codes:', error);
+    }
+  };
+
+  const loadPromoCodes = async () => {
+    try {
+      const res = await adminApi.listPromoCodes();
+      setPromoCodes(res.data.codes || []);
+    } catch (error) {
+      console.error('Failed to load promo codes:', error);
     }
   };
 
@@ -673,6 +746,48 @@ export const AdminDashboard = () => {
     }
   };
 
+  // Promo code actions
+  const handleCreatePromo = async () => {
+    try {
+      const res = await adminApi.createPromoCode({
+        code: newPromo.code.trim().toUpperCase(),
+        trial_days: parseInt(newPromo.trial_days) || 14,
+        description: newPromo.description.trim() || null,
+        max_uses: parseInt(newPromo.max_uses) || null,
+        expires_days: parseInt(newPromo.expires_days) || null,
+        referrer_email: newPromo.referrer_email.trim() || null,
+      });
+      toast.success('Promo code created');
+      setPromoCodes([res.data, ...promoCodes]);
+      setShowCreatePromo(false);
+      setNewPromo(emptyPromo);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Couldn\'t create that promo code. Please try again. (E-AD010)');
+    }
+  };
+
+  const handleTogglePromo = async (promo) => {
+    try {
+      const res = await adminApi.updatePromoCode(promo.id, { active: !promo.active });
+      setPromoCodes(promoCodes.map(c => (c.id === promo.id ? { ...c, ...res.data } : c)));
+      toast.success(promo.active ? 'Promo code paused' : 'Promo code resumed');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Couldn\'t update that promo code. Please try again. (E-AD011)');
+    }
+  };
+
+  const handleDeletePromo = async (codeId) => {
+    try {
+      await adminApi.deletePromoCode(codeId);
+      setPromoCodes(promoCodes.filter(c => c.id !== codeId));
+      toast.success('Promo code deleted');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Couldn\'t delete that promo code. Please try again. (E-AD012)');
+    }
+  };
+
+  const promoSignupLink = (code) => `${window.location.origin}/register?ref=${encodeURIComponent(code)}`;
+
   const copyInviteCode = (code) => {
     navigator.clipboard.writeText(code);
     toast.success('Code copied to clipboard');
@@ -797,6 +912,24 @@ export const AdminDashboard = () => {
           <p className="text-muted-foreground mt-1">Manage users, settings, and system health</p>
         </motion.div>
 
+        {/* Test view — preview the app as a Free user (owner/admin only) */}
+        {isRealOwner && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.03 }}
+            className="bg-white dark:bg-card rounded-xl border border-border/60 p-4 flex items-center justify-between gap-3"
+          >
+            <div className="min-w-0">
+              <p className="font-medium flex items-center gap-2">👁 Test view: preview as a Free user</p>
+              <p className="text-sm text-muted-foreground">
+                Experience the whole app without Pro (all gates, teasers and upgrade prompts). A visual preview. Server-side limits still treat you as owner. A floating “Exit” button appears while it’s on.
+              </p>
+            </div>
+            <Switch checked={previewFree} onCheckedChange={setPreviewFree} aria-label="Enable free-tier test view" />
+          </motion.div>
+        )}
+
         {/* Tab Bar */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -879,7 +1012,10 @@ export const AdminDashboard = () => {
                               <td className="p-4">
                                 <div>
                                   <p className="font-medium">{u.name}</p>
-                                  <p className="text-sm text-muted-foreground">{u.email}</p>
+                                  <p className="text-sm text-muted-foreground inline-flex items-center gap-1">
+                                    {u.email}
+                                    {u.email && <CopyButton value={u.email} label="email" size={12} />}
+                                  </p>
                                 </div>
                               </td>
                               <td className="p-4">
@@ -1108,7 +1244,10 @@ export const AdminDashboard = () => {
                                 <td className="p-4">
                                   <div>
                                     <p className="font-medium">{sub.name || '—'}</p>
-                                    <p className="text-sm text-muted-foreground">{sub.email}</p>
+                                    <p className="text-sm text-muted-foreground inline-flex items-center gap-1">
+                                      {sub.email}
+                                      {sub.email && <CopyButton value={sub.email} label="email" size={12} />}
+                                    </p>
                                   </div>
                                 </td>
                                 <td className="p-4">
@@ -1181,6 +1320,9 @@ export const AdminDashboard = () => {
                 </div>
               )}
 
+              {activeTab === 'errors' && <AdminErrors />}
+              {activeTab === 'links' && <AdminLinks />}
+
               {/* Support Tickets Tab */}
               {activeTab === 'tickets' && (
                 <div className="space-y-4">
@@ -1210,9 +1352,18 @@ export const AdminDashboard = () => {
                         </Button>
                       ))}
                     </div>
-                    <Button variant="outline" size="sm" className="rounded-full" onClick={loadAdminTickets}>
-                      <RefreshCw className="w-4 h-4" />
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="rounded-full bg-laro hover:bg-laro-dark"
+                        onClick={() => { setComposeOpen(true); setSelectedTicket(null); }}
+                      >
+                        + New email
+                      </Button>
+                      <Button variant="outline" size="sm" className="rounded-full" onClick={loadAdminTickets}>
+                        <RefreshCw className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-4">
@@ -1243,7 +1394,54 @@ export const AdminDashboard = () => {
                     </div>
 
                     <div className="bg-white dark:bg-card rounded-xl border border-border/60 p-4 min-h-[320px]">
-                      {!selectedTicket ? (
+                      {composeOpen ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-heading font-semibold">New email</h3>
+                            <Button variant="ghost" size="sm" onClick={() => setComposeOpen(false)}>
+                              Cancel
+                            </Button>
+                          </div>
+                          <Input
+                            type="email"
+                            placeholder="Recipient email (user@example.com)"
+                            value={composeEmail}
+                            onChange={(e) => setComposeEmail(e.target.value)}
+                          />
+                          <Input
+                            placeholder="Subject"
+                            value={composeSubject}
+                            onChange={(e) => setComposeSubject(e.target.value)}
+                          />
+                          <textarea
+                            className="w-full min-h-[140px] rounded-xl border border-input bg-transparent text-foreground placeholder:text-muted-foreground p-3 text-sm"
+                            placeholder="Message. They can reply and it threads onto the ticket."
+                            value={composeBody}
+                            onChange={(e) => setComposeBody(e.target.value)}
+                          />
+                          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 accent-laro"
+                              checked={composeCreateTicket}
+                              onChange={(e) => setComposeCreateTicket(e.target.checked)}
+                            />
+                            Create a ticket to track this
+                          </label>
+                          <Button
+                            className="rounded-full bg-laro hover:bg-laro-dark"
+                            disabled={ticketBusy || !composeEmail.trim() || !composeSubject.trim() || !composeBody.trim()}
+                            onClick={sendAdminCompose}
+                          >
+                            {ticketBusy ? 'Sending...' : 'Send email'}
+                          </Button>
+                          <p className="text-xs text-muted-foreground">
+                            {composeCreateTicket
+                              ? 'Sends from app@laro.food and opens a ticket. Replies thread back automatically.'
+                              : 'Sends from app@laro.food as a one-off. If they reply, a new ticket is created then.'}
+                          </p>
+                        </div>
+                      ) : !selectedTicket ? (
                         <p className="text-sm text-muted-foreground text-center py-16">Select a ticket</p>
                       ) : ticketBusy && !selectedTicket.messages ? (
                         <div className="flex justify-center py-16">
@@ -1252,10 +1450,20 @@ export const AdminDashboard = () => {
                       ) : (
                         <div className="space-y-4">
                           <div>
-                            <p className="font-mono text-xs text-laro mb-1">{selectedTicket.ticket_number}</p>
+                            <p className="font-mono text-xs text-laro mb-1 inline-flex items-center gap-1">
+                              {selectedTicket.ticket_number}
+                              <CopyButton value={selectedTicket.ticket_number} label="ticket number" size={12} />
+                            </p>
                             <h3 className="font-heading font-semibold">{selectedTicket.subject}</h3>
-                            <p className="text-xs text-muted-foreground">
-                              {selectedTicket.user?.email} · {selectedTicket.category} · {selectedTicket.status}
+                            <p className="text-xs text-muted-foreground inline-flex items-center gap-1 flex-wrap">
+                              {(selectedTicket.user?.email || selectedTicket.reporter_email) && (
+                                <span className="inline-flex items-center gap-1">
+                                  {selectedTicket.user?.email || selectedTicket.reporter_email}
+                                  <CopyButton value={selectedTicket.user?.email || selectedTicket.reporter_email} label="email" size={11} />
+                                  ·
+                                </span>
+                              )}
+                              {selectedTicket.category} · {selectedTicket.status}
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -1276,17 +1484,17 @@ export const AdminDashboard = () => {
                             {(selectedTicket.messages || []).map((m) => (
                               <div
                                 key={m.id}
-                                className={`rounded-lg p-2 text-sm ${m.is_staff ? 'bg-laro/10' : 'bg-cream-subtle'}`}
+                                className={`rounded-lg p-2 text-sm text-foreground ${m.is_staff ? 'bg-laro/10' : 'bg-muted'}`}
                               >
                                 <p className="text-xs text-muted-foreground mb-1">
                                   {m.is_staff ? 'Staff' : 'User'}
                                 </p>
-                                <p className="whitespace-pre-wrap">{m.body}</p>
+                                <p className="whitespace-pre-wrap text-foreground">{m.body}</p>
                               </div>
                             ))}
                           </div>
                           <textarea
-                            className="w-full min-h-[80px] rounded-xl border border-border/60 p-3 text-sm"
+                            className="w-full min-h-[80px] rounded-xl border border-input bg-transparent text-foreground placeholder:text-muted-foreground p-3 text-sm"
                             placeholder="Staff reply…"
                             value={ticketReply}
                             onChange={(e) => setTicketReply(e.target.value)}
@@ -1570,6 +1778,172 @@ export const AdminDashboard = () => {
                                 <Copy className="w-4 h-4" />
                               </Button>
                               <Button variant="ghost" size="sm" onClick={() => handleDeleteInvite(code.id)}>
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Promo Codes Tab */}
+              {activeTab === 'promos' && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center gap-3">
+                    <div className="min-w-0">
+                      <h2 className="font-heading font-semibold text-lg">Promo Codes</h2>
+                      <p className="text-sm text-muted-foreground">
+                        Sign-up codes with their own free Pro trial. People enter them in the referral code box, or use the sign-up link.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={() => setShowCreatePromo(true)}
+                      className="rounded-full bg-laro hover:bg-laro-dark shrink-0"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Promo
+                    </Button>
+                  </div>
+
+                  {showCreatePromo && (
+                    <div className="bg-white dark:bg-card rounded-xl border border-border/60 p-4 space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <Label>Code</Label>
+                          <Input
+                            value={newPromo.code}
+                            placeholder="CIRCLEUP"
+                            onChange={(e) => setNewPromo({ ...newPromo, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })}
+                            className="mt-1 rounded-xl"
+                            maxLength={32}
+                          />
+                        </div>
+                        <div>
+                          <Label>Free Pro (days)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={newPromo.trial_days}
+                            onChange={(e) => setNewPromo({ ...newPromo, trial_days: e.target.value })}
+                            className="mt-1 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <Label>Note (optional)</Label>
+                          <Input
+                            value={newPromo.description}
+                            placeholder="Circle Up accountability group"
+                            onChange={(e) => setNewPromo({ ...newPromo, description: e.target.value })}
+                            className="mt-1 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <Label>Max uses (blank = unlimited)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={newPromo.max_uses}
+                            onChange={(e) => setNewPromo({ ...newPromo, max_uses: e.target.value })}
+                            className="mt-1 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <Label>Expires in days (blank = never)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={newPromo.expires_days}
+                            onChange={(e) => setNewPromo({ ...newPromo, expires_days: e.target.value })}
+                            className="mt-1 rounded-xl"
+                          />
+                        </div>
+                        <div>
+                          <Label>Credit referrer (email, optional)</Label>
+                          <Input
+                            type="email"
+                            value={newPromo.referrer_email}
+                            placeholder={user?.email || ''}
+                            onChange={(e) => setNewPromo({ ...newPromo, referrer_email: e.target.value })}
+                            className="mt-1 rounded-xl"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleCreatePromo}
+                          disabled={newPromo.code.length < 3}
+                          className="rounded-full bg-laro hover:bg-laro-dark"
+                        >
+                          Create
+                        </Button>
+                        <Button variant="outline" onClick={() => { setShowCreatePromo(false); setNewPromo(emptyPromo); }} className="rounded-full">
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bg-white dark:bg-card rounded-xl border border-border/60 overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-cream-subtle">
+                        <tr>
+                          <th className="text-left p-4 font-medium text-sm">Code</th>
+                          <th className="text-left p-4 font-medium text-sm">Free Pro</th>
+                          <th className="text-left p-4 font-medium text-sm">Uses</th>
+                          <th className="text-left p-4 font-medium text-sm">Referrer</th>
+                          <th className="text-left p-4 font-medium text-sm">Expires</th>
+                          <th className="text-left p-4 font-medium text-sm">Active</th>
+                          <th className="text-right p-4 font-medium text-sm">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {promoCodes.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                              No promo codes created yet
+                            </td>
+                          </tr>
+                        ) : promoCodes.map((promo) => (
+                          <tr key={promo.id} className={promo.active ? '' : 'opacity-60'}>
+                            <td className="p-4">
+                              <code className="bg-cream-subtle px-2 py-1 rounded">{promo.code}</code>
+                              {promo.description && (
+                                <p className="text-xs text-muted-foreground mt-1">{promo.description}</p>
+                              )}
+                            </td>
+                            <td className="p-4">{promo.trial_days} days</td>
+                            <td className="p-4">{promo.uses} / {promo.max_uses ?? '∞'}</td>
+                            <td className="p-4 text-sm text-muted-foreground">{promo.referrer_email || '—'}</td>
+                            <td className="p-4 text-sm text-muted-foreground">
+                              {promo.expires_at ? formatDate(promo.expires_at) : 'Never'}
+                            </td>
+                            <td className="p-4">
+                              <Switch
+                                checked={!!promo.active}
+                                onCheckedChange={() => handleTogglePromo(promo)}
+                                aria-label={promo.active ? 'Pause promo code' : 'Resume promo code'}
+                              />
+                            </td>
+                            <td className="p-4 text-right whitespace-nowrap">
+                              <Button variant="ghost" size="sm" onClick={() => copyInviteCode(promo.code)} title="Copy code">
+                                <Copy className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Copy sign-up link"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(promoSignupLink(promo.code));
+                                  toast.success('Sign-up link copied');
+                                }}
+                              >
+                                <Globe className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleDeletePromo(promo.id)} title="Delete">
                                 <Trash2 className="w-4 h-4 text-red-500" />
                               </Button>
                             </td>

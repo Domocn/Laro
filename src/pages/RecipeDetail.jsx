@@ -1,9 +1,30 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Layout } from '../components/Layout';
 import { CookMode } from '../components/CookMode';
+import { CheckNumbers } from '../components/CheckNumbers';
+import { ListChecks } from 'lucide-react';
 import { NutritionCalculator } from '../components/NutritionCalculator';
+import { foodEmoji } from '../lib/foodEmoji';
+import { groupedRows, groupHeading, ingredientsAsText } from '../lib/ingredientGroups';
+import { getLowFodmap, findSwap, readFodmapView, writeFodmapView } from '../lib/fodmap';
+import { macroSourceText, macrosForChoice, nutritionBasis, scaleBadge, weightsForChoice } from '../lib/versionMacros';
+import MacroTotals from '../components/MacroTotals';
+import { badgeCarbsForStyle, carbsLabels, styleFromPreferences } from '../lib/region';
+import { temperaturesForStyle } from '../lib/temperature';
+import {
+  ORIGINAL_VERSION,
+  applyRecipeVersion,
+  choiceFromSearch,
+  findVersion,
+  getPageNotes,
+  readVersionChoice,
+  scaleIngredients,
+  validVersion,
+  versionChoices,
+  writeVersionChoice,
+} from '../lib/recipeVersions';
 import { RecipeVersions } from '../components/RecipeVersions';
 import { RecipeReviews } from '../components/RecipeReviews';
 import { CostCalculator } from '../components/CostCalculator';
@@ -20,6 +41,8 @@ import {
 import { recipeApi, mealPlanApi, shoppingListApi, cookingApi, preferencesApi } from '../lib/api';
 import { convertUnit } from '../lib/unitConversions';
 import { enrichStepWithAmounts } from '../lib/cookModeSteps';
+import { MeasurementUnitPicker } from '../components/MeasurementUnitPicker';
+import { patchUserPreferencesCache } from '../hooks/useUserPreferences';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { VetoReplacementBanner } from '../components/VetoReplacementBanner';
@@ -81,6 +104,39 @@ const MEAL_TYPE_KEYS = {
   Snack: 'snack',
 };
 
+// Macro-target solver (Pro): scale the recipe so a chosen macro hits a target/serving.
+const SOLVER_MACROS = [
+  { key: 'p', field: 'protein', label: 'Protein', unit: 'g' },
+  { key: 'c', field: 'carbs', label: 'Carbs', unit: 'g' },
+  { key: 'f', field: 'fat', label: 'Fat', unit: 'g' },
+  { key: 'cal', field: 'calories', label: 'Calories', unit: 'kcal' },
+];
+
+function solverFactor(recipe, solver) {
+  if (!solver || !recipe?.nutrition) return 1;
+  const m = SOLVER_MACROS.find((x) => x.key === solver.macro);
+  const cur = m && recipe.nutrition[m.field];
+  const tgt = parseFloat(solver.target);
+  if (!cur || cur <= 0 || !tgt || tgt <= 0) return 1;
+  return tgt / cur;
+}
+
+// Multiply a recipe amount (number, "1.5", "1/2", "1 1/2") by a factor; leave non-numeric ("pinch") alone.
+function scaleAmountStr(amount, f) {
+  if (!f || f === 1) return amount;
+  const s = String(amount ?? '').trim();
+  let n = null;
+  const mixed = s.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+  const frac = s.match(/^(\d+)\/(\d+)$/);
+  if (mixed) n = parseInt(mixed[1], 10) + parseInt(mixed[2], 10) / parseInt(mixed[3], 10);
+  else if (frac) n = parseInt(frac[1], 10) / parseInt(frac[2], 10);
+  else if (s && !Number.isNaN(parseFloat(s))) n = parseFloat(s);
+  if (n == null) return amount;
+  const v = n * f;
+  const r = v >= 10 ? Math.round(v) : Math.round(v * 100) / 100;
+  return String(r);
+}
+
 export const RecipeDetail = () => {
   const { id } = useParams();
   const { t } = useLanguage();
@@ -100,6 +156,7 @@ export const RecipeDetail = () => {
   const [addingToShopping, setAddingToShopping] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [measurementUnit, setMeasurementUnit] = useState('metric');
+  const [nutritionStyle, setNutritionStyle] = useState('uk'); // from country: uk / au / ca / us
   const [showNutrition, setShowNutrition] = useState(true);
   const [familyMode, setFamilyMode] = useState(false);
   const [generatingCard, setGeneratingCard] = useState(false);
@@ -107,7 +164,15 @@ export const RecipeDetail = () => {
   const [togglingFavorite, setTogglingFavorite] = useState(false);
   const [scaledServings, setScaledServings] = useState(null);
   const [scaledIngredients, setScaledIngredients] = useState(null);
+  const [macroMode, setMacroMode] = useState('serving'); // 'serving' | '100g' | 'total'
+  const [solver, setSolver] = useState(null); // applied {macro, target} — Pro
+  const [solverOpen, setSolverOpen] = useState(false);
+  const [solverMacroSel, setSolverMacroSel] = useState('p');
+  const [solverTargetInput, setSolverTargetInput] = useState('');
+  const [ingredientMacros, setIngredientMacros] = useState(null); // Pro: per-ingredient breakdown
+  const [macroInfoIdx, setMacroInfoIdx] = useState(null); // line whose macro source is expanded
   const [showCookMode, setShowCookMode] = useState(false);
+  const [showCheckNumbers, setShowCheckNumbers] = useState(false);
   const [allergenWarnings, setAllergenWarnings] = useState([]);
   const [userRating, setUserRating] = useState(null);
   const [personalNotes, setPersonalNotes] = useState('');
@@ -115,7 +180,65 @@ export const RecipeDetail = () => {
   const [savingRating, setSavingRating] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
   const [markingCooked, setMarkingCooked] = useState(false);
+  const [fodmapView, setFodmapView] = useState(readFodmapView);
+  const [versionName, setVersionName] = useState(ORIGINAL_VERSION);
+  const location = useLocation();
   const recipeCardRef = useRef(null);
+  const lowFodmap = useMemo(() => getLowFodmap(recipe), [recipe]);
+  const showFodmap = !!lowFodmap && fodmapView === 'low_fodmap';
+  // Named versions ("Chicken Schnitzel", "Chocolate Orange"): '' = Original. Low FODMAP is a
+  // separate on/off that swaps alternatives into whichever version is shown.
+  const versionList = useMemo(() => versionChoices(recipe), [recipe]);
+  const activeVersion = validVersion(recipe, versionName);
+  const activeVersionInfo = useMemo(() => findVersion(recipe, activeVersion), [recipe, activeVersion]);
+  const shown = useMemo(() => applyRecipeVersion(recipe, activeVersion), [recipe, activeVersion]);
+  const pageNotes = useMemo(() => getPageNotes(recipe), [recipe]);
+  // Macros follow what is shown: the version's (and Low FODMAP's) own numbers, not the Original's.
+  const storedMacros = useMemo(
+    () => macrosForChoice(recipe, activeVersion, showFodmap, ingredientMacros),
+    [recipe, activeVersion, showFodmap, ingredientMacros],
+  );
+  const choiceKey = `${recipe?.id || ''}|${activeVersion}|${showFodmap ? 1 : 0}`;
+  const [previewMacros, setPreviewMacros] = useState(null); // { key, nutrition, ingredient_macros }
+  const preview = storedMacros.pending && previewMacros?.key === choiceKey ? previewMacros : null;
+  const displayNutrition = preview?.nutrition || storedMacros.nutrition;
+  const macrosPending = storedMacros.pending && !preview?.nutrition;
+  const lineMacros = preview
+    ? (Array.isArray(preview.ingredient_macros) && preview.ingredient_macros.length === (shown?.ingredients || []).length
+      ? preview.ingredient_macros
+      : null)
+    : storedMacros.ingredientMacros;
+  // Per 100 g (batch / base recipes): weights of the shown list, from the backend.
+  const choiceWeights = useMemo(
+    () => weightsForChoice(recipe, activeVersion, showFodmap, preview),
+    [recipe, activeVersion, showFodmap, preview],
+  );
+  const basis = nutritionBasis(recipe);
+  // The card opens on the recipe's basis (its saved choice, else automatic) for each recipe.
+  useEffect(() => { if (recipe?.id) setMacroMode(basis); }, [recipe?.id, basis]);
+  // Solver / macro card read `nutrition` off this (the shown version's).
+  const macroRecipe = useMemo(
+    () => (recipe ? { ...recipe, nutrition: displayNutrition } : recipe),
+    [recipe, displayNutrition],
+  );
+
+  // A meal-plan link (?version=…&lowFodmap=1) wins; else this recipe's remembered choice;
+  // else the last Low FODMAP view used anywhere.
+  useEffect(() => {
+    const choice = choiceFromSearch(location.search) || readVersionChoice(id);
+    setVersionName(choice?.version || ORIGINAL_VERSION);
+    setFodmapView(choice ? (choice.lowFodmap ? 'low_fodmap' : 'original') : readFodmapView());
+  }, [id, location.search]);
+
+  const chooseVersion = (name) => {
+    setVersionName(name);
+    writeVersionChoice(id, { version: name, lowFodmap: showFodmap });
+  };
+  const chooseFodmapView = (view) => {
+    setFodmapView(view);
+    writeFodmapView(view);
+    writeVersionChoice(id, { version: activeVersion, lowFodmap: view === 'low_fodmap' });
+  };
 
   // Generate formatted text for sharing (memoized)
   const generateRecipeText = useMemo(() => {
@@ -132,9 +255,7 @@ export const RecipeDetail = () => {
     text += `⏱️ ${formatTime(totalTime)} | 👥 ${recipe.servings} servings\n\n`;
 
     text += `📝 INGREDIENTS\n`;
-    recipe.ingredients.forEach(ing => {
-      text += `• ${ing.amount} ${ing.unit} ${ing.name}\n`;
-    });
+    text += `${ingredientsAsText(recipe.ingredients, t)}\n`;
 
     text += `\n👨‍🍳 INSTRUCTIONS\n`;
     recipe.instructions.forEach((step, idx) => {
@@ -145,7 +266,7 @@ export const RecipeDetail = () => {
     text += `Shared from Laro`;
 
     return text;
-  }, [recipe]);
+  }, [recipe, t]);
 
   const handleCopyAsText = useCallback(async () => {
     try {
@@ -312,11 +433,53 @@ export const RecipeDetail = () => {
       .get()
       .then((res) => {
         if (res.data?.measurementUnit) setMeasurementUnit(res.data.measurementUnit);
+        setNutritionStyle(styleFromPreferences(res.data));
         if (res.data?.showNutrition !== undefined) setShowNutrition(!!res.data.showNutrition);
         setFamilyMode(wantsFamilyOneMeal(res.data || {}));
       })
       .catch(() => {});
   }, [id]);
+
+  // Pro: per-ingredient macro breakdown (AI-estimated, cached server-side after first view)
+  useEffect(() => { setIngredientMacros(null); }, [recipe?.id]);
+  // Refetched when the recipe changes (edit, or the server finishing its line macros) so the
+  // badges and the totals card keep describing the same numbers.
+  useEffect(() => {
+    if (!recipe?.id || !user?.is_pro) return;
+    let cancelled = false;
+    recipeApi
+      .getIngredientMacros(recipe.id)
+      .then((res) => {
+        if (cancelled) return;
+        setIngredientMacros(res.data?.ingredient_macros || null);
+        // First compute also wrote the totals + version / Low FODMAP macros: show them now.
+        if (res.data?.adaptations || res.data?.nutrition) {
+          setRecipe((prev) => (prev && prev.id === recipe.id ? {
+            ...prev,
+            ...(res.data.adaptations ? { adaptations: res.data.adaptations } : {}),
+            ...(res.data.nutrition ? {
+              nutrition: { ...(prev.nutrition || {}), ...res.data.nutrition, nutrition_estimated: false, nutrition_source: 'lines' },
+            } : {}),
+          } : prev));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [recipe?.id, recipe?.updated_at, user?.is_pro]);
+
+  // Version / Low FODMAP macros not stored yet (recipe saved before they existed): ask the
+  // server, which computes and saves them. Until then the card says the numbers are pending.
+  useEffect(() => {
+    if (!recipe?.id || !storedMacros.pending) return;
+    let cancelled = false;
+    recipeApi
+      .macrosPreview(recipe.id, { version: activeVersion || null, low_fodmap: showFodmap })
+      .then((res) => {
+        if (!cancelled && res.data?.nutrition) setPreviewMacros({ key: choiceKey, ...res.data });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [recipe?.id, storedMacros.pending, activeVersion, showFodmap, choiceKey]);
 
   // Scope global AI chat to this recipe while the detail page is open
   useEffect(() => {
@@ -326,26 +489,51 @@ export const RecipeDetail = () => {
     return () => clearRecipeContext();
   }, [recipe, setRecipeContext, clearRecipeContext]);
 
+  const persistMeasurementUnit = async (value) => {
+    setMeasurementUnit(value);
+    patchUserPreferencesCache({ measurementUnit: value });
+    try {
+      await preferencesApi.update({ measurementUnit: value });
+    } catch {
+      /* keep optimistic value */
+    }
+  };
+
+  // Live refreshes (household edits) re-run loadRecipe; only reset the user's own
+  // working state (servings, notes, rating) on the first load for this recipe so
+  // half-typed notes aren't wiped.
+  const loadedIdRef = useRef(null);
+
   const loadRecipe = async () => {
+    const firstLoad = loadedIdRef.current !== id;
     try {
       const res = await recipeApi.getOne(id);
       setRecipe(res.data);
       setIsFavorite(res.data.is_favorite || false);
-      setScaledServings(res.data.servings || 4);
+      if (firstLoad) setScaledServings(res.data.servings || 4);
       // Set allergen warnings from API response
       setAllergenWarnings(res.data.allergen_warnings || []);
 
-      // Load user's personal rating + notes
-      try {
-        const ratingRes = await recipeApi.getRating(id);
-        setUserRating(ratingRes.data.rating);
-        setPersonalNotes(ratingRes.data.personal_notes || '');
-      } catch (e) {
-        // Rating not found is ok
+      if (firstLoad) {
+        loadedIdRef.current = id;
+        // Load user's personal rating + notes
+        try {
+          const ratingRes = await recipeApi.getRating(id);
+          setUserRating(ratingRes.data.rating);
+          setPersonalNotes(ratingRes.data.personal_notes || '');
+        } catch (e) {
+          // Rating not found is ok
+        }
       }
     } catch (error) {
-      toast.error(t('toastRecipeNotFound'));
-      navigate('/recipes');
+      const status = error?.response?.status;
+      if (status === 404 || status === 403) {
+        toast.error(t('toastRecipeNotFound'));
+        navigate('/recipes');
+      } else if (firstLoad) {
+        // Network blip / server error: say so, but don't throw the user out of the page.
+        toast.error(error?.response?.data?.detail || t('toastLoadRecipeFailed'));
+      }
     } finally {
       setLoading(false);
     }
@@ -357,19 +545,20 @@ export const RecipeDetail = () => {
       setPresenceViewers([]);
       return undefined;
     }
+    const send = liveRefresh.send;
     const payload = {
       resource_type: 'recipe',
       resource_id: id,
       display_name: user?.name || user?.email || 'Someone',
     };
-    liveRefresh.send({ type: 'presence:join', ...payload });
-    const beat = setInterval(() => liveRefresh.send({ type: 'presence:heartbeat', ...payload }), 20000);
+    send({ type: 'presence:join', ...payload });
+    const beat = setInterval(() => send({ type: 'presence:heartbeat', ...payload }), 20000);
     return () => {
       clearInterval(beat);
-      liveRefresh.send({ type: 'presence:leave', ...payload });
+      send({ type: 'presence:leave', ...payload });
       setPresenceViewers([]);
     };
-  }, [id, liveRefresh, user?.name, user?.email]);
+  }, [id, liveRefresh?.send, user?.name, user?.email]);
 
   useLiveRefreshEvent(
     EventType.PRESENCE_UPDATED,
@@ -416,8 +605,8 @@ export const RecipeDetail = () => {
   const handleSaveNotes = async () => {
     setSavingNotes(true);
     try {
-      await recipeApi.setRating(id, userRating || 3, personalNotes);
-      if (!userRating) setUserRating(3);
+      // Send the user's rating only if they gave one; a note alone shouldn't add stars.
+      await recipeApi.setRating(id, userRating || null, personalNotes);
       toast.success(t('toastPersonalNoteSaved'));
     } catch (error) {
       toast.error(error.response?.data?.detail || "Couldn't save note. (E-RD008)");
@@ -480,17 +669,37 @@ export const RecipeDetail = () => {
     [recipe, id, t]
   );
 
+  // Per serving / Per 100 g is remembered per recipe (adaptations.nutrition_basis, normal update
+  // endpoint, other adaptations kept). Recipe total is just a view. Non-owners: view only.
+  const handleMacroMode = useCallback(async (mode) => {
+    setMacroMode(mode);
+    if (mode === 'total' || !recipe || mode === nutritionBasis(recipe) || user?.id !== recipe.author_id) return;
+    try {
+      const res = await recipeApi.update(id, {
+        ...recipe,
+        adaptations: { ...(recipe.adaptations || {}), nutrition_basis: mode },
+      });
+      setRecipe(res.data);
+    } catch {
+      // Still shown this way for now; it just isn't remembered.
+    }
+  }, [recipe, id, user?.id]);
+
   const handleScaleServings = useCallback(async (newServings) => {
     if (newServings < 1) return;
+    const previous = scaledServings;
     setScaledServings(newServings);
 
     try {
       const res = await recipeApi.getScaled(id, newServings);
       setScaledIngredients(res.data.ingredients);
     } catch (error) {
+      // Don't leave the servings number and the ingredient amounts disagreeing silently.
       console.error('Failed to scale:', error);
+      setScaledServings(previous);
+      toast.error(error?.response?.data?.detail || t('toastScaleFailed'));
     }
-  }, [id]);
+  }, [id, scaledServings, t]);
 
   const handlePrint = useCallback(() => {
     window.print();
@@ -520,6 +729,9 @@ export const RecipeDetail = () => {
         date: format(selectedDate, 'yyyy-MM-dd'),
         meal_type: mealType,
         recipe_id: recipe?.id,
+        // Plan the version + Low FODMAP choice shown on this page (shopping follows it).
+        recipe_version: activeVersion || null,
+        low_fodmap: showFodmap,
       });
       toast.success(t('toastAddedToMealPlan'));
       setShowMealDialog(false);
@@ -528,12 +740,15 @@ export const RecipeDetail = () => {
     } finally {
       setAddingToMealPlan(false);
     }
-  }, [selectedDate, mealType, recipe?.id, t]);
+  }, [selectedDate, mealType, recipe?.id, activeVersion, showFodmap, t]);
 
   const handleAddToShopping = useCallback(async () => {
     setAddingToShopping(true);
     try {
-      await shoppingListApi.fromRecipes([recipe?.id]);
+      await shoppingListApi.fromRecipes([recipe?.id], {
+        recipe_version: activeVersion || undefined,
+        low_fodmap: showFodmap || undefined,
+      });
       toast.success(t('toastShoppingListCreated'));
       navigate('/shopping');
     } catch (error) {
@@ -541,7 +756,7 @@ export const RecipeDetail = () => {
     } finally {
       setAddingToShopping(false);
     }
-  }, [recipe?.id, navigate, t]);
+  }, [recipe?.id, activeVersion, showFodmap, navigate, t]);
 
   // Memoize expensive computed values - must be before any early returns
   const totalTime = useMemo(() =>
@@ -562,7 +777,19 @@ export const RecipeDetail = () => {
     );
   }
 
-  if (!recipe) return null;
+  if (!recipe) {
+    // Load failed for a non-404 reason (offline / server hiccup): offer a retry, not a blank page.
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
+          <p className="text-muted-foreground">{t('toastLoadRecipeFailed')}</p>
+          <Button className="rounded-full" onClick={() => { setLoading(true); loadRecipe(); }}>
+            {t('tryAgain')}
+          </Button>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -590,12 +817,23 @@ export const RecipeDetail = () => {
               decoding="async"
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/40" />
             
             {/* Category Badge */}
             <Badge className="absolute top-4 left-4 bg-white/90 text-foreground backdrop-blur-sm font-semibold dark:bg-black/80 dark:text-cream dark:border dark:border-white/70 dark:shadow-md">
               {recipe.category}
             </Badge>
+
+            {/* Share stays on the photo so light-theme chrome cannot hide it */}
+            <button
+              type="button"
+              onClick={() => setShowShareDialog(true)}
+              data-testid="share-recipe"
+              className="absolute bottom-4 right-4 z-10 inline-flex items-center gap-2 rounded-full bg-black/55 text-white px-3.5 py-2 text-sm font-semibold backdrop-blur-sm hover:bg-black/70 print:hidden"
+            >
+              <Share2 className="w-4 h-4" aria-hidden="true" />
+              {t('share')}
+            </button>
 
             {/* Dietary Tags */}
             {recipe.dietary_tags && recipe.dietary_tags.length > 0 && (
@@ -734,9 +972,20 @@ export const RecipeDetail = () => {
                   size="sm" 
                   className="rounded-full print:hidden"
                   onClick={handlePrint}
+                  aria-label={t('ariaPrintRecipe')}
                   data-testid="print-btn"
                 >
                   <Printer className="w-4 h-4" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="rounded-full print:hidden"
+                  onClick={() => setShowShareDialog(true)}
+                  data-testid="share-recipe-header"
+                >
+                  <Share2 className="w-4 h-4 mr-2" />
+                  {t('share')}
                 </Button>
               </div>
             </div>
@@ -772,14 +1021,18 @@ export const RecipeDetail = () => {
                   <p className="text-xs text-muted-foreground">{t('servings')}</p>
                   <div className="flex items-center gap-2">
                     <button 
+                      type="button"
+                      aria-label={t('ariaFewerServings')}
                       onClick={() => handleScaleServings(scaledServings - 1)}
                       className="w-6 h-6 rounded-full bg-laro-light hover:bg-laro text-laro hover:text-white flex items-center justify-center transition-colors print:hidden"
                       disabled={scaledServings <= 1}
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <span className="font-medium w-8 text-center">{scaledServings}</span>
+                    <span className="font-medium w-8 text-center" aria-live="polite">{scaledServings}</span>
                     <button 
+                      type="button"
+                      aria-label={t('ariaMoreServings')}
                       onClick={() => handleScaleServings(scaledServings + 1)}
                       className="w-6 h-6 rounded-full bg-laro-light hover:bg-laro text-laro hover:text-white flex items-center justify-center transition-colors print:hidden"
                     >
@@ -794,32 +1047,78 @@ export const RecipeDetail = () => {
                 </div>
               </div>
 
-              {/* Per-serving macros (saved or estimated from ingredients) */}
-              {showNutrition && recipe.nutrition && (
+              {/* Macro card — Per serving | Per 100 g | Recipe total + colour pills */}
+              {showNutrition && displayNutrition && (
                 (() => {
-                  const n = recipe.nutrition;
-                  const chips = [
-                    n.calories != null && { key: 'cal', value: n.calories, label: 'cal' },
-                    n.protein != null && { key: 'p', value: `${n.protein}g`, label: 'protein' },
-                    n.carbs != null && { key: 'c', value: `${n.carbs}g`, label: 'carbs' },
-                    n.fat != null && { key: 'f', value: `${n.fat}g`, label: 'fat' },
-                  ].filter(Boolean);
-                  if (!chips.length) return null;
+                  const n = displayNutrition;
+                  if (n.calories == null && n.protein == null && n.carbs == null && n.fat == null) return null;
+                  const servingCount = Math.max(1, scaledServings || recipe.servings || 1);
+                  const f = solverFactor(macroRecipe, solver);
+                  const isEst = n.nutrition_estimated || n.nutrition_source === 'estimated' || n.nutrition_source === 'mixed';
+                  const isPro = !!user?.is_pro;
+                  const solverM = SOLVER_MACROS.find((x) => x.key === (solver?.macro || solverMacroSel));
+                  const canSolve = (mm) => { const c = displayNutrition?.[SOLVER_MACROS.find((x) => x.key === mm)?.field]; return c && c > 0; };
                   return (
-                    <div className="w-full flex flex-wrap items-center gap-2 pt-1" data-testid="recipe-macro-chips">
-                      {chips.map((chip) => (
-                        <div
-                          key={chip.key}
-                          className="rounded-full bg-laro-light/80 text-laro-dark px-3 py-1 text-sm"
-                        >
-                          <span className="font-semibold">{chip.value}</span>
-                          <span className="text-xs ml-1 opacity-80">{chip.label}</span>
-                        </div>
-                      ))}
-                      {(n.nutrition_estimated || n.nutrition_source === 'estimated' || n.nutrition_source === 'mixed') && (
-                        <span className="text-xs text-muted-foreground">est. / serving</span>
-                      )}
-                    </div>
+                    <MacroTotals
+                      nutrition={n}
+                      mode={macroMode}
+                      onModeChange={handleMacroMode}
+                      servings={servingCount}
+                      factor={f}
+                      weights={choiceWeights}
+                      recipe={recipe}
+                      pending={macrosPending}
+                      estimated={isEst}
+                      t={t}
+                      nutritionStyle={nutritionStyle}
+                    >
+                      {/* Macro-target solver (Pro) */}
+                      <div className="mt-3 pt-3 border-t border-border/50 print:hidden">
+                        {solver ? (
+                          <div className="flex items-center justify-between gap-2 text-sm">
+                            <span className="text-laro font-medium">
+                              🎯 Scaled ×{f.toFixed(2)} to hit {solver.target}{solverM?.unit} {solverM?.label.toLowerCase()}/serving
+                            </span>
+                            <button type="button" className="text-xs underline text-muted-foreground hover:text-foreground"
+                              onClick={() => { setSolver(null); setSolverOpen(false); }}>
+                              Reset
+                            </button>
+                          </div>
+                        ) : !solverOpen ? (
+                          <button type="button"
+                            onClick={() => {
+                              if (!isPro) { toast('Laro Pro: auto-scale a recipe to your macro target', { description: 'Upgrade in Settings → Laro Pro', action: { label: 'Upgrade', onClick: () => navigate('/settings') } }); return; }
+                              setSolverTargetInput(''); setSolverOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-laro hover:opacity-80">
+                            🎯 Auto-scale to a macro target
+                            {!isPro && <span className="text-[10px] uppercase tracking-wide bg-laro/10 text-laro px-1.5 py-0.5 rounded-full">Pro</span>}
+                          </button>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="text-muted-foreground">Hit</span>
+                            <div className="inline-flex rounded-lg bg-cream-subtle dark:bg-muted p-0.5">
+                              {SOLVER_MACROS.filter((m) => canSolve(m.key)).map((m) => (
+                                <button key={m.key} type="button" onClick={() => setSolverMacroSel(m.key)}
+                                  className={`px-2 py-0.5 rounded-md text-xs font-medium ${solverMacroSel === m.key ? 'bg-white dark:bg-card shadow-sm text-laro' : 'text-muted-foreground'}`}>
+                                  {m.label}
+                                </button>
+                              ))}
+                            </div>
+                            <input type="number" min="1" value={solverTargetInput} onChange={(e) => setSolverTargetInput(e.target.value)}
+                              placeholder={String(Math.round(displayNutrition?.[solverM?.field] || 0))}
+                              className="w-20 rounded-lg border border-input bg-background px-2 py-1 text-sm" />
+                            <span className="text-muted-foreground">{solverM?.unit}/serving</span>
+                            <button type="button"
+                              onClick={() => { if (parseFloat(solverTargetInput) > 0) { setSolver({ macro: solverMacroSel, target: solverTargetInput }); setSolverOpen(false); } }}
+                              className="px-3 py-1 rounded-lg bg-laro text-white text-sm font-medium hover:opacity-90">
+                              Apply
+                            </button>
+                            <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setSolverOpen(false)}>Cancel</button>
+                          </div>
+                        )}
+                      </div>
+                    </MacroTotals>
                   );
                 })()
               )}
@@ -871,6 +1170,15 @@ export const RecipeDetail = () => {
                   <CheckCircle2 className="w-4 h-4 mr-2" />
                 )}
                 {t('markCooked')}
+              </Button>
+              <Button
+                variant="outline"
+                className="rounded-full"
+                onClick={() => setShowCheckNumbers(true)}
+                data-testid="check-nutrition-btn"
+              >
+                <ListChecks className="w-4 h-4 mr-2" />
+                {t('checkNutrition') === 'checkNutrition' ? 'Check nutrition' : t('checkNutrition')}
               </Button>
               <Dialog open={showMealDialog} onOpenChange={setShowMealDialog}>
                 <DialogTrigger asChild>
@@ -938,7 +1246,7 @@ export const RecipeDetail = () => {
                 variant="outline" 
                 className="rounded-full"
                 onClick={() => setShowShareDialog(true)}
-                data-testid="share-recipe"
+                data-testid="share-recipe-actions"
               >
                 <Share2 className="w-4 h-4 mr-2" />
                 {t('share')}
@@ -982,35 +1290,134 @@ export const RecipeDetail = () => {
 
             {/* Ingredients */}
             <section className="mb-8">
-              <h2 className="font-heading text-xl font-semibold mb-4 flex items-center gap-2">
-                <ChefHat className="w-5 h-5 text-laro" aria-hidden="true" />
-                {t('ingredients')}
-                {scaledServings !== recipe.servings && (
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {t('scaledForServings', { n: scaledServings })}
-                  </span>
-                )}
-              </h2>
+              {(versionList.length > 0 || lowFodmap) && (
+                <div className="mb-4 print:hidden space-y-2">
+                  {versionList.length > 0 && (
+                    <div
+                      role="group"
+                      aria-label={t('recipeVersionPickerLabel')}
+                      className="flex flex-wrap gap-2 text-sm"
+                      data-testid="version-picker"
+                    >
+                      {versionList.map((name) => (
+                        <button
+                          key={name || 'original'}
+                          type="button"
+                          aria-pressed={activeVersion === name}
+                          onClick={() => chooseVersion(name)}
+                          className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-full border font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-laro ${activeVersion === name ? 'bg-laro text-white border-laro' : 'bg-white dark:bg-card border-border text-foreground hover:border-laro/50'}`}
+                        >
+                          {name || t('recipeVersionOriginal')}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {activeVersionInfo?.notes && (
+                    <p className="text-sm text-muted-foreground whitespace-pre-line" data-testid="version-notes">
+                      {activeVersionInfo.notes}
+                    </p>
+                  )}
+                  {lowFodmap && (
+                    <div data-testid="fodmap-switch">
+                      <button
+                        type="button"
+                        aria-pressed={showFodmap}
+                        onClick={() => chooseFodmapView(showFodmap ? 'original' : 'low_fodmap')}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-laro ${showFodmap ? 'bg-laro-light border-laro text-laro' : 'bg-white dark:bg-card border-border text-muted-foreground hover:border-laro/50'}`}
+                      >
+                        <Leaf className="w-4 h-4" aria-hidden="true" />
+                        {t('fodmapLowFodmap')}
+                      </button>
+                    </div>
+                  )}
+                  {showFodmap && lowFodmap.notes && (
+                    <div
+                      className="mt-3 rounded-xl border border-laro/20 bg-laro-light/60 px-4 py-3"
+                      data-testid="fodmap-notes"
+                    >
+                      <p className="text-sm font-medium text-laro flex items-center gap-2">
+                        <Leaf className="w-4 h-4 shrink-0" aria-hidden="true" />
+                        {t('fodmapNotesTitle')}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1 leading-relaxed whitespace-pre-line">
+                        {lowFodmap.notes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="font-heading text-xl font-semibold flex items-center gap-2">
+                  <ChefHat className="w-5 h-5 text-laro" aria-hidden="true" />
+                  {t('ingredients')}
+                  {scaledServings !== recipe.servings && (
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {t('scaledForServings', { n: scaledServings })}
+                    </span>
+                  )}
+                </h2>
+                <MeasurementUnitPicker
+                  compact
+                  value={measurementUnit}
+                  onChange={persistMeasurementUnit}
+                />
+              </div>
               <ul className="space-y-2" data-testid="ingredients-list">
-                {(scaledIngredients || recipe.ingredients).map((ing, idx) => {
+                {groupedRows(
+                  solver
+                    ? shown.ingredients
+                    : activeVersion
+                      ? scaleIngredients(shown.ingredients, recipe.servings, scaledServings)
+                      : (scaledIngredients || recipe.ingredients)
+                ).map(({ ing, index: idx, group, name, groupStart }) => {
+                  // Ungrouped lines first, then each section under its "For the …" heading;
+                  // idx stays the line's own index (line macros / substitutions are per line).
+                  const split = { group, name };
+                  const ingAmount = typeof ing === 'string' ? null : (solver ? scaleAmountStr(ing.amount, solverFactor(macroRecipe, solver)) : ing.amount);
                   const converted =
                     typeof ing === 'string'
                       ? null
-                      : convertUnit(ing.amount, ing.unit, measurementUnit);
+                      : convertUnit(ingAmount, ing.unit, measurementUnit, ing.name);
                   const both =
                     measurementUnit === 'both' && typeof ing !== 'string'
                       ? {
-                          metric: convertUnit(ing.amount, ing.unit, 'metric'),
-                          imperial: convertUnit(ing.amount, ing.unit, 'imperial'),
+                          metric: convertUnit(ingAmount, ing.unit, 'metric', ing.name),
+                          imperial: convertUnit(ingAmount, ing.unit, 'imperial', ing.name),
                         }
                       : null;
-                  const displayName = typeof ing === 'string' ? ing : ing.name;
+                  const displayName = split.name;
+                  const fodmapSwap = showFodmap ? findSwap(displayName, lowFodmap.swaps) : null;
+                  const emoji = foodEmoji(fodmapSwap ? fodmapSwap.to : displayName);
+                  const originalLine = typeof ing === 'string'
+                    ? ing
+                    : [converted?.amount ?? ingAmount, converted?.unit || ing.unit, split.name].filter(Boolean).join(' ');
                   return (
-                  <li key={`${ing.name || ing}-${idx}`} className="flex items-start gap-3 p-3 rounded-xl bg-cream-subtle">
-                    <span className="w-2 h-2 rounded-full bg-laro mt-2 flex-shrink-0" />
+                  <React.Fragment key={`${ing.name || ing}-${idx}`}>
+                  {groupStart && (
+                    <li className="pt-2 text-sm font-semibold text-laro list-none" data-testid="ingredient-group">
+                      {groupHeading(split.group, t)}
+                    </li>
+                  )}
+                  <li className="flex items-start gap-3 p-3 rounded-xl bg-cream-subtle" data-fodmap-swapped={fodmapSwap ? 'true' : undefined}>
+                    {emoji ? (
+                      <span className="text-lg leading-none mt-0.5 w-6 text-center flex-shrink-0" aria-hidden="true">{emoji}</span>
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-laro mt-2 flex-shrink-0" />
+                    )}
                     <span className="flex-1 min-w-0">
-                      {typeof ing === 'string' ? (
-                        ing
+                      {fodmapSwap ? (
+                        <>
+                          <span className="font-medium">{fodmapSwap.to}</span>
+                          <span className="ml-2 inline-flex items-center rounded-full bg-laro-light px-1.5 py-0.5 text-[11px] font-semibold text-laro align-middle">
+                            {t('fodmapSwapped')}
+                          </span>
+                          <span className="block text-xs text-muted-foreground mt-0.5">
+                            <span className="sr-only">{t('fodmapInsteadOf', { name: originalLine })}</span>
+                            <s aria-hidden="true">{originalLine}</s>
+                          </span>
+                        </>
+                      ) : typeof ing === 'string' ? (
+                        split.name
                       ) : both ? (
                         <>
                           <span className="font-medium">{both.metric.amount}</span>
@@ -1021,28 +1428,97 @@ export const RecipeDetail = () => {
                             {' '}
                             ({both.imperial.amount} {both.imperial.unit})
                           </span>
-                          <span> {ing.name}</span>
+                          <span> {split.name}</span>
                         </>
                       ) : (
                         <>
-                          <span className="font-medium">{converted?.amount ?? ing.amount}</span>
+                          <span className="font-medium">{converted?.amount ?? ingAmount}</span>
                           {(converted?.unit || ing.unit) && (
                             <span className="text-muted-foreground">
                               {' '}
                               {converted?.unit || ing.unit}
                             </span>
                           )}
-                          <span> {ing.name}</span>
+                          <span> {split.name}</span>
                         </>
                       )}
+                      {(() => {
+                        const badge = (txt, cls, extra = '') => (
+                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${cls} ${extra}`}>{txt}</span>
+                        );
+                        const proView = !!user?.is_pro;
+                        if (proView && lineMacros && lineMacros[idx]) {
+                          // Badges follow the line as shown: version / Low FODMAP list, scaled by
+                          // the macro solver or the servings picker (same as the amounts).
+                          const baseServings = Number(recipe.servings) > 0 ? Number(recipe.servings) : 4;
+                          const factor = solver
+                            ? solverFactor(macroRecipe, solver)
+                            : (Number(scaledServings) > 0 ? Number(scaledServings) / baseServings : 1);
+                          const im = scaleBadge(lineMacros[idx], factor);
+                          const b = (v) => v;
+                          // Where the numbers came from: food database match or AI estimate.
+                          const sourceText = macroSourceText(lineMacros[idx], t, factor);
+                          const infoOpen = macroInfoIdx === idx;
+                          return (
+                            <span className="flex flex-wrap items-center gap-1 mt-1.5" data-testid="ingredient-macros">
+                              {badge(`P${b(im.p)}`, 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300')}
+                              {(() => {
+                                const bc = badgeCarbsForStyle(im, nutritionStyle);
+                                const lbl = carbsLabels(nutritionStyle, bc.isTotal, t);
+                                return (
+                                  <span title={lbl.full} aria-label={`${lbl.full} ${bc.value} g`}>
+                                    {badge(`C${b(bc.value)}`,'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300')}
+                                  </span>
+                                );
+                              })()}
+                              {badge(`F${b(im.f)}`, 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300')}
+                              {badge(`🔥${b(im.cal)}`, 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300')}
+                              {sourceText && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setMacroInfoIdx(infoOpen ? null : idx); }}
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring print:hidden"
+                                  title={sourceText}
+                                  aria-label={`${t('macroSrcInfo')}: ${sourceText}`}
+                                  aria-expanded={infoOpen}
+                                  data-testid="ingredient-macro-source"
+                                >
+                                  ⓘ
+                                </button>
+                              )}
+                              {sourceText && infoOpen && (
+                                <span className="basis-full text-[11px] text-muted-foreground" role="note">{sourceText}</span>
+                              )}
+                            </span>
+                          );
+                        }
+                        if (!proView && typeof ing !== 'string') {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => toast('Laro Pro: macros for every ingredient', { description: 'Upgrade in Settings → Laro Pro', action: { label: 'Upgrade', onClick: () => navigate('/settings') } })}
+                              className="flex flex-wrap items-center gap-1 mt-1.5 print:hidden"
+                              aria-label="Unlock per-ingredient macros with Laro Pro"
+                            >
+                              {badge('P00', 'bg-rose-100 text-rose-700', 'blur-[2px] select-none')}
+                              {badge('C00', 'bg-sky-100 text-sky-700', 'blur-[2px] select-none')}
+                              {badge('F00', 'bg-emerald-100 text-emerald-700', 'blur-[2px] select-none')}
+                              {badge('🔥000', 'bg-amber-100 text-amber-700', 'blur-[2px] select-none')}
+                              <span className="text-[11px] text-laro font-semibold ml-0.5">🔒 Pro</span>
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
                     </span>
                     <IngredientSubstituteButton
                       ingredientName={displayName}
-                      canApply={isOwner}
+                      canApply={isOwner && !activeVersion}
                       onApply={(newName) => handleApplySubstitution(idx, newName)}
                       recipeContext={recipe}
                     />
                   </li>
+                  </React.Fragment>
                   );
                 })}
               </ul>
@@ -1052,27 +1528,43 @@ export const RecipeDetail = () => {
             <section className="mb-8">
               <h2 className="font-heading text-xl font-semibold mb-4">{t('instructions')}</h2>
               <ol className="space-y-4" data-testid="instructions-list">
-                {recipe.instructions.map((step, idx) => (
+                {(shown.instructions || []).map((step, idx) => (
                   <li key={`step-${idx}`} className="flex gap-4">
                     <span className="flex-shrink-0 w-8 h-8 rounded-full bg-laro text-white flex items-center justify-center font-semibold text-sm">
                       {idx + 1}
                     </span>
                     <p className="pt-1">
-                      {enrichStepWithAmounts(step, recipe.ingredients, measurementUnit)}
+                      {temperaturesForStyle(enrichStepWithAmounts(step, shown.ingredients, measurementUnit), nutritionStyle)}
                     </p>
                   </li>
                 ))}
               </ol>
             </section>
 
+            {/* Notes & tips from the cookbook page (timing, storage, to serve, …) */}
+            {pageNotes.length > 0 && (
+              <section className="mb-8" data-testid="page-notes">
+                <h2 className="font-heading text-xl font-semibold mb-3">{t('pageNotesTitle')}</h2>
+                <ul className="space-y-2">
+                  {pageNotes.map((note, idx) => (
+                    <li key={`note-${idx}`} className="text-sm leading-relaxed rounded-xl bg-cream-subtle px-4 py-3 whitespace-pre-line">
+                      {note}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             {/* Nutrition Calculator — gated by Preferences → showNutrition */}
             {showNutrition && (
               <section className="mb-6">
+                {/* A version / Low FODMAP view calculates its own list and never saves over the Original. */}
                 <NutritionCalculator 
-                  recipeId={recipe.id}
-                  ingredients={recipe.ingredients?.map(i => `${i.amount || ''} ${i.unit || ''} ${i.name}`)}
+                  key={storedMacros.variant ? choiceKey : 'original'}
+                  recipeId={storedMacros.variant ? undefined : recipe.id}
+                  ingredients={(storedMacros.variant ? shown.ingredients : recipe.ingredients)?.map(i => (typeof i === 'string' ? i : `${i.amount || ''} ${i.unit || ''} ${showFodmap && findSwap(i.name, lowFodmap?.swaps) ? findSwap(i.name, lowFodmap.swaps).to : i.name}`))}
                   servings={scaledServings || recipe.servings}
-                  savedNutrition={recipe.nutrition}
+                  savedNutrition={storedMacros.variant ? (macrosPending ? null : displayNutrition) : recipe.nutrition}
                 />
               </section>
             )}
@@ -1157,7 +1649,24 @@ export const RecipeDetail = () => {
 
       {/* Cook Mode */}
       {showCookMode && (
-        <CookMode recipe={recipe} onClose={() => setShowCookMode(false)} />
+        <CookMode
+          recipe={shown}
+          versionName={activeVersion}
+          lowFodmap={showFodmap}
+          onClose={() => setShowCookMode(false)}
+        />
+      )}
+      {showCheckNumbers && (
+        <CheckNumbers
+          recipe={shown}
+          versionName={activeVersion}
+          lowFodmap={showFodmap}
+          mode="page"
+          onClose={(_override, { saved } = {}) => {
+            setShowCheckNumbers(false);
+            if (saved) loadRecipe();
+          }}
+        />
       )}
     </Layout>
   );

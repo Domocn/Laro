@@ -87,3 +87,67 @@ async def test_list_chat_sessions_scoped_to_current_user():
     assert len(body["sessions"]) == 1
     assert body["sessions"][0]["title"] == "My soup chat"
     list_mock.assert_awaited_once_with(me["id"])
+
+
+@pytest.mark.asyncio
+async def test_report_chat_accepts_client_transcript_when_db_empty():
+    from routers import ai as ai_router
+
+    me = _user("reporter-1")
+    session = {
+        "id": "sess-report",
+        "user_id": me["id"],
+        "title": "Brownie chat",
+        "created_at": None,
+        "updated_at": None,
+    }
+    app = FastAPI()
+    app.include_router(ai_router.router, prefix="/api")
+    app.dependency_overrides[get_current_user] = lambda: me
+
+    append_mock = AsyncMock(
+        return_value={"id": "m1", "role": "assistant", "content": "Hi"}
+    )
+    list_messages_mock = AsyncMock(side_effect=[[], [{"role": "assistant", "content": "Hi there"}]])
+    insert_ticket_mock = AsyncMock()
+    insert_msg_mock = AsyncMock()
+
+    with (
+        patch(
+            "database.repositories.ai_chat_repository.ai_chat_session_repository.find_by_id_for_user",
+            new=AsyncMock(return_value=session),
+        ),
+        patch(
+            "database.repositories.ai_chat_repository.ai_chat_message_repository.list_for_session",
+            new=list_messages_mock,
+        ),
+        patch(
+            "database.repositories.ai_chat_repository.ai_chat_message_repository.append",
+            new=append_mock,
+        ),
+        patch(
+            "database.repositories.support_ticket_repository.support_ticket_repository.insert",
+            new=insert_ticket_mock,
+        ),
+        patch(
+            "database.repositories.support_ticket_repository.support_ticket_message_repository.insert",
+            new=insert_msg_mock,
+        ),
+        patch("routers.support._generate_ticket_number", new=AsyncMock(return_value="T-100")),
+        patch("routers.support._notify_ticket_created", new=AsyncMock()),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.post(
+                "/api/ai/chat-sessions/sess-report/report",
+                json={
+                    "transcript": [{"role": "assistant", "content": "Hi there"}],
+                    "recipe_title": "High Protein Brownie",
+                    "platform": "web",
+                },
+            )
+
+    assert res.status_code == 200
+    assert res.json().get("status") == "reported"
+    append_mock.assert_awaited()
+    insert_ticket_mock.assert_awaited()
